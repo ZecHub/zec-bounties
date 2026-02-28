@@ -346,4 +346,41 @@ router.patch("/update-zaddress", authenticate, async (req, res) => {
   }
 });
 
+// Update user role (admin only)
+router.patch("/users/:userId/role", authenticate, isAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { role } = req.body;
+
+  if (!["ADMIN", "CLIENT"].includes(role)) {
+    return res
+      .status(400)
+      .json({ error: "Invalid role. Must be ADMIN or CLIENT." });
+  }
+
+  // Prevent admin from demoting themselves
+  if (userId === req.user.id) {
+    return res.status(403).json({ error: "You cannot change your own role." });
+  }
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { role },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        avatar: true,
+        z_address: true,
+      },
+    });
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error("Error updating user role:", error);
+    res.status(500).json({ error: "Failed to update user role" });
+  }
+});
+
 module.exports = router;

@@ -48,14 +48,18 @@ router.post("/", authenticate, async (req, res) => {
 });
 
 // List all bounties
-router.get("/", authenticate, async (req, res) => {
-  const bounties = await prisma.bounty.findMany({
-    orderBy: {
-      dateCreated: "desc",
-    },
-  });
-  res.json(bounties);
-});
+router.get(
+  "/",
+  // authenticate,
+  async (req, res) => {
+    const bounties = await prisma.bounty.findMany({
+      orderBy: {
+        dateCreated: "desc",
+      },
+    });
+    res.json(bounties);
+  },
+);
 
 // Edit bounty (Admin)
 router.put("/:id", authenticate, isAdmin, async (req, res) => {
@@ -512,23 +516,27 @@ router.patch(
 );
 
 // Fetch all users except admin
-router.get("/users", authenticate, async (req, res) => {
-  try {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        z_address: true,
-      },
-    });
+router.get(
+  "/users",
+  // authenticate,
+  async (req, res) => {
+    try {
+      const users = await prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          z_address: true,
+        },
+      });
 
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+      res.json(users);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
 
 // Additional endpoints to add to your Prisma-based backend
 
@@ -586,20 +594,24 @@ router.get("/all-applications", authenticate, isAdmin, async (req, res) => {
 });
 
 // Get all categories
-router.get("/categories", authenticate, async (req, res) => {
-  try {
-    const categories = await prisma.bountyCategory.findMany({
-      orderBy: {
-        name: "asc",
-      },
-    });
+router.get(
+  "/categories",
+  // authenticate,
+  async (req, res) => {
+    try {
+      const categories = await prisma.bountyCategory.findMany({
+        orderBy: {
+          name: "asc",
+        },
+      });
 
-    res.json(categories);
-  } catch (error) {
-    console.error("Error fetching categories:", error);
-    res.status(500).json({ error: "Failed to fetch categories" });
-  }
-});
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      res.status(500).json({ error: "Failed to fetch categories" });
+    }
+  },
+);
 
 // Create a new category (Admin only)
 router.post("/categories", authenticate, isAdmin, async (req, res) => {
