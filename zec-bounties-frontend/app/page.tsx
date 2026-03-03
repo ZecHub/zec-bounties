@@ -52,7 +52,10 @@ export default function RootPage() {
 
   // Redirect logged-in users straight to /home
   useEffect(() => {
-    if (!isLoading && currentUser) router.replace("/home");
+    if (!isLoading && currentUser && currentUser.role === "CLIENT")
+      router.replace("/home");
+    else if (!isLoading && currentUser && currentUser.role === "ADMIN")
+      router.replace("/admin");
   }, [currentUser, isLoading, router]);
 
   const [activeCategory, setActiveCategory] = useState("All");
