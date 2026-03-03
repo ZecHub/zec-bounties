@@ -39,7 +39,7 @@ export default function ClientDashboard() {
       (a, b) =>
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
     );
-  }, [filterStatus]);
+  }, [filterStatus, bounties, currentUser]);
 
   const stats = {
     totalRewards: clientBounties.reduce((sum, b) => sum + b.bountyAmount, 0),

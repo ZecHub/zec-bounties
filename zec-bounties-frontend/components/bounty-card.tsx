@@ -38,7 +38,7 @@ export function BountyCard({
   onClick,
 }: {
   bounty: Bounty;
-  viewMode?: "grid" | "list";
+  viewMode?: "grid" | "list" | "kanban";
   onClick?: () => void;
 }) {
   const {
@@ -52,39 +52,32 @@ export function BountyCard({
   const [applicationMessage, setApplicationMessage] = useState("");
   const [isApplicationDialogOpen, setIsApplicationDialogOpen] = useState(false);
 
-  // Work submission states
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrl, setDeliverableUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Get current user's application for this bounty
   const userApplication = currentUser
     ? getUserApplicationForBounty(bounty.id)
     : null;
 
-  // Get all applications for this bounty
   const currentUserRole = currentUser ? currentUser.role : null;
   const allApplications = currentUserRole
     ? getAllApplicationForBounty(bounty.id)
     : null;
 
-  // Check if current user is assigned to this bounty
   const isAssignedToCurrentUser =
     currentUser && bounty.assignee === currentUser.id;
 
-  // Check if user can submit work (assigned and bounty is in progress)
   const canSubmitWork =
     isAssignedToCurrentUser && bounty.status === "IN_PROGRESS";
 
-  // Check if user can apply
   const canApply =
     currentUser &&
     !bounty.assignee &&
     bounty.createdBy !== currentUser.id &&
     !userApplication;
 
-  // User has already applied
   const hasApplied = !!userApplication;
 
   const statusColors = {
@@ -95,9 +88,14 @@ export function BountyCard({
     CANCELLED: "bg-red-500/10 text-red-500 border-red-500/20",
   };
 
+  const difficultyColors: Record<string, string> = {
+    EASY: "text-green-500",
+    MEDIUM: "text-yellow-500",
+    HARD: "text-red-500",
+  };
+
   const handleApply = async () => {
     if (!applicationMessage.trim()) return;
-
     try {
       await applyToBounty(bounty.id, applicationMessage);
       setApplicationMessage("");
@@ -109,14 +107,12 @@ export function BountyCard({
 
   const handleSubmitWork = async () => {
     if (!submissionDescription.trim() || !deliverableUrl.trim()) return;
-
     setIsSubmitting(true);
     try {
       await submitWork(bounty.id, {
         description: submissionDescription,
         deliverableUrl: deliverableUrl,
       });
-
       setSubmissionDescription("");
       setDeliverableUrl("");
       setIsSubmissionDialogOpen(false);
@@ -128,12 +124,185 @@ export function BountyCard({
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button, a, [role="button"]')) {
-      return;
-    }
+    if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
     onClick?.();
   };
 
+  // ── KANBAN CARD (compact) ──────────────────────────────────────────────────
+  if (viewMode === "kanban") {
+    return (
+      <>
+        <Card
+          className="p-1 group transition-all hover:border-primary/50 hover:shadow-md bg-card/80 backdrop-blur-sm cursor-pointer"
+          onClick={handleCardClick}
+        >
+          <div className="p-3 space-y-2.5">
+            {/* Title */}
+            <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+              {bounty.title}
+            </h3>
+
+            {/* Description */}
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+              {bounty.description}
+            </p>
+
+            {/* Tags row */}
+            <div className="flex flex-wrap gap-1">
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                {bounty.categoryId}
+              </Badge>
+              <Badge
+                variant="secondary"
+                className={`text-[10px] h-4 px-1.5 ${difficultyColors[bounty.difficulty] ?? ""}`}
+              >
+                {bounty.difficulty}
+              </Badge>
+              {hasApplied && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-4 px-1.5 border-yellow-500/40 text-yellow-600 bg-yellow-500/5"
+                >
+                  Applied
+                </Badge>
+              )}
+              {isAssignedToCurrentUser && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-4 px-1.5 border-purple-500/40 text-purple-500 bg-purple-500/5"
+                >
+                  Yours
+                </Badge>
+              )}
+            </div>
+
+            {/* Footer row */}
+            <div className="flex items-center justify-between pt-1 border-t border-border/50">
+              {/* Creator */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Avatar className="h-5 w-5 border shrink-0">
+                  <AvatarImage
+                    src={
+                      bounty.createdByUser?.avatar || "/placeholder-user.jpg"
+                    }
+                  />
+                  <AvatarFallback className="text-[9px]">?</AvatarFallback>
+                </Avatar>
+                <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
+                  {bounty.createdByUser?.name ?? "Unknown"}
+                </span>
+              </div>
+
+              {/* Amount + submit button */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-0.5">
+                  <span className="text-xs font-bold">
+                    {bounty.bountyAmount}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">ZEC</span>
+                </div>
+                {canSubmitWork && (
+                  <Button
+                    size="icon"
+                    className="h-6 w-6 bg-green-600 hover:bg-green-700 text-white rounded-full"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSubmissionDialogOpen(true);
+                    }}
+                  >
+                    <Upload className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Work Submission Dialog */}
+        <Dialog
+          open={isSubmissionDialogOpen}
+          onOpenChange={setIsSubmissionDialogOpen}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Submit Your Work</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border">
+                <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-1">
+                  {bounty.title}
+                </h4>
+                <p className="text-sm text-blue-600 dark:text-blue-400">
+                  Amount: {bounty.bountyAmount} ZEC
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="submission-description">
+                  Work Description <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="submission-description"
+                  placeholder="Describe the work you've completed..."
+                  value={submissionDescription}
+                  onChange={(e) => setSubmissionDescription(e.target.value)}
+                  className="min-h-[120px]"
+                  rows={5}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="deliverable-url">
+                  Deliverable URL <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="deliverable-url"
+                  type="url"
+                  placeholder="https://github.com/username/repo"
+                  value={deliverableUrl}
+                  onChange={(e) => setDeliverableUrl(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsSubmissionDialogOpen(false);
+                    setSubmissionDescription("");
+                    setDeliverableUrl("");
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSubmitWork}
+                  disabled={
+                    !submissionDescription.trim() ||
+                    !deliverableUrl.trim() ||
+                    isSubmitting
+                  }
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Clock className="w-4 h-4 mr-1 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-1" />
+                      Submit Work
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+
+  // ── LIST CARD ──────────────────────────────────────────────────────────────
   if (viewMode === "list") {
     return (
       <>
@@ -150,7 +319,7 @@ export function BountyCard({
             </Avatar>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate group-hover:text-primary transition-colors">
-                {`${bounty.title}  `}
+                {bounty.title}
               </h3>
               <p className="text-xs text-muted-foreground">
                 {bounty.createdByUser?.name}
@@ -222,17 +391,9 @@ export function BountyCard({
                 <Upload className="h-4 w-4" />
               </Button>
             )}
-            {/* <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 rounded-full shrink-0"
-            >
-              <ArrowUpRight className="h-4 w-4" />
-            </Button> */}
           </div>
         </Card>
 
-        {/* Work Submission Dialog */}
         <Dialog
           open={isSubmissionDialogOpen}
           onOpenChange={setIsSubmissionDialogOpen}
@@ -241,7 +402,6 @@ export function BountyCard({
             <DialogHeader>
               <DialogTitle>Submit Your Work</DialogTitle>
             </DialogHeader>
-
             <div className="space-y-4">
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border">
                 <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-1">
@@ -251,7 +411,6 @@ export function BountyCard({
                   Amount: {bounty.bountyAmount} ZEC
                 </p>
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="submission-description">
                   Work Description <span className="text-red-500">*</span>
@@ -265,7 +424,6 @@ export function BountyCard({
                   rows={5}
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="deliverable-url">
                   Deliverable URL <span className="text-red-500">*</span>
@@ -278,7 +436,6 @@ export function BountyCard({
                   onChange={(e) => setDeliverableUrl(e.target.value)}
                 />
               </div>
-
               <div className="flex justify-end gap-2 pt-4">
                 <Button
                   variant="outline"
@@ -320,6 +477,7 @@ export function BountyCard({
     );
   }
 
+  // ── GRID CARD (full size) ──────────────────────────────────────────────────
   return (
     <>
       <Card
@@ -339,7 +497,7 @@ export function BountyCard({
                 {bounty.createdByUser?.name}
               </p>
               <h3 className="font-semibold line-clamp-1 leading-tight group-hover:text-primary transition-colors">
-                {`${bounty.title}  `}
+                {bounty.title}
               </h3>
             </div>
           </div>
@@ -439,7 +597,6 @@ export function BountyCard({
         </CardFooter>
       </Card>
 
-      {/* Work Submission Dialog */}
       <Dialog
         open={isSubmissionDialogOpen}
         onOpenChange={setIsSubmissionDialogOpen}
@@ -448,7 +605,6 @@ export function BountyCard({
           <DialogHeader>
             <DialogTitle>Submit Your Work</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-4">
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border">
               <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-1">
@@ -458,7 +614,6 @@ export function BountyCard({
                 Amount: {bounty.bountyAmount} ZEC
               </p>
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="submission-description">
                 Work Description <span className="text-red-500">*</span>
@@ -472,7 +627,6 @@ export function BountyCard({
                 rows={5}
               />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="deliverable-url">
                 Deliverable URL <span className="text-red-500">*</span>
@@ -489,7 +643,6 @@ export function BountyCard({
                 app, etc.)
               </p>
             </div>
-
             <div className="flex justify-end gap-2 pt-4">
               <Button
                 variant="outline"
