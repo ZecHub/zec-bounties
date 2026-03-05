@@ -23,6 +23,7 @@ interface ZcashParams {
   serverUrl: string;
   accountName: string;
   ownerId: string;
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
   owner?: {
@@ -68,7 +69,11 @@ interface BountyContextType {
   approveBounty: (id: string, approved: boolean) => Promise<void>;
   authorizePayment: (id: string) => Promise<void>;
   paymentIDs: string[] | undefined;
-  authorizeDuePayment: () => Promise<void>;
+  authorizeDuePayment: (bountyIds: string[]) => Promise<{
+    success: boolean;
+    paidCount: number;
+    skipped: Array<{ id: string; title: string; reason: string }>;
+  }>;
   deleteBounty: (id: string) => Promise<void>;
   zAddressUpdate: (z_address: string) => Promise<boolean | undefined>;
   verifyZaddress: (z_address: string) => Promise<boolean | undefined>;
@@ -173,6 +178,7 @@ interface BountyContextType {
     amount: number;
     memo?: string;
   }>;
+  setDefaultWallet: (accountName: string) => Promise<void>;
 }
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
@@ -435,6 +441,40 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const setDefaultWallet = async (accountName: string): Promise<void> => {
+    if (!currentUser || currentUser.role !== "ADMIN") {
+      throw new Error("Only admins can set a default wallet");
+    }
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/zcash/params/${accountName}/set-default`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to set default wallet");
+      }
+
+      const response = await res.json();
+
+      // Update local state — mark the new default, unmark all others
+      setZcashParams((prev) =>
+        prev.map((param) => ({
+          ...param,
+          isDefault: param.accountName === accountName,
+        })),
+      );
+    } catch (error) {
+      console.error("Failed to set default wallet:", error);
+      throw error;
+    }
+  };
+
   // Upsert Zcash params (create or update)
   const upsertZcashParams = async (
     data: Omit<
@@ -585,8 +625,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Update the existing authorizePayment function
-  const authorizeDuePayment = async () => {
-    if (!currentUser || currentUser.role !== "ADMIN") return;
+  const authorizeDuePayment = async (bountyIds: string[]) => {
+    if (!currentUser || currentUser.role !== "ADMIN") {
+      return { success: false, paidCount: 0, skipped: [] };
+    }
 
     try {
       const res = await fetch(
@@ -594,14 +636,28 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         {
           method: "POST",
           headers: getAuthHeaders(),
+          body: JSON.stringify({ bountyIds }),
         },
       );
 
-      if (!res.ok) throw new Error("Failed to authorize payment");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to authorize payment");
+      }
 
       const data = await res.json();
+
+      // Refresh bounties to reflect paid status
+      await fetchBounties();
+
+      return {
+        success: true,
+        paidCount: data.paidCount,
+        skipped: data.skipped || [],
+      };
     } catch (error) {
       console.error("Failed to authorize payment:", error);
+      throw error;
     }
   };
 
@@ -1421,6 +1477,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           fetchTransactionHashes();
           fetchBalance();
           break;
+
+        case "bounty_assignees_updated":
+          fetchBounties();
+          break;
       }
     };
 
@@ -1484,7 +1544,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to create bounty");
 
       const created = await res.json();
-      setBounties((prev) => [...prev, created]);
+      setBounties((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create bounty:", error);
       throw error;
@@ -1798,6 +1858,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         upsertZcashParams,
         testZcashConnection,
         importWallet,
+        setDefaultWallet,
       }}
     >
       {children}

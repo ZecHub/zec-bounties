@@ -31,6 +31,14 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import {
+  formatDistanceToNow,
+  isPast,
+  isWithinInterval,
+  addDays,
+  format,
+} from "date-fns";
+import { toast } from "sonner";
 
 export function BountyCard({
   bounty,
@@ -67,16 +75,18 @@ export function BountyCard({
     : null;
 
   const isAssignedToCurrentUser =
-    currentUser && bounty.assignee === currentUser.id;
+    currentUser &&
+    (bounty.assignees?.some((a) => a.userId === currentUser.id) ||
+      bounty.assignee === currentUser.id); // ← fallback for legacy single-assignee bounties
 
   const canSubmitWork =
     isAssignedToCurrentUser && bounty.status === "IN_PROGRESS";
 
   const canApply =
     currentUser &&
-    !bounty.assignee &&
     bounty.createdBy !== currentUser.id &&
-    !userApplication;
+    !userApplication &&
+    !isAssignedToCurrentUser;
 
   const hasApplied = !!userApplication;
 
@@ -94,30 +104,73 @@ export function BountyCard({
     HARD: "text-red-500",
   };
 
+  const dueDate = bounty.timeToComplete
+    ? new Date(bounty.timeToComplete)
+    : null;
+  const isOverdue = dueDate
+    ? isPast(dueDate) && bounty.status !== "DONE"
+    : false;
+  const isDueSoon =
+    dueDate && !isOverdue
+      ? isWithinInterval(new Date(), {
+          start: new Date(),
+          end: addDays(dueDate, 0),
+        }) && dueDate <= addDays(new Date(), 3)
+      : false;
+
+  const dueDateLabel =
+    dueDate && bounty.status !== "DONE" && bounty.status !== "CANCELLED"
+      ? format(dueDate, "MMM d")
+      : null;
+
+  const dueDateColor = isOverdue
+    ? "text-red-500 border-red-500/30 bg-red-500/10"
+    : isDueSoon
+      ? "text-yellow-500 border-yellow-500/30 bg-yellow-500/10"
+      : "text-muted-foreground border-border bg-muted/30";
+
   const handleApply = async () => {
-    if (!applicationMessage.trim()) return;
+    if (!applicationMessage.trim()) {
+      toast.error("Message required", {
+        description: "Please write an application message.",
+      });
+      return;
+    }
     try {
       await applyToBounty(bounty.id, applicationMessage);
+      toast.success("Application submitted!");
       setApplicationMessage("");
       setIsApplicationDialogOpen(false);
-    } catch (error) {
-      console.error("Failed to apply:", error);
+    } catch (error: any) {
+      toast.error("Failed to apply", { description: error?.message });
     }
   };
 
   const handleSubmitWork = async () => {
-    if (!submissionDescription.trim() || !deliverableUrl.trim()) return;
+    if (!submissionDescription.trim()) {
+      toast.error("Description required", {
+        description: "Please describe the work you completed.",
+      });
+      return;
+    }
+    if (!deliverableUrl.trim()) {
+      toast.error("Deliverable URL required", {
+        description: "Please provide a link to your work.",
+      });
+      return;
+    }
     setIsSubmitting(true);
     try {
       await submitWork(bounty.id, {
         description: submissionDescription,
-        deliverableUrl: deliverableUrl,
+        deliverableUrl,
       });
+      toast.success("Work submitted successfully!");
       setSubmissionDescription("");
       setDeliverableUrl("");
       setIsSubmissionDialogOpen(false);
-    } catch (error) {
-      console.error("Failed to submit work:", error);
+    } catch (error: any) {
+      toast.error("Failed to submit work", { description: error?.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -178,7 +231,6 @@ export function BountyCard({
 
             {/* Footer row */}
             <div className="flex items-center justify-between pt-1 border-t border-border/50">
-              {/* Creator */}
               <div className="flex items-center gap-1.5 min-w-0">
                 <Avatar className="h-5 w-5 border shrink-0">
                   <AvatarImage
@@ -192,9 +244,15 @@ export function BountyCard({
                   {bounty.createdByUser?.name ?? "Unknown"}
                 </span>
               </div>
-
-              {/* Amount + submit button */}
               <div className="flex items-center gap-1.5 shrink-0">
+                {dueDateLabel && (
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${dueDateColor}`}
+                  >
+                    {isOverdue ? "⚠ " : ""}
+                    {dueDateLabel}
+                  </span>
+                )}
                 <div className="flex items-center gap-0.5">
                   <span className="text-xs font-bold">
                     {bounty.bountyAmount}
@@ -325,23 +383,30 @@ export function BountyCard({
                 {bounty.createdByUser?.name}
               </p>
             </div>
-            {bounty.assigneeUser?.name ? (
+            {bounty.assignees && bounty.assignees.length > 0 ? (
               <div className="hidden lg:flex flex-col gap-1 items-start px-4 border-l min-w-[140px]">
                 <span className="text-[10px] uppercase text-muted-foreground font-bold">
-                  Assignee
+                  Assignees
                 </span>
-                <div className="flex items-center gap-2">
-                  <Avatar className="h-6 w-6 border-primary/20 ring-2 ring-primary/5">
-                    <AvatarImage
-                      src={
-                        bounty.createdByUser?.avatar || "/placeholder-user.jpg"
-                      }
-                    />
-                    <AvatarFallback>{"None"}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-[11px] font-semibold text-primary">
-                    {bounty.assigneeUser?.name}
-                  </span>
+                <div className="flex items-center gap-1">
+                  {bounty.assignees.slice(0, 3).map((a) => (
+                    <Avatar
+                      key={a.userId}
+                      className="h-5 w-5 border -ml-1 first:ml-0"
+                    >
+                      <AvatarImage
+                        src={a.user?.avatar || "/placeholder-user.jpg"}
+                      />
+                      <AvatarFallback className="text-[9px]">
+                        {a.user?.name?.[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {bounty.assignees.length > 3 && (
+                    <span className="text-[10px] text-muted-foreground ml-1">
+                      +{bounty.assignees.length - 3}
+                    </span>
+                  )}
                 </div>
               </div>
             ) : (
@@ -373,6 +438,19 @@ export function BountyCard({
                 {formatStatus(bounty.status)}
               </Badge>
             </div>
+            {dueDateLabel && (
+              <div className="hidden sm:flex flex-col gap-1 items-center px-4 border-l">
+                <span className="text-[10px] uppercase text-muted-foreground font-bold">
+                  Due
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${dueDateColor}`}
+                >
+                  {isOverdue ? "⚠ " : ""}
+                  {dueDateLabel}
+                </span>
+              </div>
+            )}
             <div className="text-right pl-4">
               <p className="font-bold text-sm">{bounty.bountyAmount} ZEC</p>
               <p className="text-[10px] text-muted-foreground">
@@ -522,12 +600,13 @@ export function BountyCard({
             >
               {bounty.difficulty}
             </Badge>
-            {bounty.assigneeUser?.name && (
+            {bounty.assignees && bounty.assignees.length > 0 && (
               <Badge
                 variant="outline"
                 className="text-[10px] h-5 uppercase tracking-wider border-primary/50 text-primary bg-primary/5 gap-1"
               >
-                <UserCheck className="h-3 w-3" /> Assigned
+                <UserCheck className="h-3 w-3" /> {bounty.assignees.length}{" "}
+                Assigned
               </Badge>
             )}
             {hasApplied && (
@@ -550,19 +629,26 @@ export function BountyCard({
         </CardContent>
         <CardFooter className="p-4 pt-0 border-t bg-muted/30 flex items-center justify-between">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            {bounty.assigneeUser?.name ? (
-              <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-primary/10 border border-primary/20">
-                <Avatar className="h-5 w-5 border-white">
-                  <AvatarImage
-                    src={
-                      bounty.createdByUser?.avatar || "/placeholder-user.jpg"
-                    }
-                  />
-                  <AvatarFallback>{"None"}</AvatarFallback>
-                </Avatar>
-                <span className="text-[10px] font-bold text-primary">
-                  {bounty.assigneeUser?.name}
-                </span>
+            {bounty.assignees && bounty.assignees.length > 0 ? (
+              <div className="flex items-center gap-1">
+                {bounty.assignees.slice(0, 3).map((a) => (
+                  <Avatar
+                    key={a.userId}
+                    className="h-5 w-5 border ring-1 ring-background -ml-1 first:ml-0"
+                  >
+                    <AvatarImage
+                      src={a.user?.avatar || "/placeholder-user.jpg"}
+                    />
+                    <AvatarFallback className="text-[9px]">
+                      {a.user?.name?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+                {bounty.assignees.length > 3 && (
+                  <span className="text-[10px] text-muted-foreground ml-1">
+                    +{bounty.assignees.length - 3}
+                  </span>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10 border border-green-500/20">
@@ -572,9 +658,19 @@ export function BountyCard({
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              <span>{new Date(bounty.dateCreated).toLocaleDateString()}</span>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>{new Date(bounty.dateCreated).toLocaleDateString()}</span>
+              </div>
+              {dueDateLabel && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium w-fit ${dueDateColor}`}
+                >
+                  {isOverdue ? "⚠ " : ""}
+                  {dueDateLabel}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">

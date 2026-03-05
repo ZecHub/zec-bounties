@@ -65,6 +65,7 @@ import { GlobalSettingsModal } from "@/components/settings/global-settings-modal
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { BountyAdminCard } from "@/components/admin/bounty-admin-card";
 import { WalletGuard } from "@/components/settings/wallet-guard";
+import { AuthorizePaymentPanel } from "@/components/payments/authorize-payment-panel";
 
 export default function AdminDashboard() {
   const {
@@ -80,7 +81,6 @@ export default function AdminDashboard() {
     reviewWorkSubmission,
     paymentIDs,
     fetchTransactionHashes,
-    authorizeDuePayment,
     currentUser,
   } = useBounty();
 
@@ -97,7 +97,6 @@ export default function AdminDashboard() {
   const [allSubmissions, setAllSubmissions] = useState<WorkSubmission[]>([]);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
 
   // Load all submissions on mount for the indicators
   useEffect(() => {
@@ -203,21 +202,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handlePaymentAuthorization = async () => {
-    setIsUpdating(true);
-    setPaymentSuccess(false);
-    try {
-      await authorizeDuePayment();
-      setPaymentSuccess(true);
-      // Auto-hide success state after 3 seconds
-      setTimeout(() => setPaymentSuccess(false), 3000);
-    } catch (error) {
-      console.error("Payment authorization failed:", error);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
   const totalRewards = bounties.reduce((sum, b) => sum + b.bountyAmount, 0);
   const activeBounties = bounties.filter(
     (b) => b.status === "TO_DO" || b.status === "IN_PROGRESS",
@@ -226,48 +210,6 @@ export default function AdminDashboard() {
   const completedBounties = bounties.filter(
     (b) => b.status === "DONE" && !b.isPaid,
   );
-
-  // Enhanced payment processing button component
-  const PaymentProcessingButton = () => {
-    if (paymentSuccess) {
-      return (
-        <Button size="sm" disabled className="bg-green-600 hover:bg-green-600">
-          <CheckCircle2 className="w-4 h-4 mr-2 animate-pulse" />
-          Payment Authorized!
-        </Button>
-      );
-    }
-
-    if (isUpdating) {
-      return (
-        <Button
-          size="sm"
-          disabled
-          className="bg-gradient-to-r from-purple-600 to-blue-600"
-        >
-          <div className="flex items-center">
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            <span className="relative">
-              Processing
-              <span className="absolute -right-4 animate-pulse">...</span>
-            </span>
-          </div>
-        </Button>
-      );
-    }
-
-    return (
-      <Button
-        size="sm"
-        onClick={handlePaymentAuthorization}
-        disabled={completedBounties.length === 0}
-        className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 transition-all duration-200 transform hover:scale-105"
-      >
-        <CreditCard className="w-4 h-4 mr-2" />
-        Authorize Payment
-      </Button>
-    );
-  };
 
   const tabs = [
     { id: "overview", label: "Overview", icon: BarChart3 },
@@ -456,7 +398,7 @@ export default function AdminDashboard() {
                               <TableCell className="font-medium py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                                    {bounty.assigneeUser?.name?.[0] || "?"}
+                                    {bounty.createdByUser?.name?.[0] ?? "?"}
                                   </div>
                                   <span className="line-clamp-1">
                                     {bounty.title}
@@ -490,21 +432,65 @@ export default function AdminDashboard() {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                {bounty.assignee ? (
+                                {bounty.assignees &&
+                                bounty.assignees.length > 0 ? (
+                                  <div className="flex items-center gap-2">
+                                    {/* Stacked avatars */}
+                                    <div className="flex items-center">
+                                      {bounty.assignees
+                                        .slice(0, 3)
+                                        .map((a, i) => (
+                                          <Avatar
+                                            key={a.userId}
+                                            className="h-6 w-6 border-2 border-background"
+                                            style={{
+                                              marginLeft: i === 0 ? 0 : "-8px",
+                                              zIndex: 3 - i,
+                                            }}
+                                          >
+                                            <AvatarImage
+                                              src={
+                                                a.user?.avatar ||
+                                                "/placeholder-user.jpg"
+                                              }
+                                            />
+                                            <AvatarFallback className="text-[9px]">
+                                              {a.user?.name?.[0] || "?"}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                        ))}
+                                      {bounty.assignees.length > 3 && (
+                                        <div
+                                          className="h-6 w-6 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[9px] font-bold text-muted-foreground"
+                                          style={{ marginLeft: "-8px" }}
+                                        >
+                                          +{bounty.assignees.length - 3}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {/* Name — show single name or count */}
+                                    <span className="text-xs font-medium">
+                                      {bounty.assignees.length === 1
+                                        ? bounty.assignees[0].user?.name
+                                        : `${bounty.assignees.length} assignees`}
+                                    </span>
+                                  </div>
+                                ) : bounty.assignee && bounty.assigneeUser ? (
+                                  // Legacy single assignee fallback
                                   <div className="flex items-center gap-2">
                                     <Avatar className="h-6 w-6 border">
                                       <AvatarImage
                                         src={
-                                          bounty.createdByUser?.avatar ||
+                                          bounty.assigneeUser.avatar ||
                                           "/placeholder-user.jpg"
                                         }
                                       />
                                       <AvatarFallback>
-                                        {bounty.assigneeUser?.name?.[0] || "?"}
+                                        {bounty.assigneeUser.name?.[0] || "?"}
                                       </AvatarFallback>
                                     </Avatar>
                                     <span className="text-xs font-medium">
-                                      {bounty.assigneeUser?.name}
+                                      {bounty.assigneeUser.name}
                                     </span>
                                   </div>
                                 ) : (
@@ -686,99 +672,7 @@ export default function AdminDashboard() {
               </>
             )}
 
-            {activeTab === "payments" && (
-              <div className="space-y-6">
-                <div className="grid gap-4 imd:flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Completed Bounties Awaiting Payment (
-                    {completedBounties.length})
-                  </h2>
-                  <div className="flex gap-2">
-                    <PaymentProcessingButton />
-                  </div>
-                </div>
-
-                {/* Processing Status Card */}
-                {(isUpdating || paymentSuccess) && (
-                  <div
-                    className={`mb-6 p-4 rounded-lg border-2 ${
-                      paymentSuccess
-                        ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
-                        : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
-                    } transition-all duration-300`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {isUpdating ? (
-                          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                        ) : (
-                          <CheckCircle2 className="w-5 h-5 text-green-600 animate-pulse" />
-                        )}
-                        <div>
-                          <h3
-                            className={`font-medium ${
-                              paymentSuccess
-                                ? "text-green-800 dark:text-green-200"
-                                : "text-blue-800 dark:text-blue-200"
-                            }`}
-                          >
-                            {isUpdating
-                              ? "Processing Payments..."
-                              : "Payments Authorized Successfully!"}
-                          </h3>
-                          <p
-                            className={`text-sm ${
-                              paymentSuccess
-                                ? "text-green-600 dark:text-green-400"
-                                : "text-blue-600 dark:text-blue-400"
-                            }`}
-                          >
-                            {isUpdating
-                              ? `Authorizing payments for ${completedBounties.length} bounties`
-                              : "All pending payments have been processed"}
-                          </p>
-                        </div>
-                      </div>
-                      {isUpdating && (
-                        <div className="text-blue-600 text-sm font-mono">
-                          {completedBounties.length} pending...
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {completedBounties.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {completedBounties.map((bounty) => (
-                      <div
-                        key={bounty.id}
-                        className={`relative ${
-                          isUpdating ? "opacity-70 pointer-events-none" : ""
-                        } transition-opacity duration-200`}
-                      >
-                        <BountyAdminCard bounty={bounty} />
-                        {isUpdating && (
-                          <div className="absolute inset-0 bg-white/50 dark:bg-slate-900/50 flex items-center justify-center rounded-lg">
-                            <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Shield className="w-12 h-12 mx-auto text-slate-400 dark:text-slate-600 mb-4" />
-                    <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
-                      No payments due
-                    </h3>
-                    <p className="text-slate-600 dark:text-slate-400">
-                      All completed bounties have been paid.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+            {activeTab === "payments" && <AuthorizePaymentPanel />}
 
             {activeTab === "txids" && (
               <>

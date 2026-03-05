@@ -6,6 +6,7 @@ import { BountyProvider } from "@/lib/bounty-context";
 import { ZAddressProvider } from "@/components/address/zaddress-integration-hook";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Suspense } from "react";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
@@ -49,6 +50,7 @@ export default function RootLayout({
           <Suspense fallback={<div>Loading...</div>}>
             <BountyProvider>
               <ZAddressProvider>{children}</ZAddressProvider>
+              <Toaster position="top-right" />
             </BountyProvider>
           </Suspense>
           <Analytics />

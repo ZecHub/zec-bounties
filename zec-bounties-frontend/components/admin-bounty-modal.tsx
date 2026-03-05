@@ -26,6 +26,7 @@ import { CalendarIcon } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -64,12 +65,41 @@ export function AdminBountyModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
 
+    if (!formData.title.trim()) {
+      toast.error("Title is required", {
+        description: "Please enter a title for the bounty.",
+      });
+      return;
+    }
+
+    if (!formData.category) {
+      toast.error("Category is required", {
+        description: "Please select a category.",
+      });
+      return;
+    }
+
+    if (!formData.bountyAmount || formData.bountyAmount <= 0) {
+      toast.error("Invalid reward amount", {
+        description: "Please enter a reward amount greater than 0.",
+      });
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      toast.error("Description is required", {
+        description: "Please describe the bounty requirements.",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       await createBounty(formData);
-
-      // Reset form
+      toast.success("Bounty created!", {
+        description: `"${formData.title}" has been created`,
+      });
       setFormData({
         title: "",
         description: "",
@@ -78,14 +108,12 @@ export function AdminBountyModal({
         timeToComplete: new Date(),
         category: "",
       });
-
-      // Call success callback if provided
       onSuccess?.();
-
-      // Close the modal
       onOpenChange(false);
-    } catch (error) {
-      console.error("Failed to create bounty:", error);
+    } catch (error: any) {
+      toast.error("Failed to create bounty", {
+        description: error?.message,
+      });
     } finally {
       setIsSubmitting(false);
     }

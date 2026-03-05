@@ -63,7 +63,9 @@ export function BountyDetailModal({
 
   // Check if current user is assigned to this bounty
   const isAssignedToCurrentUser =
-    currentUser && bounty.assignee === currentUser.id;
+    currentUser &&
+    (bounty.assignees?.some((a) => a.userId === currentUser.id) ||
+      bounty.assignee === currentUser.id); // ← fallback for legacy single-assignee bounties
 
   // Check if user can submit work (assigned and bounty is in progress)
   const canSubmitWork =
@@ -73,9 +75,9 @@ export function BountyDetailModal({
   // Updated logic using the context method
   const canApply =
     currentUser &&
-    !bounty.assignee && // Not assigned to anyone
-    bounty.createdBy !== currentUser.id && // Not created by current user
-    !userApplication; // Haven't applied yet (using context method)
+    bounty.createdBy !== currentUser.id &&
+    !userApplication &&
+    !isAssignedToCurrentUser;
 
   // User has already applied
   const hasApplied = !!userApplication;
@@ -369,9 +371,9 @@ export function BountyDetailModal({
                       ? "Please log in to apply for this bounty."
                       : bounty.createdBy === currentUser.id
                         ? "You cannot apply to your own bounty."
-                        : bounty.assignee
-                          ? "This bounty has already been assigned."
-                          : "This bounty is not available for applications."}
+                        : isAssignedToCurrentUser
+                          ? "You are assigned to this bounty."
+                          : ""}
                   </p>
                 </div>
               </div>
@@ -417,27 +419,37 @@ export function BountyDetailModal({
               </div>
             </div>
 
-            {bounty.assignee && (
+            {bounty.assignees && bounty.assignees.length > 0 && (
               <div className="space-y-3 pt-4 border-t">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Assigned To
                 </h4>
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
-                  <Avatar className="h-10 w-10 border-2 border-primary/20">
-                    <AvatarImage
-                      src={
-                        bounty.createdByUser?.avatar || "/placeholder-user.jpg"
-                      }
-                    />
-                    <AvatarFallback>
-                      {bounty.assigneeUser?.name?.charAt(0) || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-sm font-bold text-primary">
-                      {bounty.assigneeUser?.name || "Unknown"}
-                    </p>
-                  </div>
+                <div className="space-y-2">
+                  {bounty.assignees.map((a) => (
+                    <div
+                      key={a.userId}
+                      className="flex items-center gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5"
+                    >
+                      <Avatar className="h-8 w-8 border-2 border-primary/20">
+                        <AvatarImage
+                          src={a.user?.avatar || "/placeholder-user.jpg"}
+                        />
+                        <AvatarFallback>
+                          {a.user?.name?.[0] || "?"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-primary truncate">
+                          {a.user?.name || "Unknown"}
+                        </p>
+                        {a.userId === currentUser?.id && (
+                          <p className="text-[10px] text-muted-foreground">
+                            You
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

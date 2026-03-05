@@ -52,8 +52,13 @@ export function GlobalSettingsModal({
   open,
   onOpenChange,
 }: GlobalSettingsModalProps) {
-  const { zcashParams, address, updateZcashParams, deleteZcashParams } =
-    useBounty();
+  const {
+    zcashParams,
+    address,
+    updateZcashParams,
+    deleteZcashParams,
+    setDefaultWallet,
+  } = useBounty();
   const { toast } = useToast();
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -67,6 +72,7 @@ export function GlobalSettingsModal({
     null,
   );
   const [isLoading, setIsLoading] = useState(true);
+  const [isSettingDefault, setIsSettingDefault] = useState<string | null>(null);
 
   const [editForm, setEditForm] = useState({
     accountName: "",
@@ -184,6 +190,25 @@ export function GlobalSettingsModal({
       });
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleSetDefault = async (config: ZcashParams) => {
+    setIsSettingDefault(config.accountName);
+    try {
+      await setDefaultWallet(config.accountName);
+      toast({
+        title: "Default wallet updated",
+        description: `"${config.accountName}" is now the default paying wallet.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to set default wallet. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSettingDefault(null);
     }
   };
 
@@ -316,16 +341,27 @@ export function GlobalSettingsModal({
                     {zcashParams.map((config) => (
                       <div
                         key={config.id}
-                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                        className={`flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors ${
+                          config.isDefault
+                            ? "border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-950/20"
+                            : ""
+                        }`}
                       >
                         <div className="flex items-center gap-3 flex-1">
                           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                             <Wallet className="w-5 h-5 text-primary" />
                           </div>
                           <div className="flex-1">
-                            <p className="font-medium text-sm">
-                              {config.accountName || "Unnamed Account"}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-sm">
+                                {config.accountName || "Unnamed Account"}
+                              </p>
+                              {config.isDefault && (
+                                <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900 dark:text-green-300 dark:border-green-700">
+                                  Default
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 mt-1">
                               <Badge
                                 variant="outline"
@@ -343,7 +379,26 @@ export function GlobalSettingsModal({
                             </div>
                           </div>
                         </div>
+
                         <div className="flex items-center gap-2">
+                          {!config.isDefault && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSetDefault(config)}
+                              disabled={isSettingDefault === config.accountName}
+                              className="text-xs h-8"
+                            >
+                              {isSettingDefault === config.accountName ? (
+                                "Setting..."
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Set Default
+                                </>
+                              )}
+                            </Button>
+                          )}
                           <Button
                             size="icon"
                             variant="ghost"

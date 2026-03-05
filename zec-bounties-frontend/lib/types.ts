@@ -56,6 +56,7 @@ export interface Bounty {
   categoryId?: string;
   category?: BountyCategory;
   difficulty: "Easy" | "Medium" | "Hard";
+  assignees?: BountyAssignee[];
 }
 
 export interface BountyFormData {
@@ -107,4 +108,18 @@ export interface WorkSubmission {
   status: "pending" | "approved" | "rejected" | "needs_revision";
   submitterUser?: User; // Populated user data
   reviewerUser?: User; // Populated user data
+}
+
+export interface BountyAssignee {
+  id: string;
+  bountyId: string;
+  userId: string;
+  assignedAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+    z_address?: string;
+  };
 }
