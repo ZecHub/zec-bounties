@@ -48,18 +48,27 @@ router.post("/", authenticate, async (req, res) => {
 });
 
 // List all bounties
-router.get(
-  "/",
-  // authenticate,
-  async (req, res) => {
-    const bounties = await prisma.bounty.findMany({
-      orderBy: {
-        dateCreated: "desc",
+router.get("/", async (req, res) => {
+  const bounties = await prisma.bounty.findMany({
+    orderBy: { dateCreated: "desc" },
+    include: {
+      assignees: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatar: true,
+              z_address: true,
+            },
+          },
+        },
       },
-    });
-    res.json(bounties);
-  },
-);
+    },
+  });
+  res.json(bounties);
+});
 
 // Edit bounty (Admin)
 router.put("/:id", authenticate, isAdmin, async (req, res) => {
@@ -90,6 +99,126 @@ router.put("/:id", authenticate, isAdmin, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to update bounty" });
+  }
+});
+
+// Add assignees to a bounty (Admin only)
+router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
+  try {
+    const { id: bountyId } = req.params;
+    const { userIds } = req.body; // array of user IDs to add
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ error: "userIds array is required" });
+    }
+
+    const bounty = await prisma.bounty.findUnique({
+      where: { id: bountyId },
+    });
+
+    if (!bounty) {
+      return res.status(404).json({ error: "Bounty not found" });
+    }
+
+    // Add all assignees, skip duplicates via upsert
+    const assignees = await Promise.all(
+      userIds.map((userId) =>
+        prisma.bountyAssignee.upsert({
+          where: {
+            bountyId_userId: { bountyId, userId },
+          },
+          update: {}, // already exists, no update needed
+          create: { bountyId, userId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar: true,
+                z_address: true,
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    // Update bounty status to IN_PROGRESS if it was TO_DO
+    if (bounty.status === "TO_DO") {
+      await prisma.bounty.update({
+        where: { id: bountyId },
+        data: { status: "IN_PROGRESS" },
+      });
+    }
+
+    sendRealtimeUpdate(
+      "bounty_assignees_updated",
+      { bountyId, assignees },
+      req.user.id,
+    );
+
+    res.status(201).json({ assignees });
+  } catch (error) {
+    console.error("Error adding assignees:", error);
+    res.status(500).json({ error: "Failed to add assignees" });
+  }
+});
+
+// Remove an assignee from a bounty (Admin only)
+router.delete(
+  "/:id/assignees/:userId",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { id: bountyId, userId } = req.params;
+
+      await prisma.bountyAssignee.delete({
+        where: {
+          bountyId_userId: { bountyId, userId },
+        },
+      });
+
+      sendRealtimeUpdate(
+        "bounty_assignees_updated",
+        { bountyId, removedUserId: userId },
+        req.user.id,
+      );
+
+      res.json({ message: "Assignee removed successfully" });
+    } catch (error) {
+      console.error("Error removing assignee:", error);
+      res.status(500).json({ error: "Failed to remove assignee" });
+    }
+  },
+);
+
+// Get assignees for a bounty
+router.get("/:id/assignees", authenticate, async (req, res) => {
+  try {
+    const { id: bountyId } = req.params;
+
+    const assignees = await prisma.bountyAssignee.findMany({
+      where: { bountyId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+            z_address: true,
+          },
+        },
+      },
+      orderBy: { assignedAt: "asc" },
+    });
+
+    res.json(assignees);
+  } catch (error) {
+    console.error("Error fetching assignees:", error);
+    res.status(500).json({ error: "Failed to fetch assignees" });
   }
 });
 
@@ -204,7 +333,13 @@ router.post("/:id/submit", authenticate, async (req, res) => {
     }
 
     // Check if user is assigned to this bounty
-    if (bounty.assignee !== userId) {
+    const isAssigned = await prisma.bountyAssignee.findUnique({
+      where: {
+        bountyId_userId: { bountyId, userId },
+      },
+    });
+
+    if (!isAssigned) {
       return res.status(403).json({
         error: "You are not assigned to this bounty",
       });
@@ -464,11 +599,36 @@ router.patch(
       sendRealtimeUpdate("submission_reviewed", updatedSubmission, req.user.id);
 
       // Update bounty status based on review
-      let newBountyStatus = submission.bounty.status;
       if (status === "approved") {
-        newBountyStatus = "DONE";
+        // Set the winner as the single assignee for payment
+        await prisma.bounty.update({
+          where: { id: submission.bounty.id },
+          data: {
+            status: "DONE",
+            assignee: submission.submittedBy, // ← winner gets paid
+          },
+        });
+
+        // Reject all other pending submissions automatically
+        await prisma.workSubmission.updateMany({
+          where: {
+            bountyId: submission.bounty.id,
+            id: { not: submissionId },
+            status: "pending",
+          },
+          data: { status: "rejected" },
+        });
       } else if (status === "rejected" || status === "needs_revision") {
-        newBountyStatus = "IN_PROGRESS";
+        // Only revert to IN_PROGRESS if no other approved submission exists
+        const approvedExists = await prisma.workSubmission.findFirst({
+          where: { bountyId: submission.bounty.id, status: "approved" },
+        });
+        if (!approvedExists) {
+          await prisma.bounty.update({
+            where: { id: submission.bounty.id },
+            data: { status: "IN_PROGRESS" },
+          });
+        }
       }
 
       const updatedBounty = await prisma.bounty.update({
@@ -787,24 +947,19 @@ router.put(
   async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const { status } = req.body; // 'accepted', 'rejected', 'pending'
+      const { status } = req.body;
       const userId = req.user.id;
 
-      // Find application with bounty data
       const application = await prisma.bountyApplication.findUnique({
         where: { id: applicationId },
-        include: {
-          bounty: true,
-        },
+        include: { bounty: true },
       });
 
       if (!application) {
         return res.status(404).json({ error: "Application not found" });
       }
 
-      // Use Prisma transaction for atomic operations
       const result = await prisma.$transaction(async (tx) => {
-        // Update the application
         const updatedApplication = await tx.bountyApplication.update({
           where: { id: applicationId },
           data: {
@@ -819,35 +974,35 @@ router.put(
           },
         });
 
-        // If accepted, assign bounty and reject other applications
         if (status === "accepted") {
-          // Assign the bounty
-          await tx.bounty.update({
-            where: { id: application.bountyId },
-            data: {
-              assignee: application.applicantId,
-              status: "IN_PROGRESS",
+          // Add to BountyAssignee (upsert to prevent duplicates)
+          await tx.bountyAssignee.upsert({
+            where: {
+              bountyId_userId: {
+                bountyId: application.bountyId,
+                userId: application.applicantId,
+              },
+            },
+            update: {},
+            create: {
+              bountyId: application.bountyId,
+              userId: application.applicantId,
             },
           });
 
-          // Reject all other applications for this bounty
-          await tx.bountyApplication.updateMany({
-            where: {
-              bountyId: application.bountyId,
-              id: { not: applicationId },
-            },
-            data: {
-              status: "CANCELLED",
-              reviewedAt: new Date(),
-              reviewedBy: userId,
-            },
+          // Move bounty to IN_PROGRESS if it wasn't already
+          await tx.bounty.update({
+            where: { id: application.bountyId },
+            data: { status: "IN_PROGRESS" },
           });
+
+          // NOTE: we no longer reject other applications here
         }
 
         return updatedApplication;
       });
-      sendRealtimeUpdate("application_updated", result, userId);
 
+      sendRealtimeUpdate("application_updated", result, userId);
       res.json(result);
     } catch (err) {
       console.error(err);

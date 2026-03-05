@@ -26,6 +26,7 @@ model User {
   avatar               String?
   githubId             String?
   isTest               Boolean             @default(false)
+  isManOfSteel         Boolean             @default(false)
   assignedBounties     Bounty[]            @relation("AssignedBounties")
   createdBounties      Bounty[]            @relation("CreatedBounties")
   reviewedApplications BountyApplication[] @relation("UserReviews")
@@ -33,6 +34,7 @@ model User {
   reviewedWork         WorkSubmission[]    @relation("ReviewedWork")
   submittedWork        WorkSubmission[]    @relation("SubmittedWork")
   zcashParams          ZcashParams[]       @relation("UserZcashParams")
+  bountyAssignments    BountyAssignee[] @relation("BountyAssignees") 
 }
 
 model Bounty {
@@ -58,7 +60,21 @@ model Bounty {
   category          BountyCategory?     @relation("BountyCategory", fields: [categoryId], references: [name])
   applications      BountyApplication[]
   workSubmissions   WorkSubmission[]
+  assignees         BountyAssignee[]
 }
+
+model BountyAssignee {
+  id         String   @id @default(cuid())
+  bountyId   String
+  userId     String
+  assignedAt DateTime @default(now())
+  bounty     Bounty   @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  user       User     @relation("BountyAssignees", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([bountyId, userId])
+  @@map("bounty_assignees")
+}
+
 
 model BountyApplication {
   id            String    @id @default(cuid())
@@ -112,6 +128,7 @@ model ZcashParams {
   owner       User     @relation("UserZcashParams", fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  isDefault   Boolean @default(false)
 
   @@unique([ownerId, accountName])
   @@map("zcash_params")

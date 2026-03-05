@@ -9,6 +9,8 @@ const { zcashParams } = require("../prisma/client");
 const executeZingoCliSeed = require("../utils/zingoLibSeed");
 const { getLatestZcashParams } = require("../helpers/zcash/zcashHelper.js");
 
+const { sendRealtimeUpdate } = require("../middleware/websocket");
+
 const router = express.Router();
 const prisma = new PrismaClient();
 
@@ -573,6 +575,47 @@ router.delete("/params/:accountName", authenticate, async (req, res) => {
     });
   }
 });
+
+router.patch(
+  "/params/:accountName/set-default",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { accountName } = req.params;
+      const userId = req.user.id;
+
+      // Wrap both writes in a transaction to prevent lock contention
+      const updated = await prisma.$transaction(
+        async (tx) => {
+          // Clear any existing default for this admin first
+          await tx.zcashParams.updateMany({
+            where: { ownerId: userId, isDefault: true },
+            data: { isDefault: false },
+          });
+
+          // Set the new default
+          return tx.zcashParams.update({
+            where: {
+              ownerId_accountName: { ownerId: userId, accountName },
+            },
+            data: { isDefault: true },
+          });
+        },
+        {
+          timeout: 10000, // 10s — gives SQLite time to release any existing locks
+        },
+      );
+
+      sendRealtimeUpdate("default_wallet_updated", updated, userId);
+
+      res.json({ success: true, data: updated });
+    } catch (error) {
+      console.error("Error setting default wallet:", error);
+      res.status(500).json({ error: "Failed to set default wallet" });
+    }
+  },
+);
 
 /**
  * POST /api/zcash/params/upsert

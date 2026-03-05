@@ -19,6 +19,8 @@ const executeZingoCliAddresses = require("../utils/zingoLibAddresses.js");
 const { getLatestZcashParams } = require("../helpers/zcash/zcashHelper.js.js");
 const executeZingoParseAddress = require("../utils/zingoLibParseAddress.js");
 const executeZingoCliSync = require("../utils/zingoLibSync.js");
+const { resolvePayingWallet } = require("../helpers/zcash/resolvePayingWallet");
+const { buildPaymentListGrouped } = require("../helpers/db-query");
 
 const { sendRealtimeUpdate } = require("../middleware/websocket");
 
@@ -100,28 +102,154 @@ router.get("/addresses", authenticate, isAdmin, async (req, res) => {
 });
 
 // List transactions (Admin)
+// router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
+//   const dueBounties = await findDueBounties();
+//   const { paymentList, totalZecAmount } = await buildPaymentList(dueBounties);
+//   const params = await getLatestZcashParams(req.user.id);
+//   console.log(params);
+//   const sendResult = await executeZingoQuickSend(paymentList, params);
+
+//   const result = sendResult[1];
+//   await updateDueBounties();
+
+//   // ✅ Broadcast payment authorized
+//   sendRealtimeUpdate(
+//     "payment_authorized",
+//     {
+//       result,
+//       totalZecAmount,
+//       bountyCount: dueBounties.length,
+//     },
+//     req.user.id,
+//   );
+
+//   res.json(result);
+// });
+
 router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
-  const dueBounties = await findDueBounties();
-  const { paymentList, totalZecAmount } = await buildPaymentList(dueBounties);
-  const params = await getLatestZcashParams(req.user.id);
-  console.log(params);
-  const sendResult = await executeZingoQuickSend(paymentList, params);
+  try {
+    const { bountyIds } = req.body; // array of selected bounty IDs from admin
 
-  const result = sendResult[1];
-  await updateDueBounties();
+    if (!bountyIds || !Array.isArray(bountyIds) || bountyIds.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "No bounties selected for payment" });
+    }
 
-  // ✅ Broadcast payment authorized
-  sendRealtimeUpdate(
-    "payment_authorized",
-    {
-      result,
-      totalZecAmount,
-      bountyCount: dueBounties.length,
-    },
-    req.user.id,
-  );
+    // Resolve the acting admin's default wallet
+    const adminWallet = await prisma.zcashParams.findFirst({
+      where: {
+        ownerId: req.user.id,
+        isDefault: true,
+      },
+    });
 
-  res.json(result);
+    if (!adminWallet) {
+      return res.status(400).json({
+        error:
+          "No default wallet configured. Please set a default wallet in settings before authorizing payments.",
+      });
+    }
+
+    // Fetch the selected bounties with their assignees
+    const bounties = await prisma.bounty.findMany({
+      where: {
+        id: { in: bountyIds },
+        status: "DONE",
+        isPaid: false,
+        isApproved: true,
+      },
+      include: {
+        assigneeUser: {
+          select: { id: true, name: true, z_address: true },
+        },
+      },
+    });
+
+    if (bounties.length === 0) {
+      return res.status(400).json({
+        error:
+          "None of the selected bounties are eligible for payment (must be DONE, approved, and unpaid)",
+      });
+    }
+
+    // Build payment list, skipping any bounty whose assignee has no z_address
+    const paymentList = [];
+    const skipped = [];
+
+    for (const bounty of bounties) {
+      if (!bounty.assigneeUser?.z_address) {
+        skipped.push({
+          id: bounty.id,
+          title: bounty.title,
+          reason: "Assignee has no z_address",
+        });
+        continue;
+      }
+
+      paymentList.push({
+        address: bounty.assigneeUser.z_address,
+        amount: Math.round(bounty.bountyAmount * 1e8), // zatoshis
+        memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
+        bountyId: bounty.id,
+      });
+    }
+
+    if (paymentList.length === 0) {
+      return res.status(400).json({
+        error:
+          "No payable bounties — all selected assignees are missing z_addresses",
+        skipped,
+      });
+    }
+
+    console.log(
+      `💸 Paying ${paymentList.length} bounties from wallet "${adminWallet.accountName}" (admin: ${req.user.id})`,
+    );
+
+    // Execute payment
+    const sendResult = await executeZingoQuickSend(paymentList, adminWallet);
+    const txResult = sendResult[1];
+
+    // Mark all successfully queued bounties as paid
+    const paidBountyIds = paymentList.map((p) => p.bountyId);
+    await prisma.bounty.updateMany({
+      where: { id: { in: paidBountyIds } },
+      data: {
+        isPaid: true,
+        paymentAuthorized: true,
+        paidAt: new Date(),
+      },
+    });
+
+    // Store transaction record
+    await storeTransactions(
+      txResult,
+      paymentList.reduce((sum, p) => sum + p.amount, 0),
+    );
+
+    sendRealtimeUpdate(
+      "payment_authorized",
+      {
+        result: txResult,
+        paidCount: paidBountyIds.length,
+        skippedCount: skipped.length,
+        skipped,
+        walletAccountName: adminWallet.accountName,
+      },
+      req.user.id,
+    );
+
+    res.json({
+      success: true,
+      result: txResult,
+      paidCount: paidBountyIds.length,
+      skipped,
+    });
+  } catch (error) {
+    console.error("Error in authorize-payment:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.post(

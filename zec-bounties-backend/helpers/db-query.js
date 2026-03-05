@@ -1,5 +1,6 @@
 const { PrismaClient } = require("@prisma/client");
 const executeZingoParseAddres = require("../utils/zingoLibParseAddress.js");
+const { resolvePayingWallet } = require("./zcash/resolvePayingWallet");
 
 const prisma = new PrismaClient();
 
@@ -44,6 +45,52 @@ async function buildPaymentList(bounties) {
     totalZecAmount: totalZecAmount,
   };
 }
+
+/**
+ * Builds a map of walletParams → payments[].
+ * Each entry represents one wallet that needs to send one or more payments.
+ *
+ * @param {Array} dueBounties - Bounties returned by findDueBounties()
+ * @returns {Promise<Array<{ walletParams: object, payments: Array }>>}
+ */
+async function buildPaymentListGrouped(dueBounties) {
+  // Map: zcashParamsId → { walletParams, payments[] }
+  const walletMap = new Map();
+
+  for (const bounty of dueBounties) {
+    if (!bounty.assigneeUser?.z_address) {
+      console.log(bounty);
+      console.warn(`Skipping bounty ${bounty.id} — assignee has no z_address`);
+      continue;
+    }
+
+    let walletParams;
+    try {
+      walletParams = await resolvePayingWallet(bounty.createdBy);
+    } catch (err) {
+      console.error(
+        `Skipping bounty ${bounty.id} — wallet resolution failed: ${err.message}`,
+      );
+      continue;
+    }
+
+    const key = walletParams.id;
+
+    if (!walletMap.has(key)) {
+      walletMap.set(key, { walletParams, payments: [] });
+    }
+
+    walletMap.get(key).payments.push({
+      address: bounty.assigneeUser.z_address,
+      amount: bounty.bountyAmount,
+      memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
+      bountyId: bounty.id,
+    });
+  }
+
+  return Array.from(walletMap.values());
+}
+
 async function updateDueBounties() {
   // First, find the bounties that need to be updated
   const updateBounties = await prisma.bounty.findMany({
@@ -131,4 +178,5 @@ module.exports = {
   verifyZaddress,
   updateDueBounties,
   storeTransactions,
+  buildPaymentListGrouped,
 };

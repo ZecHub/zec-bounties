@@ -13,8 +13,6 @@ prisma/dev.db
 prisma/devSAFE.db
 ./prisma/devSAFE.db
 
-prisma1
-
 prisma/dev2.db
 ./prisma/dev2.db
 
@@ -26,3 +24,4 @@ wallets
 zingolib-wrapper
 
 .DS_Store
+cream.js
