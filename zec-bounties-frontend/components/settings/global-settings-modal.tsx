@@ -87,9 +87,11 @@ export function GlobalSettingsModal({
         setIsLoading(true);
         try {
           if (zcashParams && zcashParams.length > 0) {
-            // Select the latest config by default
-            const latestParam = zcashParams[zcashParams.length - 1];
-            setSelectedConfig(latestParam);
+            // Select the default wallet, falling back to the latest
+            const defaultParam =
+              zcashParams.find((p) => p.isDefault) ??
+              zcashParams[zcashParams.length - 1];
+            setSelectedConfig(defaultParam);
           }
         } catch (error) {
           console.error("Error loading Zcash params:", error);
