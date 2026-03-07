@@ -7,11 +7,15 @@ import {
   Sun,
   Bell,
   Search,
-  Terminal,
   Wallet,
   Menu,
-  X,
   RefreshCw,
+  ScanLine,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  FolderSync,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,7 +24,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -30,10 +33,52 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useState } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
+import type { SyncStatus } from "@/lib/bounty-context";
+
+// ── Sync status badge ─────────────────────────────────────────────────────────
+function SyncStatusBadge({ status }: { status: SyncStatus | null }) {
+  console.log(status);
+  if (!status) return null;
+
+  const pct =
+    status.percentage_total_blocks_scanned ||
+    status.percentage_total_outputs_scanned;
+
+  const done = pct === 100 || status.in_progress === false;
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono">
+      {done ? (
+        <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+      ) : (
+        <Activity className="h-3 w-3 text-amber-400 animate-pulse shrink-0" />
+      )}
+      <span className="hidden xl:inline text-muted-foreground">Sync</span>
+      <span className={done ? "text-emerald-500" : "text-amber-400"}>
+        {pct != null
+          ? `${Number(pct).toFixed(2)}%`
+          : status.in_progress
+            ? "…"
+            : "—"}
+      </span>
+      {status.synced_blocks != null && status.total_blocks != null && (
+        <span className="hidden 2xl:inline text-muted-foreground/60">
+          ({status.synced_blocks}/{status.total_blocks})
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function AdminNavbar({
   isAdmin = true,
@@ -47,25 +92,39 @@ export function AdminNavbar({
   const { theme, setTheme } = useTheme();
   const [topupOpen, setTopupOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [zecBalance] = useState(0.0);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  const { currentUser, logout, balance, fetchBalance, fetchAddresses } =
-    useBounty();
+  const {
+    currentUser,
+    logout,
+    balance,
+    fetchBalance,
+    fetchAddresses,
+    syncStatus,
+    syncStatusError,
+    fetchSyncStatus,
+    rescanWallet,
+    rescanLoading,
+  } = useBounty();
 
-  const handleRefreshBalance = async () => {
-    setIsUpdating(true);
+  // Refresh handler — balance + addresses only
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
     try {
-      await fetchAddresses();
-      await fetchBalance();
-      setSuccess("Balance refreshed successfully");
-    } catch (err) {
-      setError("Failed to refresh balance");
+      await Promise.all([fetchAddresses(), fetchBalance()]);
     } finally {
-      setIsUpdating(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  // Sync status handler — sync status only
+  const handleSyncStatus = async () => {
+    setIsSyncing(true);
+    try {
+      await fetchSyncStatus();
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -73,6 +132,7 @@ export function AdminNavbar({
     <>
       <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-14 items-center px-4 md:px-6">
+          {/* Logo */}
           <Link href="/admin" className="transition-colors hover:text-primary">
             <div className="flex items-center gap-2 font-bold text-xl tracking-tight mr-4 md:mr-6">
               <img
@@ -98,17 +158,12 @@ export function AdminNavbar({
             >
               Bounties
             </Link>
-            {/* <Link
-              href="/admin/leaderboard"
-              className="transition-colors hover:text-primary"
-            >
-              Leaderboard
-            </Link> */}
           </div>
 
           {/* Desktop Right Side */}
           <div className="hidden lg:flex items-center gap-1 ml-auto">
-            <div className="relative max-w-sm">
+            {/* Search */}
+            <div className="relative max-w-sm mr-2">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
@@ -119,28 +174,111 @@ export function AdminNavbar({
               />
             </div>
 
-            <Button
-              variant="ghost"
-              className="gap-2 h-9 text-xs font-mono"
-              onClick={() => setTopupOpen(true)}
-            >
-              <Wallet className="h-4 w-4" />
-              {balance
-                ? `${(balance / 1e8).toFixed(4)} ZEC`
-                : `${(0.0).toFixed(4)} ZEC`}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefreshBalance}
-              disabled={isUpdating}
-              className="h-9 w-9"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isUpdating ? "animate-spin" : ""}`}
-              />
-            </Button>
+            {/* Sync status badge */}
+            <TooltipProvider delayDuration={300}>
+              {(syncStatus || syncStatusError) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      {syncStatusError ? (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono text-destructive">
+                          <AlertCircle className="h-3 w-3 shrink-0" />
+                          <span className="hidden xl:inline">Error</span>
+                        </div>
+                      ) : (
+                        <SyncStatusBadge status={syncStatus} />
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    className="font-mono text-xs max-w-xs whitespace-pre-wrap"
+                  >
+                    {syncStatusError
+                      ? syncStatusError
+                      : JSON.stringify(syncStatus, null, 2)}
+                  </TooltipContent>
+                </Tooltip>
+              )}
 
+              {/* Wallet balance */}
+              <Button
+                variant="ghost"
+                className="gap-2 h-9 text-xs font-mono"
+                onClick={() => setTopupOpen(true)}
+              >
+                <Wallet className="h-4 w-4" />
+                {balance
+                  ? `${(balance / 1e8).toFixed(4)} ZEC`
+                  : `${(0.0).toFixed(4)} ZEC`}
+              </Button>
+
+              {/* Refresh button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="h-9 w-9"
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  Refresh balance
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Sync status button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSyncStatus}
+                    disabled={isSyncing}
+                    className="h-9 w-9"
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Activity className="w-4 h-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  Refresh sync status
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Rescan button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={rescanWallet}
+                    disabled={rescanLoading}
+                    className="h-9 w-9"
+                  >
+                    {rescanLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FolderSync className="w-4 h-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  Rescan wallet
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {/* Theme toggle */}
             <Button
               variant="ghost"
               size="icon"
@@ -156,6 +294,7 @@ export function AdminNavbar({
               <Bell className="h-4 w-4" />
             </Button>
 
+            {/* User menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -175,11 +314,6 @@ export function AdminNavbar({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>{currentUser?.name}</DropdownMenuLabel>
-                {/* <DropdownMenuSeparator />
-                <DropdownMenuItem>Profile</DropdownMenuItem>
-                <DropdownMenuItem>Billing</DropdownMenuItem>
-                <DropdownMenuItem>Team</DropdownMenuItem>
-                <DropdownMenuSeparator /> */}
                 <DropdownMenuItem asChild>
                   <div onClick={logout}>Log out</div>
                 </DropdownMenuItem>
@@ -224,7 +358,7 @@ export function AdminNavbar({
                     />
                   </div>
 
-                  {/* Mobile Navigation Links */}
+                  {/* Mobile Nav Links */}
                   <div className="flex flex-col gap-2">
                     <Link
                       href="/admin/dashboard"
@@ -240,17 +374,26 @@ export function AdminNavbar({
                     >
                       Bounties
                     </Link>
-                    {/* <Link
-                      href="/admin/leaderboard"
-                      className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      Leaderboard
-                    </Link> */}
                   </div>
 
-                  {/* Divider */}
                   <div className="border-t" />
+
+                  {/* Mobile Sync Status */}
+                  {(syncStatus || syncStatusError) && (
+                    <div className="px-1">
+                      <p className="text-xs text-muted-foreground mb-1.5">
+                        Sync Status
+                      </p>
+                      {syncStatusError ? (
+                        <div className="flex items-center gap-2 text-xs text-destructive font-mono">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          {syncStatusError}
+                        </div>
+                      ) : (
+                        <SyncStatusBadge status={syncStatus} />
+                      )}
+                    </div>
+                  )}
 
                   {/* Mobile Wallet */}
                   <Button
@@ -266,28 +409,56 @@ export function AdminNavbar({
                       ? `${(balance / 1e8).toFixed(4)} ZEC`
                       : `${(0.0).toFixed(4)} ZEC`}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRefreshBalance}
-                    disabled={isUpdating}
-                    className="h-6 w-6 p-0"
-                  >
-                    <RefreshCw
-                      className={`w-3 h-3 ${isUpdating ? "animate-spin" : ""}`}
-                    />
-                  </Button>
 
-                  {/* Mobile Notifications */}
+                  {/* Mobile Refresh + Sync + Rescan */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="gap-2 flex-1"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+                      />
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 flex-1"
+                      onClick={handleSyncStatus}
+                      disabled={isSyncing}
+                    >
+                      {isSyncing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Activity className="h-4 w-4" />
+                      )}
+                      Sync
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 flex-1"
+                      onClick={rescanWallet}
+                      disabled={rescanLoading}
+                    >
+                      {rescanLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <FolderSync className="h-4 w-4" />
+                      )}
+                      Rescan
+                    </Button>
+                  </div>
+
                   <Button variant="outline" className="gap-2 justify-start">
                     <Bell className="h-4 w-4" />
                     Notifications
                   </Button>
 
-                  {/* Divider */}
                   <div className="border-t" />
 
-                  {/* Mobile User Menu */}
+                  {/* Mobile User */}
                   <div className="flex items-center gap-3 px-3 py-2">
                     <Avatar className="h-10 w-10">
                       <AvatarImage
@@ -307,27 +478,6 @@ export function AdminNavbar({
                   </div>
 
                   <div className="flex flex-col gap-1">
-                    {/* <Button
-                      variant="ghost"
-                      className="justify-start"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      Profile
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="justify-start"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      Billing
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="justify-start"
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      Team
-                    </Button> */}
                     <div className="border-t my-2" />
                     <Button
                       variant="ghost"
@@ -343,6 +493,7 @@ export function AdminNavbar({
           </div>
         </div>
       </nav>
+
       {isAdmin && (
         <WalletTopupModal open={topupOpen} onOpenChange={setTopupOpen} />
       )}

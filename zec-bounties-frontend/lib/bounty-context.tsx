@@ -41,6 +41,29 @@ interface ImportWalletData {
   birthdayHeight?: number;
 }
 
+// ── Sync status shape returned by the backend ────────────────────────────────
+export interface SyncStatus {
+  sync_id?: number;
+  in_progress?: boolean;
+  synced_blocks?: number;
+  total_blocks?: number;
+  last_synced_hash?: string;
+  sync_percent?: number;
+
+  percentage_session_blocks_scanned: number;
+  percentage_session_outputs_scanned: number;
+  percentage_total_blocks_scanned: number;
+  percentage_total_outputs_scanned: number;
+  scan_ranges: [];
+  session_blocks_scanned: number;
+  session_orchard_outputs_scanned: number;
+  session_sapling_outputs_scanned: number;
+  sync_start_height: number;
+  total_blocks_scanned: number;
+  total_orchard_outputs_scanned: number;
+  total_sapling_outputs_scanned: number;
+}
+
 interface BountyContextType {
   // Auth
   currentUser: User | null;
@@ -124,6 +147,14 @@ interface BountyContextType {
   address: string | undefined;
   fetchAddresses: () => Promise<void>;
 
+  // Sync status & rescan
+  syncStatus: SyncStatus | null;
+  syncStatusLoading: boolean;
+  syncStatusError: string | null;
+  fetchSyncStatus: () => Promise<void>;
+  rescanWallet: () => Promise<void>;
+  rescanLoading: boolean;
+
   // Applications
   applications: BountyApplication[];
   allApplications: BountyApplication[];
@@ -206,6 +237,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [zcashParams, setZcashParams] = useState<ZcashParams[]>([]);
   const [zcashParamsLoading, setZcashParamsLoading] = useState(false);
 
+  // ── Sync status state ──────────────────────────────────────────────────────
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncStatusLoading, setSyncStatusLoading] = useState(false);
+  const [syncStatusError, setSyncStatusError] = useState<string | null>(null);
+  const [rescanLoading, setRescanLoading] = useState(false);
+
   // Helper function to get auth headers
   const getAuthHeaders = () => {
     const token = localStorage.getItem("authToken");
@@ -220,6 +257,62 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return {
       "Content-Type": "application/json",
     };
+  };
+
+  // ==================== Sync Status & Rescan ====================
+
+  /**
+   * Fetch the current wallet sync status from the backend.
+   * Admin only — calls GET /api/transactions/sync-status
+   */
+  const fetchSyncStatus = async () => {
+    if (!currentUser || currentUser.role !== "ADMIN") return;
+
+    setSyncStatusLoading(true);
+    setSyncStatusError(null);
+    try {
+      const res = await fetch(`${backendUrl}/api/transactions/sync-status`, {
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch sync status");
+
+      const data = await res.json();
+      setSyncStatus(data);
+    } catch (error) {
+      console.error("Failed to fetch sync status:", error);
+      setSyncStatusError(
+        error instanceof Error ? error.message : "Sync status unavailable",
+      );
+    } finally {
+      setSyncStatusLoading(false);
+    }
+  };
+
+  /**
+   * Trigger a wallet rescan.
+   * Admin only — calls GET /api/transactions/rescan
+   * After triggering, refreshes sync status automatically.
+   */
+  const rescanWallet = async () => {
+    if (!currentUser || currentUser.role !== "ADMIN") return;
+
+    setRescanLoading(true);
+    setSyncStatusError(null);
+    try {
+      const res = await fetch(`${backendUrl}/api/transactions/rescan`, {
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) throw new Error("Rescan failed");
+    } catch (error) {
+      console.error("Failed to rescan wallet:", error);
+      setSyncStatusError(
+        error instanceof Error ? error.message : "Rescan failed",
+      );
+    } finally {
+      setRescanLoading(false);
+    }
   };
 
   // ==================== Zcash Params Functions ====================
@@ -460,8 +553,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to set default wallet");
       }
 
-      const response = await res.json();
-
       // Update local state — mark the new default, unmark all others
       setZcashParams((prev) =>
         prev.map((param) => ({
@@ -505,12 +596,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           (param) => param.accountName === data.accountName,
         );
         if (existingIndex >= 0) {
-          // Update existing
           return prev.map((param, idx) =>
             idx === existingIndex ? savedParam : param,
           );
         } else {
-          // Add new
           return [...prev, savedParam];
         }
       });
@@ -593,7 +682,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         prev.map((bounty) => (bounty.id === bountyId ? updated : bounty)),
       );
 
-      // For instant payments, process immediately
       if (updated.paymentScheduled?.type === "instant") {
         await processInstantPayment(bountyId);
       }
@@ -603,7 +691,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Process instant payment separately
   const processInstantPayment = async (bountyId: string) => {
     const bounty = bounties.find((b) => b.id === bountyId);
     if (!bounty || !bounty.assigneeUser?.z_address) return;
@@ -614,7 +701,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           address: bounty.assigneeUser.z_address,
-          amount: Math.floor(bounty.bountyAmount * 100000000), // Convert to zatoshis
+          amount: Math.floor(bounty.bountyAmount * 100000000),
           memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
           bountyId: bountyId,
         }),
@@ -624,7 +711,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Update the existing authorizePayment function
   const authorizeDuePayment = async (bountyIds: string[]) => {
     if (!currentUser || currentUser.role !== "ADMIN") {
       return { success: false, paidCount: 0, skipped: [] };
@@ -642,7 +728,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       if (!res.ok) {
         const errorData = await res.json();
-        // Combine error + details so the toast can split them cleanly
         const message = errorData.details
           ? `${errorData.error}: ${errorData.details}`
           : errorData.error || "Failed to authorize payment";
@@ -679,7 +764,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Update the existing authorizePayment function
   const authorizePayment = async (id: string) => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
@@ -705,7 +789,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         prev.map((bounty) => (bounty.id === id ? updated : bounty)),
       );
 
-      // Process instant payment
       await processInstantPayment(id);
     } catch (error) {
       console.error("Failed to authorize payment:", error);
@@ -713,7 +796,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Function to get all pending batch payments for the backend
   const getPendingBatchPayments = (): Array<{
     address: string;
     amount: number;
@@ -731,12 +813,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
     return pendingBatchBounties.map((bounty) => ({
       address: bounty.assigneeUser!.z_address!,
-      amount: Math.floor(bounty.bountyAmount * 100000000), // Convert ZEC to zatoshis
+      amount: Math.floor(bounty.bountyAmount * 100000000),
       memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
     }));
   };
 
-  // Function to process batch payments
   const processBatchPayments = async (): Promise<{
     success: boolean;
     batchId?: string;
@@ -775,7 +856,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const result = await res.json();
 
-      // Mark bounties as paid if batch was successful
       if (result.success) {
         const batchBountyIds = bounties
           .filter(
@@ -786,7 +866,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           )
           .map((bounty) => bounty.id);
 
-        // Update bounties to mark them as paid
         for (const bountyId of batchBountyIds) {
           await fetch(`${backendUrl}/api/bounties/${bountyId}/mark-paid`, {
             method: "PUT",
@@ -799,7 +878,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        // Refresh bounties
         await fetchBounties();
       }
 
@@ -819,7 +897,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     setCategoriesLoading(true);
     try {
       const res = await fetch(`${backendUrl}/api/bounties/categories`, {
-        headers: getPublicHeaders(), // Changed from getAuthHeaders()
+        headers: getPublicHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to fetch categories");
@@ -833,7 +911,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Create a new category
   const createCategory = async (name: string): Promise<BountyCategory> => {
     if (!currentUser || currentUser.role !== "ADMIN") {
       throw new Error("Unauthorized");
@@ -860,7 +937,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Update a category
   const updateCategory = async (
     id: number,
     name: string,
@@ -892,7 +968,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Delete a category
   const deleteCategory = async (id: number): Promise<void> => {
     if (!currentUser || currentUser.role !== "ADMIN") {
       throw new Error("Unauthorized");
@@ -916,12 +991,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Fetch all users (PUBLIC - no auth required for basic user list)
+  // Fetch all users (PUBLIC)
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
       const res = await fetch(`${backendUrl}/api/bounties/users`, {
-        headers: getPublicHeaders(), // Changed from getAuthHeaders()
+        headers: getPublicHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to fetch users");
@@ -939,7 +1014,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Fetch applications for a specific bounty (admin/creator only)
   const fetchBountyApplications = async (bountyId: string) => {
     if (!currentUser) return [];
 
@@ -955,7 +1029,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const data = await res.json();
 
-      // Store applications for this specific bounty
       setBountyApplications((prev) => ({
         ...prev,
         [bountyId]: data,
@@ -968,7 +1041,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Fetch current user's applications only
   const fetchUserApplications = async () => {
     if (!currentUser) return;
 
@@ -986,7 +1058,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Fetch all applications (admin only)
   const fetchAllUsersApplications = async () => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
@@ -1004,33 +1075,27 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Get current user's application for a specific bounty
   const getUserApplicationForBounty = (
     bountyId: string,
   ): BountyApplication | null => {
     return applications.find((app) => app.bountyId === bountyId) || null;
   };
 
-  // Get ALL applications for a specific bounty (returns array)
   const getAllApplicationsForBounty = (
     bountyId: string,
   ): BountyApplication[] => {
-    // First check if we have applications cached for this bounty
     if (bountyApplications[bountyId]) {
       return bountyApplications[bountyId];
     }
 
-    // Fallback: filter from all applications if available
     if (allApplications.length > 0) {
       return allApplications.filter((app) => app.bountyId === bountyId);
     }
 
-    // If no applications found, try to fetch them
     fetchBountyApplications(bountyId);
     return [];
   };
 
-  // Accept an application (admin/creator only)
   const acceptApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
@@ -1050,14 +1115,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to accept application");
 
       const updatedApplication = await res.json();
-
-      // Update local state
       const bountyId = updatedApplication.bountyId;
 
-      // Refresh bounty applications for this bounty
       await fetchBountyApplications(bountyId);
-
-      // Refresh bounties to update assignment
       await fetchBounties();
 
       return updatedApplication;
@@ -1067,7 +1127,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Reject an application (admin/creator only)
   const rejectApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
@@ -1087,11 +1146,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to reject application");
 
       const updatedApplication = await res.json();
-
-      // Update local state
       const bountyId = updatedApplication.bountyId;
 
-      // Refresh bounty applications for this bounty
       await fetchBountyApplications(bountyId);
 
       return updatedApplication;
@@ -1101,7 +1157,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Submit work for a bounty (assignee only)
   const submitWork = async (
     bountyId: string,
     submissionData: {
@@ -1123,7 +1178,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to submit work");
       }
 
-      // Refresh bounties to get updated data
       await fetchBounties();
     } catch (error) {
       console.error("Failed to submit work:", error);
@@ -1186,11 +1240,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         setAddress(data.encoded_address);
       }
     } catch (error) {
-      console.error("Failed to fetch balance:", error);
+      console.error("Failed to fetch addresses:", error);
     }
   };
 
-  // Review work submission (creator/admin only)
   const reviewWorkSubmission = async (
     submissionId: string,
     reviewData: {
@@ -1215,7 +1268,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to review submission");
       }
 
-      // Refresh bounties to get updated data
       await fetchBounties();
 
       return await res.json();
@@ -1225,7 +1277,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Get all user's application for a specific bounty
   const getAllApplicationForBounty = (
     bountyId: string,
   ): BountyApplication | null => {
@@ -1237,7 +1288,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       const savedToken = localStorage.getItem("authToken");
 
-      // Always fetch public data (bounties, categories, users)
       await Promise.all([fetchBounties(), fetchUsers(), fetchCategories()]);
 
       if (savedToken) {
@@ -1265,7 +1315,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
   }, []);
 
-  // Fetch user applications when currentUser changes
+  // Fetch user-specific data when currentUser changes
   useEffect(() => {
     if (currentUser) {
       fetchUserApplications();
@@ -1275,6 +1325,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setApplications([]);
       setAllApplications([]);
       setZcashParams([]);
+      setSyncStatus(null);
+      setSyncStatusError(null);
     }
   }, [currentUser]);
 
@@ -1328,7 +1380,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         case "application_created":
           setApplications((prev) => [...prev, msg.payload]);
           setAllApplications((prev) => [...prev, msg.payload]);
-          // Update bountyApplications for specific bounty
           setBountyApplications((prev) => ({
             ...prev,
             [msg.payload.bountyId]: [
@@ -1345,14 +1396,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           setAllApplications((prev) =>
             prev.map((app) => (app.id === msg.payload.id ? msg.payload : app)),
           );
-          // Update bountyApplications for specific bounty
           setBountyApplications((prev) => ({
             ...prev,
             [msg.payload.bountyId]: (prev[msg.payload.bountyId] || []).map(
               (app) => (app.id === msg.payload.id ? msg.payload : app),
             ),
           }));
-          // Refresh bounties to update assignee
           fetchBounties();
           break;
 
@@ -1363,7 +1412,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           setAllApplications((prev) =>
             prev.filter((app) => app.id !== msg.payload.id),
           );
-          // Update bountyApplications for specific bounty
           setBountyApplications((prev) => ({
             ...prev,
             [msg.payload.bountyId]: (prev[msg.payload.bountyId] || []).filter(
@@ -1414,21 +1462,19 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           break;
 
         case "transactions_fetched":
-          // Update transactions list in state if you have one
-          // setTransactions(msg.payload.transactions);
           break;
 
         case "balance_fetched":
           setBalance(msg.payload.balance);
           break;
 
-        case "sync_status_checked":
-          // Handle sync status if needed
+        case "sync_status":
+          // Update sync status from WebSocket push
+          setSyncStatus(msg.payload.data);
+          setSyncStatusError(null);
           break;
 
         case "account_created":
-          // Handle new account creation
-          // Optionally refresh Zcash params
           fetchZcashParams();
           break;
 
@@ -1436,14 +1482,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           setAddress(msg.payload.addresses?.encoded_address);
           break;
 
-        case "payment_authorized":
-          // Refresh bounties and transactions when payment is authorized
-          fetchBounties();
-          fetchTransactionHashes();
-          break;
-
         case "bounty_payment_authorized":
-          // Update specific bounty with payment authorization
           setBounties((prev) =>
             prev.map((bounty) =>
               bounty.id === msg.payload.id ? msg.payload : bounty,
@@ -1452,21 +1491,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           break;
 
         case "batch_payment_processed":
-          // Refresh bounties and show success notification
           fetchBounties();
           fetchTransactionHashes();
           fetchBalance();
           break;
 
         case "instant_payment_processed":
-          // Refresh bounty and show success notification
           fetchBounties();
           fetchTransactionHashes();
           fetchBalance();
           break;
 
         case "bounty_marked_paid":
-          // Update bounty to show it's been paid
           setBounties((prev) =>
             prev.map((bounty) =>
               bounty.id === msg.payload.id ? msg.payload : bounty,
@@ -1475,7 +1511,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           break;
 
         case "bounty_paid":
-          // Refresh bounties and transactions after payment
           fetchBounties();
           fetchTransactionHashes();
           fetchBalance();
@@ -1500,12 +1535,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  // Fetch all bounties (PUBLIC - no auth required)
+  // Fetch all bounties (PUBLIC)
   const fetchBounties = async () => {
     setBountiesLoading(true);
     try {
       const res = await fetch(`${backendUrl}/api/bounties`, {
-        headers: getPublicHeaders(), // Changed from getAuthHeaders()
+        headers: getPublicHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to fetch bounties");
@@ -1519,7 +1554,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Create a new bounty
   const createBounty = async (data: BountyFormData) => {
     if (!currentUser) return;
 
@@ -1554,7 +1588,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Update an existing bounty
   const updateBounty = async (id: string, data: Partial<BountyFormData>) => {
     if (!currentUser) return;
 
@@ -1585,7 +1618,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Update bounty status
   const updateBountyStatus = async (id: string, status: Bounty["status"]) => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
@@ -1608,7 +1640,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Approve/reject a bounty
   const approveBounty = async (id: string, approved: boolean) => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
@@ -1631,7 +1662,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Delete a bounty
   const deleteBounty = async (id: string) => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
@@ -1650,7 +1680,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Login function with bounty and user fetching
   const login = async (
     email: string,
     password: string,
@@ -1663,7 +1692,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!res.ok) {
-        const data = await res.json();
         return { success: false };
       }
 
@@ -1674,7 +1702,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       setCurrentUser(data.user);
 
-      // Fetch bounties, users, and categories after successful login
       await Promise.all([fetchBounties(), fetchUsers(), fetchCategories()]);
 
       return { success: true, user: data.user };
@@ -1684,7 +1711,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Logout function
   const logout = () => {
     localStorage.removeItem("authToken");
     localStorage.removeItem("currentUser");
@@ -1692,12 +1718,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     setApplications([]);
     setAllApplications([]);
     setZcashParams([]);
+    setSyncStatus(null);
+    setSyncStatusError(null);
     fetchBounties();
     fetchCategories();
     fetchUsers();
   };
 
-  // Apply to bounty
   const applyToBounty = async (bountyId: string, message: string) => {
     if (!currentUser) return;
 
@@ -1728,12 +1755,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Legacy function for backward compatibility
   const editBounty = (id: string, data: Partial<BountyFormData>) => {
     updateBounty(id, data);
   };
 
-  // Verify Z-address
   const verifyZaddress = async (z_address: string) => {
     if (!currentUser) return;
 
@@ -1741,9 +1766,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${backendUrl}/auth/verify-zaddress`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          z_address: z_address,
-        }),
+        body: JSON.stringify({ z_address }),
       });
 
       if (!res.ok) {
@@ -1752,15 +1775,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       }
 
       const data = await res.json();
-      const result: boolean = data.isVerified;
-      return result;
+      return data.isVerified as boolean;
     } catch (error) {
       console.error("Failed to verify zaddress:", error);
       return false;
     }
   };
 
-  // Update Z-address
   const zAddressUpdate = async (z_address: string) => {
     if (!currentUser) return;
 
@@ -1768,9 +1789,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${backendUrl}/auth/update-zaddress`, {
         method: "PATCH",
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          z_address: z_address,
-        }),
+        body: JSON.stringify({ z_address }),
       });
 
       if (!res.ok) {
@@ -1850,6 +1869,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchBalance,
         address,
         fetchAddresses,
+        syncStatus,
+        syncStatusLoading,
+        syncStatusError,
+        fetchSyncStatus,
+        rescanWallet,
+        rescanLoading,
         zcashParams,
         zcashParamsLoading,
         fetchZcashParams,
