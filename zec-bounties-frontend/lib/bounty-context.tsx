@@ -75,6 +75,10 @@ interface BountyContextType {
   logout: () => void;
   setCurrentUser: React.Dispatch<React.SetStateAction<User | null>>;
 
+  // Role switching (isRobin users only)
+  switchRole: () => Promise<void>;
+  isSwitchingRole: boolean;
+
   // Categories
   categories: BountyCategory[];
   categoriesLoading: boolean;
@@ -218,6 +222,7 @@ const BountyContext = createContext<BountyContextType | undefined>(undefined);
 export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [bountiesLoading, setBountiesLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -259,6 +264,39 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return {
       "Content-Type": "application/json",
     };
+  };
+
+  // ==================== Role Switching ====================
+
+  const switchRole = async (): Promise<void> => {
+    if (!currentUser || !currentUser.isRobin) return;
+
+    const newRole = currentUser.role === "ADMIN" ? "CLIENT" : "ADMIN";
+
+    setIsSwitchingRole(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/bounties/switch-role`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to switch role");
+      }
+
+      const data = await res.json();
+
+      // Update currentUser in state and localStorage
+      setCurrentUser(data.user);
+      localStorage.setItem("currentUser", JSON.stringify(data.user));
+    } catch (error) {
+      console.error("Failed to switch role:", error);
+      throw error;
+    } finally {
+      setIsSwitchingRole(false);
+    }
   };
 
   // ==================== Sync Status & Rescan ====================
@@ -1472,7 +1510,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           break;
 
         case "sync_status":
-          // Update sync status from WebSocket push
           setSyncStatus(msg.payload.data);
           setSyncStatusError(null);
           break;
@@ -1825,6 +1862,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         setCurrentUser,
+        switchRole,
+        isSwitchingRole,
         categories,
         categoriesLoading,
         fetchCategories,

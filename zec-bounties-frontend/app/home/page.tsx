@@ -21,6 +21,7 @@ import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
 import { ProtectedRoute } from "@/components/auth/protected-route";
+import { useRoleGuard } from "@/hooks/use-role-guard";
 
 const KANBAN_COLUMNS: {
   status: BountyStatus;
@@ -309,6 +310,7 @@ function HomeContent() {
 }
 
 export default function HomePage() {
+  useRoleGuard("CLIENT");
   return (
     <ProtectedRoute>
       <HomeContent />

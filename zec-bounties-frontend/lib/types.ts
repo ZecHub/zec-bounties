@@ -16,6 +16,7 @@ export interface User {
   z_address?: string; // Orchard Wallet
   avatar?: string; // GitHub avatar URL
   githubId?: string; // GitHub username/ID
+  isRobin: Boolean;
 }
 
 export interface BountyCategory {
