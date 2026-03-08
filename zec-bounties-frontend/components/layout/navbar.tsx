@@ -7,11 +7,12 @@ import {
   Sun,
   Bell,
   Search,
-  Terminal,
   Wallet,
   Menu,
-  X,
   LogIn,
+  ShieldCheck,
+  User,
+  Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,11 +31,86 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useState } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
+
+// ── Role toggle button ────────────────────────────────────────────────────────
+function RoleToggleButton({ compact = false }: { compact?: boolean }) {
+  const { currentUser, switchRole, isSwitchingRole } = useBounty();
+  const router = useRouter();
+
+  if (!currentUser?.isRobin) return null;
+
+  const isAdmin = currentUser.role === "ADMIN";
+
+  const handleSwitch = async () => {
+    await switchRole();
+    router.push(isAdmin ? "/home" : "/admin");
+  };
+
+  if (compact) {
+    return (
+      <Button
+        variant="outline"
+        className="gap-2 justify-start"
+        onClick={handleSwitch}
+        disabled={isSwitchingRole}
+      >
+        {isSwitchingRole ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : isAdmin ? (
+          <User className="h-4 w-4" />
+        ) : (
+          <ShieldCheck className="h-4 w-4" />
+        )}
+        {isSwitchingRole
+          ? "Switching..."
+          : isAdmin
+            ? "Switch to Client"
+            : "Switch to Admin"}
+      </Button>
+    );
+  }
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 text-xs font-medium border-dashed"
+            onClick={handleSwitch}
+            disabled={isSwitchingRole}
+          >
+            {isSwitchingRole ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : isAdmin ? (
+              <User className="h-3.5 w-3.5" />
+            ) : (
+              <ShieldCheck className="h-3.5 w-3.5" />
+            )}
+            <span className="hidden xl:inline">
+              {isSwitchingRole ? "..." : isAdmin ? "Client" : "Admin"}
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          {isAdmin ? "Switch to Client view" : "Switch to Admin view"}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 export function Navbar({
   isAdmin = false,
@@ -119,6 +195,9 @@ export function Navbar({
               </Button>
             )}
 
+            {/* ── Role toggle (isRobin only) ── */}
+            {currentUser && <RoleToggleButton />}
+
             <Button
               variant="ghost"
               size="icon"
@@ -136,7 +215,6 @@ export function Navbar({
               </Button>
             )}
 
-            {/* ⭐ Show Login button if not logged in */}
             {!currentUser ? (
               <Button
                 onClick={() => router.push("/login")}
@@ -204,7 +282,6 @@ export function Navbar({
                   <SheetTitle>Menu</SheetTitle>
                 </SheetHeader>
                 <div className="flex flex-col gap-4 mt-6">
-                  {/* Mobile Search */}
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -216,7 +293,6 @@ export function Navbar({
                     />
                   </div>
 
-                  {/* ⭐ Mobile Login Button - Show if not logged in */}
                   {!currentUser && (
                     <>
                       <Button
@@ -233,7 +309,6 @@ export function Navbar({
                     </>
                   )}
 
-                  {/* Mobile Navigation Links - Only show if logged in */}
                   {currentUser && (
                     <>
                       <div className="flex flex-col gap-2">
@@ -264,10 +339,8 @@ export function Navbar({
                         )}
                       </div>
 
-                      {/* Divider */}
                       <div className="border-t" />
 
-                      {/* Mobile Wallet (Admin only) */}
                       {isAdmin && (
                         <Button
                           variant="outline"
@@ -282,16 +355,16 @@ export function Navbar({
                         </Button>
                       )}
 
-                      {/* Mobile Notifications */}
+                      {/* ── Mobile role toggle (isRobin only) ── */}
+                      <RoleToggleButton compact />
+
                       <Button variant="outline" className="gap-2 justify-start">
                         <Bell className="h-4 w-4" />
                         Notifications
                       </Button>
 
-                      {/* Divider */}
                       <div className="border-t" />
 
-                      {/* Mobile User Menu */}
                       <div className="flex items-center gap-3 px-3 py-2">
                         <Avatar className="h-10 w-10">
                           <AvatarImage

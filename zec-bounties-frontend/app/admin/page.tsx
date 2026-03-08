@@ -66,8 +66,10 @@ import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { BountyAdminCard } from "@/components/admin/bounty-admin-card";
 import { WalletGuard } from "@/components/settings/wallet-guard";
 import { AuthorizePaymentPanel } from "@/components/payments/authorize-payment-panel";
+import { useRoleGuard } from "@/hooks/use-role-guard";
 
 export default function AdminDashboard() {
+  useRoleGuard("ADMIN");
   const {
     bounties,
     nonAdminUsers,

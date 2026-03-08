@@ -2,69 +2,28 @@
 
 import { useState, useEffect, ReactNode } from "react";
 import { ImportWalletModal } from "./import-modal";
-import { backendUrl } from "@/lib/configENV";
+import { useBounty } from "@/lib/bounty-context";
 
 interface WalletGuardProps {
   children: ReactNode;
 }
 
 export function WalletGuard({ children }: WalletGuardProps) {
-  const [isCheckingParams, setIsCheckingParams] = useState(true);
-  const [hasParams, setHasParams] = useState(false);
+  const { zcashParams, zcashParamsLoading } = useBounty();
   const [showImportModal, setShowImportModal] = useState(false);
 
+  const hasParams = zcashParams && zcashParams.length > 0;
+
+  // Show import modal whenever params are empty (covers deletion case)
   useEffect(() => {
-    checkZcashParams();
-  }, []);
-
-  const checkZcashParams = async () => {
-    try {
-      const token = localStorage.getItem("authToken");
-      if (!token) {
-        setIsCheckingParams(false);
-        setHasParams(true); // Allow access if no token (auth will handle)
-        return;
-      }
-
-      const response = await fetch(`${backendUrl}/auth/has-zcash-params`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (!data.hasParams) {
-          // No params found - show modal as required
-          setHasParams(false);
-          setShowImportModal(true);
-        } else {
-          // Params exist
-          setHasParams(true);
-        }
-      } else {
-        // On error, allow access (don't block user)
-        setHasParams(true);
-      }
-    } catch (error) {
-      console.error("Error checking Zcash params:", error);
-      // On error, allow access (don't block user)
-      setHasParams(true);
-    } finally {
-      setIsCheckingParams(false);
+    if (!zcashParamsLoading && !hasParams) {
+      setShowImportModal(true);
+    } else if (hasParams) {
+      setShowImportModal(false);
     }
-  };
+  }, [hasParams, zcashParamsLoading]);
 
-  const handleImportComplete = () => {
-    setShowImportModal(false);
-    setHasParams(true);
-    // Optionally refresh or reload data here
-  };
-
-  // Show loading state while checking
-  if (isCheckingParams) {
+  if (zcashParamsLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -75,8 +34,6 @@ export function WalletGuard({ children }: WalletGuardProps) {
     );
   }
 
-  // Show import modal if params don't exist
-  // This blocks the entire app until wallet is imported
   if (!hasParams) {
     return (
       <>
@@ -90,13 +47,17 @@ export function WalletGuard({ children }: WalletGuardProps) {
         </div>
         <ImportWalletModal
           open={showImportModal}
-          onOpenChange={handleImportComplete}
+          onOpenChange={(open) => {
+            // Only allow closing the modal if a wallet was successfully imported
+            if (!open && hasParams) {
+              setShowImportModal(false);
+            }
+          }}
           isRequired={true}
         />
       </>
     );
   }
 
-  // Render children if params exist
   return <>{children}</>;
 }
