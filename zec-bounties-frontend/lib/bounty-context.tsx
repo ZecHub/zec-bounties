@@ -92,10 +92,16 @@ interface BountyContextType {
   bountiesLoading: boolean;
   createBounty: (data: BountyFormData) => Promise<void>;
   updateBounty: (id: string, data: Partial<BountyFormData>) => Promise<void>;
-  updateBountyStatus: (id: string, status: Bounty["status"]) => Promise<void>;
+  updateBountyStatus: (
+    id: string,
+    status: Bounty["status"],
+    winnerId?: string,
+  ) => Promise<void>;
   approveBounty: (id: string, approved: boolean) => Promise<void>;
   authorizePayment: (id: string) => Promise<void>;
   paymentIDs: string[] | undefined;
+  paymentChain: string | undefined;
+  paymentServerUrl: string | undefined;
   authorizeDuePayment: (bountyIds: string[]) => Promise<{
     success: boolean;
     paidCount: number;
@@ -249,6 +255,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [syncStatusError, setSyncStatusError] = useState<string | null>(null);
   const [rescanStatus, setRescanStatus] = useState<string | null>(null);
   const [rescanLoading, setRescanLoading] = useState(false);
+  const [paymentChain, setPaymentChain] = useState<string | undefined>(
+    undefined,
+  );
+  const [paymentServerUrl, setPaymentServerUrl] = useState<string | undefined>(
+    undefined,
+  );
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -387,7 +399,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         setZcashParams((prev) => [...prev, response.data]);
       }
 
-      // Refresh Zcash params
+      try {
+        await setDefaultWallet(data.accountName);
+      } catch (e) {
+        console.warn("Wallet imported but failed to set as default:", e);
+      }
+
       await fetchZcashParams();
 
       return {
@@ -798,7 +815,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        setPaymentIDs(data);
+        // Backend now returns { transactions, chain, serverUrl }
+        setPaymentIDs(data.transactions);
+        setPaymentChain(data.chain);
+        setPaymentServerUrl(data.serverUrl);
       }
     } catch (error) {
       console.error("Failed to fetch transaction hashes:", error);
@@ -1628,10 +1648,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateBounty = async (id: string, data: Partial<BountyFormData>) => {
+  const updateBounty = async (
+    id: string,
+    data: Partial<BountyFormData> & { userIds?: string[] },
+  ) => {
     if (!currentUser) return;
 
     try {
+      // 1. Update core bounty fields
       const res = await fetch(`${backendUrl}/api/bounties/${id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
@@ -1641,7 +1665,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           ...(data.bountyAmount && { bountyAmount: data.bountyAmount }),
           ...(data.timeToComplete && { timeToComplete: data.timeToComplete }),
           ...(data.assignee !== undefined && {
-            assignee: data.assignee === "none" ? null : data.assignee,
+            assignees: data.assignee === "none" ? null : data.userIds,
           }),
         }),
       });
@@ -1652,23 +1676,60 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setBounties((prev) =>
         prev.map((bounty) => (bounty.id === id ? updated : bounty)),
       );
+
+      // 2. If userIds provided, sync assignees via the assignees endpoint
+      if (data.userIds !== undefined) {
+        const assignRes = await fetch(
+          `${backendUrl}/api/bounties/${id}/assignees`,
+          {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ userIds: data.userIds }),
+          },
+        );
+
+        if (!assignRes.ok) {
+          const errData = await assignRes.json();
+          throw new Error(errData.error || "Failed to update assignees");
+        }
+
+        // Re-fetch bounties so assignees array is fresh
+        await fetchBounties();
+      }
     } catch (error) {
       console.error("Failed to update bounty:", error);
       throw error;
     }
   };
 
-  const updateBountyStatus = async (id: string, status: Bounty["status"]) => {
+  const updateBountyStatus = async (
+    id: string,
+    status: Bounty["status"],
+    winnerId?: string,
+  ) => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
     try {
       const res = await fetch(`${backendUrl}/api/bounties/${id}/status`, {
         method: "PATCH",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(winnerId && { winnerId }),
+        }),
       });
 
-      if (!res.ok) throw new Error("Failed to update bounty status");
+      if (!res.ok) {
+        const errorData = await res.json();
+        // Surface the requiresWinner signal so the UI can react
+        if (errorData.requiresWinner) {
+          throw Object.assign(new Error("Winner selection required"), {
+            requiresWinner: true,
+            assignees: errorData.assignees,
+          });
+        }
+        throw new Error(errorData.error || "Failed to update bounty status");
+      }
 
       const updated = await res.json();
       setBounties((prev) =>
@@ -1845,14 +1906,29 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Populate user data in bounties
-  const populatedBounties = bounties.map((bounty) => ({
-    ...bounty,
-    createdByUser: users.find((u) => u.id === bounty.createdBy),
-    assigneeUser: bounty.assignee
-      ? nonAdminUsers.find((u) => u.id === bounty.assignee)
-      : undefined,
-    userApplication: applications.find((app) => app.bountyId === bounty.id),
-  }));
+  // AFTER
+  const populatedBounties = bounties.map((bounty) => {
+    // Prefer the legacy single-assignee field; fall back to the first entry in
+    // the multi-assignee array so downstream consumers (e.g. payment panel)
+    // always get a fully-populated user object.
+    const primaryAssigneeId =
+      bounty.assignee ?? bounty.assignees?.[0]?.userId ?? null;
+
+    return {
+      ...bounty,
+      createdByUser: users.find((u) => u.id === bounty.createdBy),
+      assigneeUser: primaryAssigneeId
+        ? nonAdminUsers.find((u) => u.id === primaryAssigneeId)
+        : undefined,
+      // Also hydrate every entry in the assignees array with its user object
+      assignees: (bounty.assignees ?? []).flatMap((a) => {
+        const user = nonAdminUsers.find((u) => u.id === a.userId);
+        if (!user) return []; // skip if user not found
+        return [{ ...a, user }];
+      }),
+      userApplication: applications.find((app) => app.bountyId === bounty.id),
+    };
+  });
 
   return (
     <BountyContext.Provider
@@ -1878,6 +1954,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         approveBounty,
         authorizePayment,
         paymentIDs,
+        paymentChain,
+        paymentServerUrl,
+
         fetchTransactionHashes,
         authorizeDuePayment,
         deleteBounty,

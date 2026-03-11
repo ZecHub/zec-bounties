@@ -58,7 +58,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
-import { BountyStatus, WorkSubmission } from "@/lib/types";
+import { BountyStatus, WorkSubmission, Bounty } from "@/lib/types";
 import { formatStatus } from "@/lib/utils";
 import { format } from "date-fns";
 import { GlobalSettingsModal } from "@/components/settings/global-settings-modal";
@@ -67,6 +67,9 @@ import { BountyAdminCard } from "@/components/admin/bounty-admin-card";
 import { WalletGuard } from "@/components/settings/wallet-guard";
 import { AuthorizePaymentPanel } from "@/components/payments/authorize-payment-panel";
 import { useRoleGuard } from "@/hooks/use-role-guard";
+import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
+import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
+import { toast } from "sonner";
 
 export default function AdminDashboard() {
   useRoleGuard("ADMIN");
@@ -82,6 +85,8 @@ export default function AdminDashboard() {
     fetchWorkSubmissions,
     reviewWorkSubmission,
     paymentIDs,
+    paymentChain,
+    paymentServerUrl,
     fetchTransactionHashes,
     currentUser,
   } = useBounty();
@@ -99,6 +104,8 @@ export default function AdminDashboard() {
   const [allSubmissions, setAllSubmissions] = useState<WorkSubmission[]>([]);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
+  const [editingBounty, setEditingBounty] = useState<Bounty | null>(null);
+  const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
 
   // Load all submissions on mount for the indicators
   useEffect(() => {
@@ -124,8 +131,43 @@ export default function AdminDashboard() {
     }
   }, [bounties, fetchWorkSubmissions, currentUser]);
 
-  const handleStatusChange = (bountyId: string, newStatus: BountyStatus) => {
-    updateBountyStatus(bountyId, newStatus);
+  const handleStatusChange = async (
+    bountyId: string,
+    newStatus: BountyStatus,
+  ) => {
+    if (newStatus !== "DONE") {
+      updateBountyStatus(bountyId, newStatus);
+      return;
+    }
+
+    const bounty = bounties.find((b) => b.id === bountyId);
+    if (!bounty) return;
+
+    const assigneeCount = bounty.assignees?.length ?? 0;
+
+    // Add this check:
+    if (assigneeCount === 0) {
+      toast.error("Cannot mark as done", {
+        description:
+          "This bounty has no assignees. Assign at least one person before marking it done.",
+      });
+      return;
+    }
+
+    if (assigneeCount === 1) {
+      try {
+        await updateBountyStatus(bountyId, "DONE");
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setWinnerBounty(bounty);
+    }
+  };
+
+  const handleWinnerConfirm = async (bountyId: string, winnerId: string) => {
+    await updateBountyStatus(bountyId, "DONE", winnerId);
+    setWinnerBounty(null);
   };
 
   const handleApprovalChange = async (bountyId: string, approved: boolean) => {
@@ -402,9 +444,12 @@ export default function AdminDashboard() {
                                   <div className="h-8 w-8 rounded-md bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
                                     {bounty.createdByUser?.name?.[0] ?? "?"}
                                   </div>
-                                  <span className="line-clamp-1">
+                                  <button
+                                    className="line-clamp-1 text-left hover:underline hover:text-primary transition-colors"
+                                    onClick={() => setEditingBounty(bounty)}
+                                  >
                                     {bounty.title}
-                                  </span>
+                                  </button>
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -420,11 +465,11 @@ export default function AdminDashboard() {
                                   <div
                                     className={`h-2 w-2 rounded-full ${
                                       bounty.status === "TO_DO"
-                                        ? "bg-green-500"
+                                        ? "bg-slate-400"
                                         : bounty.status === "IN_PROGRESS"
                                           ? "bg-blue-500"
                                           : bounty.status === "DONE"
-                                            ? "bg-green-600"
+                                            ? "bg-green-500"
                                             : "bg-yellow-500"
                                     }`}
                                   />
@@ -711,7 +756,11 @@ export default function AdminDashboard() {
                   )}
 
                   {paymentIDs && paymentIDs.length > 0 ? (
-                    <PaymentTxIdsTable paymentIDs={paymentIDs} />
+                    <PaymentTxIdsTable
+                      paymentIDs={paymentIDs}
+                      chain={paymentChain}
+                      serverUrl={paymentServerUrl}
+                    />
                   ) : (
                     <div className="text-center py-12">
                       <RefreshCw className="w-12 h-12 mx-auto text-slate-400 dark:text-slate-600 mb-4" />
@@ -727,6 +776,23 @@ export default function AdminDashboard() {
               </>
             )}
           </div>
+
+          <EditBountyModal
+            bounty={editingBounty}
+            open={!!editingBounty}
+            onOpenChange={(open) => {
+              if (!open) setEditingBounty(null);
+            }}
+          />
+
+          <SelectWinnerModal
+            bounty={winnerBounty}
+            open={!!winnerBounty}
+            onOpenChange={(open) => {
+              if (!open) setWinnerBounty(null);
+            }}
+            onConfirm={handleWinnerConfirm}
+          />
 
           <AdminBountyModal
             open={showAdminBountyModal}

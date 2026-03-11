@@ -1,6 +1,6 @@
 "use client";
 
-import { Bounty } from "@/lib/types";
+import { Bounty, WorkSubmission } from "@/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +17,11 @@ import {
   Clock,
   Users,
   Shield,
-  Code,
   MessageSquare,
   CheckCircle2,
-  Upload,
   Send,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
 import { format } from "date-fns";
@@ -43,6 +41,7 @@ export function BountyDetailModal({
     currentUser,
     applyToBounty,
     getUserApplicationForBounty,
+    fetchWorkSubmissions,
     submitWork,
   } = useBounty();
 
@@ -53,6 +52,27 @@ export function BountyDetailModal({
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrl, setDeliverableUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Local work submissions state — fetched when modal opens
+  const [workSubmissions, setWorkSubmissions] = useState<WorkSubmission[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+
+  // Fetch work submissions whenever the modal opens for an assigned user
+  useEffect(() => {
+    if (!open || !bounty || !currentUser) return;
+
+    const isAssigned =
+      bounty.assignees?.some((a) => a.userId === currentUser.id) ||
+      bounty.assignee === currentUser.id;
+
+    if (!isAssigned) return;
+
+    setSubmissionsLoading(true);
+    fetchWorkSubmissions(bounty.id)
+      .then((data) => setWorkSubmissions(data ?? []))
+      .catch(() => setWorkSubmissions([]))
+      .finally(() => setSubmissionsLoading(false));
+  }, [open, bounty?.id, currentUser?.id]);
 
   if (!bounty) return null;
 
@@ -65,26 +85,33 @@ export function BountyDetailModal({
   const isAssignedToCurrentUser =
     currentUser &&
     (bounty.assignees?.some((a) => a.userId === currentUser.id) ||
-      bounty.assignee === currentUser.id); // ← fallback for legacy single-assignee bounties
+      bounty.assignee === currentUser.id);
 
-  // Check if user can submit work (assigned and bounty is in progress)
+  // Find this user's own WorkSubmission (submittedBy === currentUser.id)
+  const userWorkSubmission = currentUser
+    ? (workSubmissions.find((s) => s.submittedBy === currentUser.id) ?? null)
+    : null;
+  const hasCurrentUserSubmitted = !!userWorkSubmission;
+
+  // Can submit: assigned, hasn't personally submitted yet, bounty not closed
   const canSubmitWork =
     isAssignedToCurrentUser &&
-    (bounty.status === "TO_DO" || bounty.status === "IN_PROGRESS");
+    !hasCurrentUserSubmitted &&
+    !submissionsLoading &&
+    bounty.status !== "DONE" &&
+    bounty.status !== "CANCELLED";
 
-  // Updated logic using the context method
+  // Can apply: logged in, not the creator, not already applied, not already assigned
   const canApply =
     currentUser &&
     bounty.createdBy !== currentUser.id &&
     !userApplication &&
     !isAssignedToCurrentUser;
 
-  // User has already applied
   const hasApplied = !!userApplication;
 
   const handleApply = async () => {
     if (!applicationMessage.trim()) return;
-
     setIsApplying(true);
     try {
       await applyToBounty(bounty.id, applicationMessage);
@@ -100,18 +127,18 @@ export function BountyDetailModal({
 
   const handleSubmitWork = async () => {
     if (!submissionDescription.trim() || !deliverableUrl.trim()) return;
-
     setIsSubmitting(true);
     try {
       await submitWork(bounty.id, {
         description: submissionDescription,
-        deliverableUrl: deliverableUrl,
+        deliverableUrl,
       });
-
-      // Reset form
       setSubmissionDescription("");
       setDeliverableUrl("");
       toast.success("Work submitted successfully!");
+      // Re-fetch submissions so the UI immediately reflects the new submission
+      const updated = await fetchWorkSubmissions(bounty.id);
+      setWorkSubmissions(updated ?? []);
     } catch (error) {
       console.error("Failed to submit work:", error);
       toast.error("Failed to submit work");
@@ -125,6 +152,7 @@ export function BountyDetailModal({
     setApplicationMessage("");
     setSubmissionDescription("");
     setDeliverableUrl("");
+    setWorkSubmissions([]);
   };
 
   return (
@@ -179,24 +207,12 @@ export function BountyDetailModal({
               </p>
             </div>
 
-            {/* <div>
-              <h4 className="font-semibold mb-2 flex items-center gap-2">
-                <Code className="h-4 w-4 text-primary" /> Requirements
-              </h4>
-              <ul className="text-sm text-muted-foreground space-y-1 list-disc pl-4">
-                <li>Demonstrable experience in {bounty.categoryId}</li>
-                <li>Clean, well-documented code submission</li>
-                <li>Adherence to the project's security guidelines</li>
-                <li>Passes all automated test suites</li>
-              </ul>
-            </div> */}
-
-            {/* Work Submission Section for Assigned User */}
+            {/* Work Submission — only shown if assigned and not yet submitted */}
             {canSubmitWork && (
               <div className="border-t pt-6">
                 <h3 className="text-lg font-semibold mb-4">Submit Your Work</h3>
                 <div className="space-y-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                  <p className="text-green-700 dark:text-green-300 text-sm mb-4">
+                  <p className="text-green-700 dark:text-green-300 text-sm">
                     You are assigned to this bounty. Ready to submit your
                     completed work?
                   </p>
@@ -257,7 +273,86 @@ export function BountyDetailModal({
               </div>
             )}
 
-            {/* Application Section for non-assigned users */}
+            {/* Already submitted — show this user's WorkSubmission */}
+            {isAssignedToCurrentUser && hasCurrentUserSubmitted && (
+              <div className="border-t pt-6">
+                <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      <span className="font-semibold text-green-800 dark:text-green-200">
+                        Work Submitted
+                      </span>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        userWorkSubmission?.status === "approved"
+                          ? "text-green-600 border-green-200"
+                          : userWorkSubmission?.status === "rejected"
+                            ? "text-red-600 border-red-200"
+                            : userWorkSubmission?.status === "needs_revision"
+                              ? "text-orange-600 border-orange-200"
+                              : "text-yellow-600 border-yellow-200"
+                      }
+                    >
+                      {userWorkSubmission?.status ?? "pending"}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm text-green-700 dark:text-green-300 mb-1">
+                        <strong>Your submission:</strong>
+                      </p>
+                      <p className="text-green-600 dark:text-green-400 text-sm bg-white dark:bg-green-950/30 p-3 rounded border">
+                        {userWorkSubmission?.description}
+                      </p>
+                    </div>
+
+                    {userWorkSubmission?.deliverableUrl && (
+                      <div>
+                        <p className="text-sm text-green-700 dark:text-green-300 mb-1">
+                          <strong>Deliverable:</strong>
+                        </p>
+                        <a
+                          href={userWorkSubmission.deliverableUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 underline break-all"
+                        >
+                          {userWorkSubmission.deliverableUrl}
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="text-xs text-green-600 dark:text-green-400">
+                      Submitted on:{" "}
+                      {userWorkSubmission?.submittedAt
+                        ? format(
+                            new Date(userWorkSubmission.submittedAt),
+                            "PPP 'at' p",
+                          )
+                        : "Unknown"}
+                    </div>
+
+                    {userWorkSubmission?.status === "needs_revision" &&
+                      userWorkSubmission.reviewNotes && (
+                        <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded">
+                          <p className="text-sm font-semibold text-orange-700 dark:text-orange-300 mb-1">
+                            Revision Notes:
+                          </p>
+                          <p className="text-sm text-orange-600 dark:text-orange-400">
+                            {userWorkSubmission.reviewNotes}
+                          </p>
+                        </div>
+                      )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Application Section */}
             {canApply && (
               <div className="border-t pt-6">
                 <h3 className="text-lg font-semibold mb-4">
@@ -294,7 +389,7 @@ export function BountyDetailModal({
               </div>
             )}
 
-            {/* Application status for users who already applied */}
+            {/* Application status */}
             {hasApplied && (
               <div className="border-t pt-6">
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -345,13 +440,11 @@ export function BountyDetailModal({
                         creator.
                       </p>
                     )}
-
                     {userApplication?.status === "accepted" && (
                       <p className="text-green-700 dark:text-green-300 text-sm">
                         Congratulations! Your application has been accepted.
                       </p>
                     )}
-
                     {userApplication?.status === "rejected" && (
                       <p className="text-red-700 dark:text-red-300 text-sm">
                         Your application was not selected for this bounty.
@@ -362,7 +455,7 @@ export function BountyDetailModal({
               </div>
             )}
 
-            {/* Show message when user cannot apply */}
+            {/* Cannot apply message */}
             {!canApply && !hasApplied && !isAssignedToCurrentUser && (
               <div className="border-t pt-6">
                 <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
@@ -371,9 +464,7 @@ export function BountyDetailModal({
                       ? "Please log in to apply for this bounty."
                       : bounty.createdBy === currentUser.id
                         ? "You cannot apply to your own bounty."
-                        : isAssignedToCurrentUser
-                          ? "You are assigned to this bounty."
-                          : ""}
+                        : ""}
                   </p>
                 </div>
               </div>
@@ -425,31 +516,43 @@ export function BountyDetailModal({
                   Assigned To
                 </h4>
                 <div className="space-y-2">
-                  {bounty.assignees.map((a) => (
-                    <div
-                      key={a.userId}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5"
-                    >
-                      <Avatar className="h-8 w-8 border-2 border-primary/20">
-                        <AvatarImage
-                          src={a.user?.avatar || "/placeholder-user.jpg"}
-                        />
-                        <AvatarFallback>
-                          {a.user?.name?.[0] || "?"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-primary truncate">
-                          {a.user?.name || "Unknown"}
-                        </p>
-                        {a.userId === currentUser?.id && (
-                          <p className="text-[10px] text-muted-foreground">
-                            You
+                  {bounty.assignees.map((a) => {
+                    const hasSubmitted = workSubmissions.some(
+                      (s) => s.submittedBy === a.userId,
+                    );
+                    return (
+                      <div
+                        key={a.userId}
+                        className="flex items-center gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5"
+                      >
+                        <Avatar className="h-8 w-8 border-2 border-primary/20">
+                          <AvatarImage
+                            src={a.user?.avatar || "/placeholder-user.jpg"}
+                          />
+                          <AvatarFallback>
+                            {a.user?.name?.[0] || "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-primary truncate">
+                            {a.user?.name || "Unknown"}
                           </p>
-                        )}
+                          <div className="flex items-center gap-1.5">
+                            {a.userId === currentUser?.id && (
+                              <p className="text-[10px] text-muted-foreground">
+                                You
+                              </p>
+                            )}
+                            {hasSubmitted && (
+                              <span className="flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+                                <CheckCircle2 className="h-3 w-3" /> Submitted
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -3,25 +3,44 @@ import { Badge } from "@/components/ui/badge";
 import { Copy, ExternalLink, Shield, CheckCircle, Loader2 } from "lucide-react";
 import { useState } from "react";
 
-// Define the PaymentID interface to match your data structure
 interface PaymentID {
-  datetime?: string; // "2026-01-27 20:43:47 UTC"
-  status?: string; // "confirmed"
-  txid?: string; // Transaction ID
-  value?: number; // Amount in smallest unit (e.g., satoshis)
+  datetime?: string;
+  status?: string;
+  txid?: string;
+  value?: number;
   bountyId?: string;
   id?: string;
-  [key: string]: any; // Allow for additional properties
+  [key: string]: any;
 }
 
 interface PaymentTxIdsTableProps {
-  paymentIDs: PaymentID[] | string[]; // Can handle both types
+  paymentIDs: PaymentID[] | string[];
   isLoading?: boolean;
+  chain?: string; // "mainnet" | "testnet"
+  serverUrl?: string; // e.g. "https://mainnet.lightwalletd.com:9067"
+}
+
+// Derive the correct block explorer URL from chain or serverUrl
+function getExplorerUrl(
+  txId: string,
+  chain?: string,
+  serverUrl?: string,
+): string {
+  const isTestnet =
+    chain === "testnet" || serverUrl?.toLowerCase().includes("testnet");
+
+  if (isTestnet) {
+    return `https://testnet.zcashexplorer.app/transactions/${txId}`;
+  }
+
+  return `https://blockchair.com/zcash/transaction/${txId}`;
 }
 
 export function PaymentTxIdsTable({
   paymentIDs,
   isLoading = false,
+  chain,
+  serverUrl,
 }: PaymentTxIdsTableProps) {
   const [copiedTxId, setCopiedTxId] = useState<string | null>(null);
 
@@ -36,9 +55,8 @@ export function PaymentTxIdsTable({
   };
 
   const handleViewOnExplorer = (txId: string) => {
-    // Update this URL based on your blockchain network
-    const explorerUrl = `https://blockchair.com/zcash/transaction/${txId}`;
-    window.open(explorerUrl, "_blank", "noopener,noreferrer");
+    const url = getExplorerUrl(txId, chain, serverUrl);
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const truncateTxId = (txId: string, startChars = 8, endChars = 8) => {
@@ -46,32 +64,22 @@ export function PaymentTxIdsTable({
     return `${txId.slice(0, startChars)}...${txId.slice(-endChars)}`;
   };
 
-  // Extract transaction hash from different data structures
   const extractTxHash = (item: PaymentID | string): string => {
-    if (typeof item === "string") {
-      return item;
-    }
-
+    if (typeof item === "string") return item;
     if (typeof item === "object" && item !== null) {
-      // Try different possible property names
       if (item.txid) return item.txid;
       if (item.txHash) {
-        if (typeof item.txHash === "string") {
-          return item.txHash;
-        }
-        if (typeof item.txHash === "object" && item.txHash.txHash) {
+        if (typeof item.txHash === "string") return item.txHash;
+        if (typeof item.txHash === "object" && item.txHash.txHash)
           return item.txHash.txHash;
-        }
       }
       if (item.transactionHash) return item.transactionHash;
       if (item.hash) return item.hash;
       if (item.id) return item.id;
     }
-
     return "N/A";
   };
 
-  // Get additional metadata from PaymentID objects
   const getPaymentMetadata = (item: PaymentID | string, index: number) => {
     if (typeof item === "string") {
       return {
@@ -82,7 +90,6 @@ export function PaymentTxIdsTable({
         id: `tx-${index}`,
       };
     }
-
     return {
       txHash: extractTxHash(item),
       amount: item.value || null,
@@ -103,13 +110,9 @@ export function PaymentTxIdsTable({
 
   const formatAmount = (amount?: number | null) => {
     if (!amount) return null;
-    // Assuming value is in satoshis (smallest unit), convert to ZEC
-    // 1 ZEC = 100,000,000 satoshis
-    const zecAmount = amount / 1e8;
-    return `${zecAmount.toFixed(4)} ZEC`;
+    return `${(amount / 1e8).toFixed(4)} ZEC`;
   };
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -124,7 +127,6 @@ export function PaymentTxIdsTable({
             </span>
           </div>
         </div>
-
         <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800">
           <div className="p-8 text-center">
             <Loader2 className="w-8 h-8 mx-auto animate-spin text-blue-600 mb-4" />
@@ -137,7 +139,6 @@ export function PaymentTxIdsTable({
     );
   }
 
-  // Empty state
   if (!paymentIDs || paymentIDs.length === 0) {
     return (
       <div className="space-y-4">
@@ -149,7 +150,6 @@ export function PaymentTxIdsTable({
             0 transactions
           </Badge>
         </div>
-
         <div className="text-center py-12 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800">
           <Shield className="w-12 h-12 mx-auto text-slate-400 dark:text-slate-600 mb-4" />
           <h3 className="text-lg font-medium text-slate-900 dark:text-slate-100 mb-2">
@@ -163,9 +163,13 @@ export function PaymentTxIdsTable({
     );
   }
 
-  // Determine if we have rich data (objects) or simple data (strings)
   const hasRichData =
     paymentIDs.length > 0 && typeof paymentIDs[0] === "object";
+  const sortedPaymentIDs = [...paymentIDs].reverse();
+
+  const isTestnet =
+    chain === "testnet" || serverUrl?.toLowerCase().includes("testnet");
+  const explorerName = isTestnet ? "Zcash Block Explorer" : "Blockchair";
 
   return (
     <div className="space-y-4">
@@ -173,9 +177,19 @@ export function PaymentTxIdsTable({
         <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
           Payment Transaction IDs
         </h3>
-        <Badge variant="secondary" className="text-xs animate-pulse">
-          {paymentIDs.length} transaction{paymentIDs.length !== 1 ? "s" : ""}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {chain && (
+            <Badge
+              variant="outline"
+              className={`text-xs ${isTestnet ? "border-yellow-400 text-yellow-600" : "border-green-400 text-green-600"}`}
+            >
+              {chain}
+            </Badge>
+          )}
+          <Badge variant="secondary" className="text-xs animate-pulse">
+            {paymentIDs.length} transaction{paymentIDs.length !== 1 ? "s" : ""}
+          </Badge>
+        </div>
       </div>
 
       <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-sm">
@@ -208,7 +222,7 @@ export function PaymentTxIdsTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-              {paymentIDs.map((item, index) => {
+              {sortedPaymentIDs.map((item, index) => {
                 const metadata = getPaymentMetadata(item, index);
                 const txHash = metadata.txHash;
 
@@ -218,17 +232,15 @@ export function PaymentTxIdsTable({
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors duration-150"
                   >
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-500 dark:text-slate-400">
-                      {index + 1}
+                      {paymentIDs.length - index}
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <code className="bg-slate-100 dark:bg-slate-600 px-2 py-1 rounded text-sm font-mono text-slate-900 dark:text-slate-100 max-w-xl">
-                          <span className="hidden sm:inline">{txHash}</span>
-                          <span className="sm:hidden">
-                            {truncateTxId(txHash)}
-                          </span>
-                        </code>
-                      </div>
+                      <code className="bg-slate-100 dark:bg-slate-600 px-2 py-1 rounded text-sm font-mono text-slate-900 dark:text-slate-100 max-w-xl">
+                        <span className="hidden sm:inline">{txHash}</span>
+                        <span className="sm:hidden">
+                          {truncateTxId(txHash)}
+                        </span>
+                      </code>
                     </td>
                     {hasRichData && (
                       <>
@@ -284,7 +296,7 @@ export function PaymentTxIdsTable({
                           size="sm"
                           onClick={() => handleViewOnExplorer(txHash)}
                           className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors duration-150"
-                          title="View on blockchain explorer"
+                          title={`View on ${explorerName}`}
                           disabled={txHash === "N/A"}
                         >
                           <ExternalLink className="w-3 h-3" />
@@ -304,9 +316,9 @@ export function PaymentTxIdsTable({
           <div className="flex items-center justify-center gap-2 flex-wrap">
             <span>Click</span>
             <Copy className="w-3 h-3" />
-            <span>to copy transaction ID or</span>
+            <span>to copy or</span>
             <ExternalLink className="w-3 h-3" />
-            <span>to view on blockchain explorer</span>
+            <span>to view on {explorerName}</span>
           </div>
         </div>
       )}
