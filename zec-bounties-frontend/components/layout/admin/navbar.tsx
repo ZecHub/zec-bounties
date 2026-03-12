@@ -227,6 +227,12 @@ export function AdminNavbar({
             >
               Bounties
             </Link>
+            <Link
+              href="/admin/export"
+              className="transition-colors hover:text-primary"
+            >
+              Export
+            </Link>
           </div>
 
           {/* Desktop Right Side */}

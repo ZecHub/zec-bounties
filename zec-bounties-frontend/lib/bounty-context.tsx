@@ -111,6 +111,7 @@ interface BountyContextType {
   zAddressUpdate: (z_address: string) => Promise<boolean | undefined>;
   verifyZaddress: (z_address: string) => Promise<boolean | undefined>;
   fetchBounties: () => Promise<void>;
+  fetchBountyById: (id: string) => Promise<Bounty | null>;
   fetchTransactionHashes: () => Promise<void>;
   applyToBounty: (bountyId: string, message: string) => Promise<void>;
   editBounty: (id: string, data: Partial<BountyFormData>) => void;
@@ -221,6 +222,9 @@ interface BountyContextType {
     memo?: string;
   }>;
   setDefaultWallet: (accountName: string) => Promise<void>;
+
+  fetchExportPayments: (from?: string, to?: string) => Promise<any[]>;
+  updateUserOfac: (userId: string, ofacVerified: boolean) => Promise<void>;
 }
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
@@ -1614,6 +1618,19 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchBountyById = async (id: string): Promise<Bounty | null> => {
+    try {
+      const res = await fetch(`${backendUrl}/api/bounties/${id}`, {
+        headers: getPublicHeaders(), // no auth needed — public route
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (error) {
+      console.error("Failed to fetch bounty:", error);
+      return null;
+    }
+  };
+
   const createBounty = async (data: BountyFormData) => {
     if (!currentUser) return;
 
@@ -1904,6 +1921,42 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
   };
+  const fetchExportPayments = async (
+    from?: string,
+    to?: string,
+  ): Promise<any[]> => {
+    if (!currentUser || currentUser.role !== "ADMIN") return [];
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/export-payments?${params.toString()}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch export data");
+      const data = await res.json();
+      return data.data || [];
+    } catch (error) {
+      console.error("Failed to fetch export payments:", error);
+      return [];
+    }
+  };
+
+  const updateUserOfac = async (
+    userId: string,
+    ofacVerified: boolean,
+  ): Promise<void> => {
+    if (!currentUser || currentUser.role !== "ADMIN") return;
+    const res = await fetch(`${backendUrl}/auth/users/${userId}/ofac`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ ofacVerified }),
+    });
+    if (!res.ok) throw new Error("Failed to update OFAC status");
+    // Refresh users list so the toggle reflects in other parts of the app
+    await fetchUsers();
+  };
 
   // Populate user data in bounties
   // AFTER
@@ -1961,6 +2014,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         authorizeDuePayment,
         deleteBounty,
         fetchBounties,
+        fetchBountyById,
         applyToBounty,
         editBounty,
         users,
@@ -2009,6 +2063,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         testZcashConnection,
         importWallet,
         setDefaultWallet,
+        fetchExportPayments,
+        updateUserOfac,
       }}
     >
       {children}
