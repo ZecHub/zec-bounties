@@ -118,7 +118,7 @@ export function EditBountyModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-4">
         {/* Header */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
@@ -341,7 +341,7 @@ export function EditBountyModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t flex items-center justify-between shrink-0 bg-muted/20">
+        <div className="px-6 py-4 border-t grid grid-cols-1 imd:flex items-center justify-between shrink-0 bg-muted/20 gap-2">
           <span className="text-xs text-muted-foreground">
             {activeSection === "assignees"
               ? `${selectedUserIds.length} assignee${selectedUserIds.length !== 1 ? "s" : ""} selected`

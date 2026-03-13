@@ -523,7 +523,7 @@ export function AdminNavbar({
                       : `${(0.0).toFixed(4)} ZEC`}
                   </Button>
 
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 lg:flex gap-2">
                     <Button
                       variant="outline"
                       className="gap-2 flex-1"

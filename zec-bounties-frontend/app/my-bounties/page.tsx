@@ -143,7 +143,7 @@ export default function MyBountiesPage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
             <Card className="bg-card border-border">
               <CardContent className="pt-5 pb-5">
                 <div className="flex items-center justify-between">

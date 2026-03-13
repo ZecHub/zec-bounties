@@ -223,7 +223,7 @@ export default function ExportPage() {
       <AdminNavbar isAdmin={true} />
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-1 imd:flex items-center justify-between gap-2">
           <div>
             <h1 className="text-2xl font-semibold flex items-center gap-2">
               <FileSpreadsheet className="w-6 h-6" />
@@ -296,7 +296,7 @@ export default function ExportPage() {
 
         {/* Stats bar */}
         {loaded && (
-          <div className="flex items-center gap-6 text-sm text-muted-foreground">
+          <div className="grid grid-cols-2 imd:flex items-center gap-6 text-sm text-muted-foreground">
             <span>{rows.length} paid bounties</span>
             <span className="flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-green-500" />

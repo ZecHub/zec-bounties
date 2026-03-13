@@ -61,7 +61,7 @@ export default function ClientDashboard() {
       <div className="min-h-screen bg-background">
         <div className="border-b border-border">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-1 imd:flex items-center justify-between gap-2">
               <div>
                 <h1 className="text-4xl font-bold text-foreground">
                   Admin Dashboard
