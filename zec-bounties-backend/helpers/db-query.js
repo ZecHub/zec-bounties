@@ -158,9 +158,7 @@ async function verifyZaddress(z_address, params) {
     const result = state[1] || state;
     if (
       result.status === "success" &&
-      result.chain_name + "net" === "testnet"
-      // &&
-      // result.address_kind === "sapling"
+      (result.chain_name + "net" === "mainnet" || result.chain_name + "net" === "testnet")
     ) {
       return true;
     } else {
@@ -169,7 +167,6 @@ async function verifyZaddress(z_address, params) {
   } catch {
     return null;
   }
-  // return true;
 }
 
 module.exports = {
