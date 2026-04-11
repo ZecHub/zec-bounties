@@ -172,6 +172,27 @@ async function verifyZaddress(z_address, params) {
   // return true;
 }
 
+function isValidZcashAddress(address) {
+  // Check for Unified Addresses (u1...)
+  if (address.startsWith('u1')) {
+    // Basic validation for unified addresses
+    // They should be base64-encoded and have a specific length range
+    return address.length >= 100 && address.length <= 200 && /^u1[a-zA-Z0-9]+$/.test(address);
+  }
+  
+  // Check for Sapling addresses (zs1...)
+  if (address.startsWith('zs1')) {
+    return address.length === 78 && /^zs1[a-z0-9]+$/.test(address);
+  }
+  
+  // Check for legacy Sprout addresses (zc...)
+  if (address.startsWith('zc')) {
+    return address.length === 95 && /^zc[a-zA-Z0-9]+$/.test(address);
+  }
+  
+  return false;
+}
+
 module.exports = {
   buildPaymentList,
   findDueBounties,
@@ -179,4 +200,5 @@ module.exports = {
   updateDueBounties,
   storeTransactions,
   buildPaymentListGrouped,
+  isValidZcashAddress,
 };
