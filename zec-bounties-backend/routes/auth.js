@@ -1,247 +1,157 @@
 const express = require("express");
-const axios = require("axios");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
-const { authenticate, isAdmin } = require("../middleware/auth");
-const { verifyZaddress } = require("../helpers/db-query.js");
-const {
-  getLatestZcashParams,
-  getLatestZcashParamsForClient,
-} = require("../helpers/zcash/zcashHelper.js");
-// const { isSaplingZcashAddress } = require("../utils/zingolib/parseAddresses");
+const jwt = require("jsonwebtoken");
+const { authenticate } = require("../middleware/auth");
+const { verifyZaddress, isValidZcashAddress } = require("../helpers/db-query.js");
+const { zcashParams } = require("../zcash/init.js");
 
-const prisma = new PrismaClient();
 const router = express.Router();
+const prisma = new PrismaClient();
 const SECRET = process.env.JWT_SECRET;
 
-const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-
-router.get("/github", (req, res) => {
-  const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=user:email`;
-  res.redirect(githubAuthUrl); // Sends user to GitHub
-});
-
-// GitHub calls this route after user authenticates OR cancels
+// GitHub OAuth callback
 router.get("/github/callback", async (req, res) => {
-  const { code, error, error_description } = req.query;
-
-  // Handle user cancellation or errors from GitHub
-  if (error) {
-    console.log(`GitHub OAuth error: ${error} - ${error_description}`);
-    return res.redirect(`${FRONTEND_URL}/login?error=oauth_cancelled`);
-  }
-
-  // Handle missing authorization code
-  if (!code) {
-    console.log("No authorization code received from GitHub");
-    return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
-  }
+  const { code } = req.query;
+  if (!code) return res.status(400).send("No code provided");
 
   try {
     // Exchange code for access token
-    const tokenResponse = await axios.post(
+    const tokenResponse = await fetch(
       "https://github.com/login/oauth/access_token",
       {
-        client_id: GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
-        code: code,
-      },
-      {
+        method: "POST",
         headers: {
-          Accept: "application/json", // Important: Get JSON response
+          Accept: "application/json",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          client_id: process.env.GITHUB_CLIENT_ID,
+          client_secret: process.env.GITHUB_CLIENT_SECRET,
+          code,
+        }),
       },
     );
 
-    const accessToken = tokenResponse.data.access_token;
-
-    if (!accessToken) {
-      console.log("No access token received from GitHub");
-      return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.access_token) {
+      return res.status(400).send("Failed to get access token");
     }
 
     // Get user info from GitHub
-    const userResponse = await axios.get("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    const userResponse = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        "User-Agent": "ZEC-Bounties",
+      },
     });
 
-    // Get user's email addresses (GitHub API returns this separately)
-    const emailResponse = await axios.get(
-      "https://api.github.com/user/emails",
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-
-    const githubUser = userResponse.data;
-    const emails = emailResponse.data;
-    const primaryEmail =
-      emails.find((email) => email.primary)?.email || githubUser.email;
-
-    if (!primaryEmail) {
-      console.log("No email found for GitHub user");
-      return res.redirect(`${FRONTEND_URL}/login?error=no_email`);
+    const userData = await userResponse.json();
+    if (!userData.id) {
+      return res.status(400).send("Failed to get user data");
     }
 
-    // Create/find user in YOUR database
+    // Create or update user
     let user = await prisma.user.findUnique({
-      where: { email: primaryEmail },
+      where: { githubId: userData.id.toString() },
     });
 
     if (!user) {
-      // Create new user
       user = await prisma.user.create({
         data: {
-          name: githubUser.name || githubUser.login,
-          email: primaryEmail,
-          githubId: githubUser.id.toString(),
-          avatar: githubUser.avatar_url,
-          role: "CLIENT", // Default role
-          // password can be null for OAuth users
+          githubId: userData.id.toString(),
+          username: userData.login,
+          avatar: userData.avatar_url,
+          email: userData.email,
         },
       });
-    } else if (!user.githubId) {
-      // Link GitHub account to existing user
+    } else {
+      // Update existing user
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
-          githubId: githubUser.id.toString(),
-          avatar: githubUser.avatar_url,
+          username: userData.login,
+          avatar: userData.avatar_url,
+          email: userData.email || user.email,
         },
       });
     }
 
-    // Generate YOUR app's JWT token
-    const token = jwt.sign({ id: user.id, role: user.role }, SECRET, {
-      expiresIn: "7d",
-    });
+    // Create JWT
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      SECRET,
+      { expiresIn: "7d" },
+    );
 
-    // Redirect back to frontend with token
-    res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`);
+    // Redirect to frontend with token
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (error) {
-    console.error("GitHub OAuth error:", error.message);
-    res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
+    console.error("GitHub OAuth error:", error);
+    res.status(500).send("Authentication failed");
   }
 });
 
-router.get("/verify", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token" });
+// Update user Z-address
+router.patch("/profile", authenticate, async (req, res) => {
+  const { z_address } = req.body;
 
-  const token = authHeader.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return res.json({ user: decoded }); // contains id, role, email if you put them in JWT
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid or expired token" });
+  if (!z_address) {
+    return res.status(400).json({ error: "Z-address is required" });
   }
-});
 
-router.get("/me", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token" });
-
-  const token = authHeader.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, SECRET);
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        avatar: true,
-        z_address: true,
-      },
+  // Basic client-side validation
+  if (!isValidZcashAddress(z_address)) {
+    return res.status(400).json({ 
+      error: "Please enter a valid Zcash shielded address (zs1..., u1..., or zc...)"
     });
-
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    return res.json({ user });
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid or expired token" });
   }
-});
 
-router.post("/verify-zaddress", authenticate, async (req, res) => {
   try {
-    const { z_address } = req.body;
-
-    // Get params based on user role
-    let params;
-    if (req.user.role === "CLIENT") {
-      params = await getLatestZcashParamsForClient();
-    } else {
-      params = await getLatestZcashParams(req.user.id);
-    }
-
-    if (!params) {
-      return res.status(404).json({
-        error: "No Zcash params found. Initialize wallet first.",
+    // Full validation using zingolib
+    const isValid = await verifyZaddress(z_address, zcashParams);
+    
+    if (!isValid) {
+      return res.status(400).json({
+        error: "Invalid Zcash address format or network mismatch"
       });
     }
 
-    const result = await verifyZaddress(z_address, params);
-    console.log("Verification result:", result);
-
-    return res.json({ isVerified: result });
-  } catch (err) {
-    console.error("Error verifying Z-address:", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Add this to your auth routes file
-
-// Check if user has Zcash params set up
-router.get("/has-zcash-params", authenticate, async (req, res) => {
-  try {
-    let params;
-    if (req.user.role === "CLIENT") {
-      params = await getLatestZcashParamsForClient();
-    } else {
-      params = await getLatestZcashParams(req.user.id);
-    }
-
-    return res.json({
-      hasParams: !!params,
-      message: params ? "Zcash params found" : "No Zcash params found",
-    });
-  } catch (err) {
-    console.error("Error checking Zcash params:", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.patch("/update-zaddress", authenticate, async (req, res) => {
-  const { z_address } = req.body;
-
-  console.log(z_address);
-
-  // const validAddress = verifyZaddress(z_address);
-
-  const validAddress = true;
-
-  if (!validAddress) {
-    return res.status(400).json({ error: "Invalid z_address" });
-  }
-
-  try {
-    const updatedUser = await prisma.user.update({
+    const user = await prisma.user.update({
       where: { id: req.user.id },
       data: { z_address },
-      select: { id: true, email: true, name: true, z_address: true },
     });
 
-    res.json({ message: "Z-address updated successfully", user: updatedUser });
+    res.json({ message: "Z-address updated successfully", user });
   } catch (error) {
-    console.error("Error updating z_address:", error);
-    res.status(500).json({ error: "Failed to update z_address" });
+    console.error("Profile update error:", error);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
+});
+
+// Get current user profile
+router.get("/profile", authenticate, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        avatar: true,
+        z_address: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error("Get profile error:", error);
+    res.status(500).json({ error: "Failed to get profile" });
   }
 });
 
