@@ -135,6 +135,7 @@ router.get("/", async (req, res) => {
               avatar: true,
             },
           },
+          applications: true,
         },
       }),
       prisma.bounty.count(),
@@ -1182,6 +1183,7 @@ router.get("/:id", async (req, res) => {
             },
           },
         },
+        applications: true,
       },
     });
 
