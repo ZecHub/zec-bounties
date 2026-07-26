@@ -94,11 +94,23 @@ export function EditBountyModal({
     );
   };
 
-  const filteredUsers = nonAdminUsers.filter(
-    (u) =>
-      u.name?.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
-      u.email?.toLowerCase().includes(assigneeSearch.toLowerCase()),
-  );
+  const filteredUsers = nonAdminUsers
+    .filter(
+      (u) =>
+        u.name?.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
+        u.email?.toLowerCase().includes(assigneeSearch.toLowerCase()),
+    )
+    .sort((a, b) => {
+      const aSelected = selectedUserIds.includes(a.id);
+      const bSelected = selectedUserIds.includes(b.id);
+      if (aSelected !== bSelected) return aSelected ? -1 : 1;
+
+      const aHasUA = !!a.UA_address;
+      const bHasUA = !!b.UA_address;
+      if (aHasUA !== bHasUA) return aHasUA ? -1 : 1;
+
+      return 0;
+    });
 
   const handleSave = async () => {
     if (!bounty) return;
