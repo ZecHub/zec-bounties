@@ -12,7 +12,7 @@ const {
 } = require("../helpers/zcash/zcashHelper.js");
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
-const { delCache } = require("../utils/cache");
+const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const { sendRealtimeUpdate } = require("../middleware/websocket");
 
 // const { isSaplingZcashAddress } = require("../utils/zingo/zingoLib/parseAddresses");
@@ -96,15 +96,26 @@ router.get("/github/callback", async (req, res) => {
     });
 
     if (!user) {
+      // Generate a unique nickname
+      let nickname = githubUser.login.toLowerCase();
+
+      const exists = await prisma.user.findUnique({
+        where: { nickname },
+      });
+
+      if (exists) {
+        nickname = `${nickname}.${Math.floor(Math.random() * 10000)}`;
+      }
+
       // Create new user
       user = await prisma.user.create({
         data: {
           name: githubUser.name || githubUser.login,
+          nickname,
           email: primaryEmail,
           githubId: githubUser.id.toString(),
           avatar: githubUser.avatar_url,
-          role: "CLIENT", // Default role
-          // password can be null for OAuth users
+          role: "CLIENT",
         },
       });
     } else if (!user.githubId) {
@@ -329,7 +340,7 @@ router.post("/recovery/request-otp", authenticate, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { email: true, name: true },
+      select: { email: true, name: true, nickname: true },
     });
 
     if (!user?.email) {
@@ -459,12 +470,32 @@ router.patch("/update-ua-address", authenticate, async (req, res) => {
 
 router.patch("/update-nickname", authenticate, async (req, res) => {
   try {
-    const { nickname } = req.body;
+    let { nickname } = req.body;
 
-    if (nickname && nickname.trim().length > 32) {
-      return res
-        .status(400)
-        .json({ error: "Nickname must be 32 characters or fewer" });
+    nickname = nickname?.trim().toLowerCase();
+
+    if (!nickname) {
+      return res.status(400).json({
+        error: "Nickname is required.",
+      });
+    }
+
+    if (!/^[a-z0-9._-]{3,32}$/.test(nickname)) {
+      return res.status(400).json({
+        error:
+          "Nickname must be 3-32 characters and contain only lowercase letters, numbers, periods (.), hyphens (-), and underscores (_).",
+      });
+    }
+
+    // Check uniqueness
+    const existing = await prisma.user.findUnique({
+      where: { nickname },
+    });
+
+    if (existing && existing.id !== req.user.id) {
+      return res.status(409).json({
+        error: "Nickname is already taken.",
+      });
     }
 
     const updated = await prisma.user.update({
@@ -485,7 +516,14 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await Promise.all([
+      delCache("users:all"),
+      deleteCacheByPattern("bounties:*"),
+      deleteCacheByPattern("bounty:*"),
+      deleteCacheByPattern("assignees:*"),
+      deleteCacheByPattern("applications:*"),
+      deleteCacheByPattern("submissions:*"),
+    ]);
     sendRealtimeUpdate("user_updated", updated, req.user.id);
 
     res.json({ user: updated });
