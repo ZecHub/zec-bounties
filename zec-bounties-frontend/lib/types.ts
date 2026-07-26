@@ -98,6 +98,7 @@ export interface ZcashParams {
   owner?: {
     id: string;
     name: string;
+    nickname?: string;
     email: string;
   };
 }
@@ -147,6 +148,7 @@ export interface TeamMember {
   user: {
     id: string;
     name: string;
+    nickname?: string;
     email: string;
     avatar?: string;
   };

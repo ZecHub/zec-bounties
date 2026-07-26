@@ -17,6 +17,7 @@ import type {
   Balance,
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
+import { displayName } from "./displayName";
 
 interface BountyCategory {
   id: number;
@@ -1813,7 +1814,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     let destroyed = false;
 
     const userId = currentUser.id;
-    const userName = currentUser.name;
+    const userName = displayName(currentUser);
 
     function connect() {
       ws = new WebSocket(`${backendWebSpocketUrl}`);

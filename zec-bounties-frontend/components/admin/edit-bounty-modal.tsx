@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
 import { Bounty } from "@/lib/types";
+import { displayName } from "@/lib/displayName";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -97,7 +98,7 @@ export function EditBountyModal({
   const filteredUsers = nonAdminUsers
     .filter(
       (u) =>
-        u.name?.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
+        displayName(u).toLowerCase().includes(assigneeSearch.toLowerCase()) ||
         u.email?.toLowerCase().includes(assigneeSearch.toLowerCase()),
     )
     .sort((a, b) => {
@@ -310,10 +311,10 @@ export function EditBountyModal({
                           src={u.avatar || "/placeholder-user.jpg"}
                         />
                         <AvatarFallback className="text-[8px]">
-                          {u.name?.[0]}
+                          {displayName(u)[0]}
                         </AvatarFallback>
                       </Avatar>
-                      {u.name}
+                      {displayName(u)}
                       <button
                         onClick={() => toggleUser(u.id)}
                         className="text-muted-foreground hover:text-destructive transition-colors"
@@ -337,7 +338,7 @@ export function EditBountyModal({
                     </p>
                     <p className="text-yellow-700 dark:text-yellow-300 text-xs">
                       {selectedUsersWithoutAddress
-                        .map((u) => u.name)
+                        .map((u) => displayName(u))
                         .join(", ")}{" "}
                       {selectedUsersWithoutAddress.length === 1
                         ? "has"
@@ -386,12 +387,12 @@ export function EditBountyModal({
                             src={user.avatar || "/placeholder-user.jpg"}
                           />
                           <AvatarFallback className="text-xs font-semibold">
-                            {user.name?.[0] ?? "?"}
+                            {displayName(user)[0]}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">
-                            {user.name}
+                            {displayName(user)}
                           </p>
                           <p className="text-xs text-muted-foreground truncate">
                             {user.email}

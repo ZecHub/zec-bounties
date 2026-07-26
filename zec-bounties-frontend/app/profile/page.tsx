@@ -87,10 +87,11 @@ export default function ProfilePage() {
       }
       setZAddress(currentUser.z_address ?? "");
       setUaAddress(currentUser.UA_address ?? "");
+      if (!nicknameDirty) {
+        setNickname(currentUser.nickname ?? "");
+      }
     }
-  }, [currentUser, emailNotifSaving]);
-
-  console.log(currentUser);
+  }, [currentUser, emailNotifSaving, nicknameDirty]);
 
   const handleEmailNotificationsChange = (checked: boolean) => {
     setEmailNotifications(checked);

@@ -79,6 +79,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ExportCompletedModal } from "@/components/payments/export-completed-modal";
+import { displayName } from "@/lib/displayName";
 
 const STATUS_FILTERS: {
   status: BountyStatus | "ALL";
@@ -654,14 +655,16 @@ export default function AdminDashboard() {
                                             }
                                           />
                                           <AvatarFallback>
-                                            {bounty.createdByUser?.name?.[0] ||
-                                              "?"}
+                                            {
+                                              displayName(
+                                                bounty.createdByUser,
+                                              )[0]
+                                            }
                                           </AvatarFallback>
                                         </Avatar>
                                       </TooltipTrigger>
                                       <TooltipContent>
-                                        {bounty.createdByUser?.name ||
-                                          "Unknown"}
+                                        {displayName(bounty.createdByUser)}
                                       </TooltipContent>
                                     </Tooltip>
                                   </TooltipProvider>
@@ -758,7 +761,7 @@ export default function AdminDashboard() {
                                               }
                                             />
                                             <AvatarFallback className="text-[9px]">
-                                              {a.user?.name?.[0] || "?"}
+                                              {displayName(a.user)[0]}
                                             </AvatarFallback>
                                           </Avatar>
                                         ))}
@@ -773,7 +776,7 @@ export default function AdminDashboard() {
                                     </div>
                                     <span className="text-xs font-medium">
                                       {bounty.assignees.length === 1
-                                        ? bounty.assignees[0].user?.name
+                                        ? displayName(bounty.assignees[0].user)
                                         : `${bounty.assignees.length} assignees`}
                                     </span>
                                   </button>
@@ -792,11 +795,11 @@ export default function AdminDashboard() {
                                         }
                                       />
                                       <AvatarFallback>
-                                        {bounty.assigneeUser.name?.[0] || "?"}
+                                        {displayName(bounty.assigneeUser)[0]}
                                       </AvatarFallback>
                                     </Avatar>
                                     <span className="text-xs font-medium">
-                                      {bounty.assigneeUser.name}
+                                      {displayName(bounty.assigneeUser)}
                                     </span>
                                   </button>
                                 ) : (
@@ -1181,13 +1184,12 @@ export default function AdminDashboard() {
                               }
                             />
                             <AvatarFallback className="text-[11px]">
-                              {application.applicantUser?.name?.[0] ?? "?"}
+                              {displayName(application.applicantUser)[0]}
                             </AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
                             <p className="text-sm font-medium leading-tight truncate">
-                              {application.applicantUser?.name ||
-                                "Unknown User"}
+                              {displayName(application.applicantUser)}
                             </p>
                             <p className="text-[11px] text-muted-foreground mt-0.5">
                               Applied{" "}
@@ -1315,12 +1317,12 @@ export default function AdminDashboard() {
                             }
                           />
                           <AvatarFallback className="text-[11px]">
-                            {submission.submitterUser?.name?.[0] ?? "?"}
+                            {displayName(submission.submitterUser)[0]}
                           </AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
                           <p className="text-sm font-medium leading-tight truncate">
-                            {submission.submitterUser?.name || "Unknown User"}
+                            {displayName(submission.submitterUser)}
                           </p>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             {format(

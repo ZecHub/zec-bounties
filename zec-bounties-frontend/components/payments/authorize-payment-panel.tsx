@@ -42,8 +42,6 @@ export function AuthorizePaymentPanel() {
       b.chain === activeChain,
   );
 
-  console.log(eligibleBounties);
-
   const blockedBounties = bounties.filter(
     (b) =>
       b.status === "DONE" &&
