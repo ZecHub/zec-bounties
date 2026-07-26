@@ -21,7 +21,7 @@ model User {
   email                String              @unique
   emailNotifications   Boolean             @default(true)
   password             String?
-  nickname             String?
+  nickname             String?             @unique
   role                 UserRole            @default(CLIENT)
   createdAt            DateTime            @default(now())
   z_address            String?

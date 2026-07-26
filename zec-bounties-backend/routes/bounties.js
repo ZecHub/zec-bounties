@@ -14,15 +14,56 @@ const {
 const sendMail = require("../utils/sendMail");
 
 // ─── Reusable select shapes (avoids re-typing & keeps payloads small) ─────────
-const USER_SELECT = { id: true, name: true, avatar: true };
+const USER_SELECT = { id: true, name: true, nickname: true, avatar: true };
+
 const USER_SELECT_FULL = {
   id: true,
   name: true,
+  nickname: true,
   email: true,
   avatar: true,
   z_address: true,
   UA_address: true,
 };
+
+// createdByUser / assigneeUser on Bounty (adds role, no address fields)
+const USER_SELECT_WITH_ROLE = {
+  id: true,
+  name: true,
+  nickname: true,
+  email: true,
+  role: true,
+  avatar: true,
+};
+
+// submitterUser / reviewerUser / applicantUser-with-avatar
+const USER_SELECT_BASIC = {
+  id: true,
+  name: true,
+  nickname: true,
+  email: true,
+  avatar: true,
+};
+
+// applicantUser without avatar (a couple of routes only need this much)
+const USER_SELECT_MINIMAL = {
+  id: true,
+  name: true,
+  nickname: true,
+  email: true,
+};
+
+// export routes (payments)
+const USER_SELECT_EXPORT = {
+  id: true,
+  name: true,
+  nickname: true,
+  email: true,
+  z_address: true,
+  UA_address: true,
+  ofacVerified: true,
+};
+
 const ASSIGNEE_INCLUDE = {
   assignees: {
     include: { user: { select: USER_SELECT } },
@@ -98,13 +139,7 @@ router.post("/", authenticate, async (req, res) => {
       },
       include: {
         createdByUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            avatar: true,
-          },
+          select: USER_SELECT_WITH_ROLE,
         },
         assignees: {
           include: { user: { select: USER_SELECT } },
@@ -136,15 +171,18 @@ router.post("/", authenticate, async (req, res) => {
           .map((u) => u.email)
           .filter(Boolean);
 
+        const creatorDisplayName =
+          bounty.createdByUser.nickname || bounty.createdByUser.name;
+
         await Promise.all(
           recipients.map((recipient) =>
             sendMail({
               to: recipient,
               subject: `New Bounty Created: ${bounty.title}`,
-              text: `A new bounty has been created.\n\nCreated by: ${bounty.createdByUser.name}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
+              text: `A new bounty has been created.\n\nCreated by: ${creatorDisplayName}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
               html: `
             <h2>New Bounty Created</h2>
-            <p><strong>Created by:</strong> ${bounty.createdByUser.name}</p>
+            <p><strong>Created by:</strong> ${creatorDisplayName}</p>
             <p><strong>Title:</strong> ${bounty.title}</p>
             <p><strong>Description:</strong><br/>
               ${formatEmailText(bounty.description)}
@@ -196,13 +234,7 @@ router.get("/", async (req, res) => {
             select: USER_SELECT_FULL,
           },
           createdByUser: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              avatar: true,
-            },
+            select: USER_SELECT_WITH_ROLE,
           },
         },
       }),
@@ -437,13 +469,7 @@ router.patch("/:id/status", authenticate, isAdmin, async (req, res) => {
         ...ASSIGNEE_INCLUDE,
         assigneeUser: { select: USER_SELECT_FULL },
         createdByUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            avatar: true,
-          },
+          select: USER_SELECT_WITH_ROLE,
         },
       },
     });
@@ -522,7 +548,7 @@ router.post("/:id/submit", authenticate, async (req, res) => {
         },
         include: {
           submitterUser: {
-            select: { id: true, name: true, email: true, avatar: true },
+            select: USER_SELECT_BASIC,
           },
         },
       }),
@@ -531,27 +557,15 @@ router.post("/:id/submit", authenticate, async (req, res) => {
         data: { status: "IN_REVIEW" },
         include: {
           createdByUser: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              avatar: true,
-            },
+            select: USER_SELECT_WITH_ROLE,
           },
           assigneeUser: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              role: true,
-              avatar: true,
-            },
+            select: USER_SELECT_WITH_ROLE,
           },
           workSubmissions: {
             include: {
               submitterUser: {
-                select: { id: true, name: true, email: true, avatar: true },
+                select: USER_SELECT_BASIC,
               },
             },
           },
@@ -657,7 +671,7 @@ router.get("/:id/submissions", authenticate, async (req, res) => {
       },
       include: {
         submitterUser: {
-          select: { id: true, name: true, email: true, avatar: true },
+          select: USER_SELECT_BASIC,
         },
       },
       orderBy: { submittedAt: "desc" },
@@ -688,7 +702,7 @@ router.get("/submissions/all", authenticate, isAdmin, async (req, res) => {
     const submissions = await prisma.workSubmission.findMany({
       include: {
         submitterUser: {
-          select: { id: true, name: true, email: true, avatar: true },
+          select: USER_SELECT_BASIC,
         },
       },
       orderBy: { submittedAt: "desc" },
@@ -726,7 +740,7 @@ router.patch(
         where: { id: submissionId },
         include: {
           bounty: { select: { id: true, createdBy: true, status: true } },
-          submitterUser: { select: { id: true, name: true, email: true } },
+          submitterUser: { select: USER_SELECT_MINIMAL },
         },
       });
       if (!submission)
@@ -768,10 +782,10 @@ router.patch(
             },
             include: {
               submitterUser: {
-                select: { id: true, name: true, email: true, avatar: true },
+                select: USER_SELECT_BASIC,
               },
               reviewerUser: {
-                select: { id: true, name: true, email: true, avatar: true },
+                select: USER_SELECT_BASIC,
               },
             },
           });
@@ -809,22 +823,10 @@ router.patch(
             },
             include: {
               createdByUser: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  role: true,
-                  avatar: true,
-                },
+                select: USER_SELECT_WITH_ROLE,
               },
               assigneeUser: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true,
-                  role: true,
-                  avatar: true,
-                },
+                select: USER_SELECT_WITH_ROLE,
               },
             },
           });
@@ -861,6 +863,7 @@ router.get("/users", async (req, res) => {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         role: true,
         z_address: true,
@@ -898,6 +901,7 @@ router.patch("/switch-role", authenticate, async (req, res) => {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         role: true,
         avatar: true,
@@ -1103,7 +1107,7 @@ router.get("/:bountyId/applications", authenticate, async (req, res) => {
       where: { bountyId },
       include: {
         applicantUser: {
-          select: { id: true, name: true, email: true, avatar: true },
+          select: USER_SELECT_BASIC,
         },
       },
       orderBy: { appliedAt: "desc" },
@@ -1139,7 +1143,7 @@ router.put(
           where: { id: applicationId },
           data: { status, reviewedAt: new Date(), reviewedBy: req.user.id },
           include: {
-            applicantUser: { select: { id: true, name: true, email: true } },
+            applicantUser: { select: USER_SELECT_MINIMAL },
           },
         });
 
@@ -1247,7 +1251,7 @@ router.post("/apply", authenticate, async (req, res) => {
       data: { bountyId, applicantId, message: message.trim() },
       include: {
         bounty: { select: { id: true, title: true, bountyAmount: true } },
-        applicantUser: { select: { id: true, name: true, email: true } },
+        applicantUser: { select: USER_SELECT_MINIMAL },
       },
     });
     await invalidateApplications(applicantId);
@@ -1273,26 +1277,12 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
       where: { isPaid: true, ...(from || to ? { paidAt: dateFilter } : {}) },
       include: {
         assigneeUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            z_address: true,
-            UA_address: true,
-            ofacVerified: true,
-          },
+          select: USER_SELECT_EXPORT,
         },
         assignees: {
           include: {
             user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                z_address: true,
-                UA_address: true,
-                ofacVerified: true,
-              },
+              select: USER_SELECT_EXPORT,
             },
           },
         },
@@ -1315,26 +1305,12 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
       where: { status: "DONE", chain: "MAIN" },
       include: {
         assigneeUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            z_address: true,
-            UA_address: true,
-            ofacVerified: true,
-          },
+          select: USER_SELECT_EXPORT,
         },
         assignees: {
           include: {
             user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                z_address: true,
-                UA_address: true,
-                ofacVerified: true,
-              },
+              select: USER_SELECT_EXPORT,
             },
           },
         },
@@ -1417,13 +1393,7 @@ router.get("/:id", async (req, res) => {
           },
         },
         createdByUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            avatar: true,
-          },
+          select: USER_SELECT_WITH_ROLE,
         },
       },
     });
