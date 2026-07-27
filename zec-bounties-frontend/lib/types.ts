@@ -241,6 +241,7 @@ export interface ZaddrModuleAny {
 
 export interface TopContributor extends User {
   submitted: number;
+  cancelled: number;
   completed: number;
   totalEarned: number;
   addressType?: string;
