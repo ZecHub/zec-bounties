@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
@@ -74,6 +74,7 @@ function HomeContent() {
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
   const displayCategories = ["All", ...categories.map((c) => c.name)];
@@ -113,14 +114,14 @@ function HomeContent() {
       ? bounties.length
       : bounties.filter((b) => b.categoryId === name).length;
 
-  const handleLoadMore = async () => {
+  const handleLoadMore = useCallback(async () => {
     setIsLoadingMore(true);
     try {
       await loadMoreBounties();
     } finally {
       setIsLoadingMore(false);
     }
-  };
+  }, [loadMoreBounties]);
 
   const handleNewBounty = () => {
     if (!currentUser?.UA_address) {
@@ -136,6 +137,27 @@ function HomeContent() {
     }
     setIsNewBountyModalOpen(true);
   };
+
+  const canLoadMore =
+    hasMoreBounties && !searchQuery && activeCategory === "All";
+
+  useEffect(() => {
+    if (!canLoadMore) return;
+    const node = sentinelRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoadingMore && !bountiesLoading) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: "400px" }, // start loading a bit before it's fully in view
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [canLoadMore, isLoadingMore, bountiesLoading, handleLoadMore]);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -225,28 +247,26 @@ function HomeContent() {
                 >
                   <List className="h-4 w-4" />
                 </Button>
-                {hasMoreBounties &&
-                  !searchQuery &&
-                  activeCategory === "All" && (
-                    <div className="relative group">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handleLoadMore}
-                        disabled={isLoadingMore || bountiesLoading}
-                      >
-                        {isLoadingMore || bountiesLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ChevronsDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
-                        Load more
-                      </span>
-                    </div>
-                  )}
+                {canLoadMore && (
+                  <div className="relative group">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore || bountiesLoading}
+                    >
+                      {isLoadingMore || bountiesLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ChevronsDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
+                      Load more
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -360,6 +380,8 @@ function HomeContent() {
                 </p>
               </div>
             )}
+
+            {canLoadMore && <div ref={sentinelRef} className="h-4" />}
           </div>
         </div>
       </div>
