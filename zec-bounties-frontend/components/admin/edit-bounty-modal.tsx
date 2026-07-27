@@ -66,6 +66,7 @@ export function EditBountyModal({
   // Assignee picker
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [notifyUsers, setNotifyUsers] = useState(false);
 
   // Populate form when bounty changes; also respect defaultSection on re-open
   useEffect(() => {
@@ -83,6 +84,7 @@ export function EditBountyModal({
     const existingIds = bounty.assignees?.map((a) => a.userId) ?? [];
     setSelectedUserIds(existingIds);
     setAssigneeSearch("");
+    setNotifyUsers(false);
     // Always honour the defaultSection when the modal (re-)opens
     setActiveSection(defaultSection);
   }, [bounty, open, defaultSection]);
@@ -130,6 +132,7 @@ export function EditBountyModal({
           ? new Date(timeToComplete).toISOString()
           : undefined,
         chain,
+        notifyUsers,
         // Pass userIds for assignees — handled in updateBounty
         ...(assigneesChanged && { userIds: selectedUserIds }),
       } as any);
@@ -444,34 +447,44 @@ export function EditBountyModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t grid grid-cols-1 imd:flex items-center justify-between shrink-0 bg-muted/20 gap-2">
-          <span className="text-xs text-muted-foreground">
-            {activeSection === "assignees"
-              ? `${selectedUserIds.length} assignee${selectedUserIds.length !== 1 ? "s" : ""} selected`
-              : `Last updated: ${bounty.dateCreated ? new Date(bounty.dateCreated).toLocaleDateString() : "—"}`}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-              disabled={isSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={isSaving || !title.trim() || hasAddressWarning}
-              className="gap-2 min-w-[90px]"
-            >
-              {isSaving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              {isSaving ? "Saving…" : "Save changes"}
-            </Button>
+        <div className="px-6 py-4 border-t flex flex-col gap-3 shrink-0 bg-muted/20">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={notifyUsers}
+              onChange={(e) => setNotifyUsers(e.target.checked)}
+            />
+            Notify assignees about this update
+          </label>
+          <div className="grid grid-cols-1 imd:flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              {activeSection === "assignees"
+                ? `${selectedUserIds.length} assignee${selectedUserIds.length !== 1 ? "s" : ""} selected`
+                : `Last updated: ${bounty.dateCreated ? new Date(bounty.dateCreated).toLocaleDateString() : "—"}`}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSave}
+                disabled={isSaving || !title.trim() || hasAddressWarning}
+                className="gap-2 min-w-[90px]"
+              >
+                {isSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                {isSaving ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

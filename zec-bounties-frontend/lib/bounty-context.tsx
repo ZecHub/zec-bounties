@@ -104,7 +104,13 @@ interface BountyContextType {
   bounties: Bounty[];
   bountiesLoading: boolean;
   createBounty: (data: BountyFormData) => Promise<void>;
-  updateBounty: (id: string, data: Partial<BountyFormData>) => Promise<void>;
+  updateBounty: (
+    id: string,
+    data: Partial<BountyFormData> & {
+      userIds?: string[];
+      notifyUsers?: boolean;
+    },
+  ) => Promise<void>;
   updateBountyStatus: (
     id: string,
     status: Bounty["status"],
@@ -2272,7 +2278,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const updateBounty = async (
     id: string,
-    data: Partial<BountyFormData> & { userIds?: string[] },
+    data: Partial<BountyFormData> & {
+      userIds?: string[];
+      notifyUsers?: boolean;
+    },
   ) => {
     if (!currentUser) return;
 
@@ -2286,6 +2295,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           ...(data.bountyAmount && { bountyAmount: data.bountyAmount }),
           ...(data.timeToComplete && { timeToComplete: data.timeToComplete }),
           ...(data.chain && { chain: data.chain }),
+          notifyUsers: data.notifyUsers ?? false,
         }),
       });
 
@@ -2297,7 +2307,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           {
             method: "POST",
             headers: getAuthHeaders(),
-            body: JSON.stringify({ userIds: data.userIds }),
+            body: JSON.stringify({
+              userIds: data.userIds,
+              notifyUsers: data.notifyUsers ?? false,
+            }),
           },
         );
         if (!assignRes.ok) {
@@ -2306,7 +2319,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Fetch only this one bounty (with full nested user data) and merge it in
       const fresh = await fetchBountyById(id);
       if (fresh) {
         setBounties((prev) =>
