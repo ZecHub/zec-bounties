@@ -603,7 +603,11 @@ export default function KpisDashboard() {
     () => topContributors.reduce((sum, u) => sum + (u.completed || 0), 0),
     [topContributors],
   );
-  const activeBounties = totalBounties - completedBounties;
+  const cancelledBounties = useMemo(
+    () => topContributors.reduce((sum, u) => sum + (u.cancelled || 0), 0),
+    [topContributors],
+  );
+  const activeBounties = totalBounties - completedBounties - cancelledBounties;
   const uniqueContributors = topContributors.length;
   const totalZecPaid = useMemo(
     () => sortedContributors.reduce((sum, u) => sum + (u.totalEarned || 0), 0),
