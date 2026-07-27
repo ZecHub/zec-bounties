@@ -18,6 +18,7 @@ import {
   ClipboardList,
   Upload,
   Send,
+  Lock,
 } from "lucide-react";
 import { formatStatus } from "@/lib/utils";
 import { useBounty } from "@/lib/bounty-context";
@@ -94,6 +95,8 @@ export function BountyCard({
     bounty.createdBy !== currentUser.id &&
     !userApplication &&
     !isAssignedToCurrentUser;
+
+  const isSuggestedTask = bounty.createdByUser?.role === "CLIENT";
 
   const hasApplied = !!userApplication;
 
@@ -220,6 +223,15 @@ export function BountyCard({
               >
                 {bounty.difficulty}
               </Badge>
+              {isSuggestedTask && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-4 px-1.5 border-sky-500/40 text-sky-600 bg-sky-500/5 gap-1"
+                  title="Suggested by a client — no other applicants permitted"
+                >
+                  <Lock className="h-2.5 w-2.5" /> Suggested
+                </Badge>
+              )}
               {hasApplied && (
                 <Badge
                   variant="outline"
@@ -394,6 +406,15 @@ export function BountyCard({
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-sm imd:text-base">
                 {bounty.title}
+                {isSuggestedTask && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] h-4 px-1 border-sky-500/40 text-sky-600 bg-sky-500/5 gap-0.5 shrink-0"
+                    title="Suggested by a client — no other applicants permitted"
+                  >
+                    <Lock className="h-2.5 w-2.5" /> Suggested
+                  </Badge>
+                )}
               </h3>
               <p className="text-xs text-muted-foreground truncate">
                 {bounty.createdByUser?.nickname || bounty.createdByUser?.name}
@@ -434,10 +455,12 @@ export function BountyCard({
             ) : (
               <div className="hidden lg:flex flex-col gap-1 items-start px-4 border-l min-w-[140px]">
                 <span className="text-[10px] uppercase text-muted-foreground font-bold">
-                  Available
+                  {isSuggestedTask ? "Invite Only" : "Available"}
                 </span>
                 <span className="text-[11px] text-muted-foreground">
-                  Open for applications
+                  {isSuggestedTask
+                    ? "No other applicants"
+                    : "Open for applications"}
                 </span>
               </div>
             )}
@@ -636,6 +659,16 @@ export function BountyCard({
             >
               {bounty.difficulty}
             </Badge>
+            {isSuggestedTask && (
+              <Badge
+                variant="outline"
+                className="text-[10px] h-5 uppercase tracking-wider border-sky-500/50 text-sky-600 bg-sky-500/5 gap-1"
+                title="Suggested by a client — no other applicants permitted"
+              >
+                <Lock className="h-3 w-3" /> Suggested
+              </Badge>
+            )}
+
             {bounty.assignees && bounty.assignees.length > 0 && (
               <Badge
                 variant="outline"
