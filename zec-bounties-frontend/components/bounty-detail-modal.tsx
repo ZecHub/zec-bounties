@@ -108,6 +108,8 @@ export function BountyDetailModal({
     (bounty.assignees?.some((a) => a.userId === currentUser.id) ||
       bounty.assignee === currentUser.id);
 
+  const isSuggestedTask = bounty.createdByUser?.role === "CLIENT";
+
   const isMissingUAForMainnet =
     bounty.chain === "MAIN" && !currentUser?.UA_address;
 
@@ -129,7 +131,8 @@ export function BountyDetailModal({
     bounty.createdBy !== currentUser.id &&
     !userApplication &&
     !isAssignedToCurrentUser &&
-    !isMissingUAForMainnet;
+    !isMissingUAForMainnet &&
+    !isSuggestedTask;
 
   const hasApplied = !!userApplication;
 
@@ -155,6 +158,13 @@ export function BountyDetailModal({
           type: "info",
           title: "Your bounty",
           message: "You cannot apply to your own bounty.",
+        };
+      }
+      if (isSuggestedTask) {
+        return {
+          type: "info",
+          title: "Suggested task",
+          message: "This is a suggested task and isn't open to applications.",
         };
       }
       if (bounty.chain === "MAIN" && !currentUser.UA_address) {
@@ -268,6 +278,14 @@ export function BountyDetailModal({
                 className="text-purple-600 border-purple-200 dark:text-purple-400 dark:border-purple-800 text-[10px]"
               >
                 Assigned to You
+              </Badge>
+            )}
+            {isSuggestedTask && (
+              <Badge
+                variant="outline"
+                className="text-orange-600 border-sky-200 dark:text-sky-400 dark:border-sky-800 text-[10px]"
+              >
+                Suggested Task
               </Badge>
             )}
           </div>
