@@ -393,6 +393,14 @@ export function BountyCard({
               NEW
             </span>
           )}
+          {isSuggestedTask && (
+            <span
+              className="imd:hidden absolute -top-2 -left-2 z-10 inline-flex items-center gap-0.5 text-[9px] font-bold px-1 py-1 rounded-full bg-sky-500 text-white border-2 border-background shadow-sm"
+              title="Suggested by a client — no other applicants permitted"
+            >
+              <Lock className="h-2.5 w-2.5" />
+            </span>
+          )}
           <div className="flex items-center p-3 imd:p-4 gap-3 imd:gap-4">
             {/* Avatar — always visible */}
             <Avatar className="h-8 w-8 imd:h-10 imd:w-10 border shrink-0">
@@ -404,12 +412,12 @@ export function BountyCard({
 
             {/* Name + title + description (description only on <imd) */}
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-sm imd:text-base">
+              <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-sm imd:text-base flex items-center gap-1.5">
                 {bounty.title}
                 {isSuggestedTask && (
                   <Badge
                     variant="outline"
-                    className="text-[9px] h-4 px-1 border-sky-500/40 text-sky-600 bg-sky-500/5 gap-0.5 shrink-0"
+                    className="hidden imd:inline-flex text-[9px] h-4 px-1 border-sky-500/40 text-sky-600 bg-sky-500/5 gap-0.5 shrink-0"
                     title="Suggested by a client — no other applicants permitted"
                   >
                     <Lock className="h-2.5 w-2.5" /> Suggested
