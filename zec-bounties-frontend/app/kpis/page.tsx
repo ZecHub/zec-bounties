@@ -749,7 +749,7 @@ export default function KpisDashboard() {
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
-        <Navbar isAdmin={true} />
+        <Navbar />
         <div className="imd:container max-w-7xl mx-auto px-6 py-8 bg-background min-h-screen text-foreground">
           {/* Header */}
           <div className="grid grid-cols-1 imd:flex flex-col imd:flex-row justify-between items-center mb-8 gap-4">
