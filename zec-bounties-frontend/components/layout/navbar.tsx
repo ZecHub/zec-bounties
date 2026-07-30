@@ -177,6 +177,15 @@ export function Navbar({
               >
                 Profile
               </Link>
+
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className="transition-colors text-primary font-bold"
+                >
+                  Admin Console
+                </Link>
+              )}
             </div>
           )}
 
