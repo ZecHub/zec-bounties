@@ -125,24 +125,24 @@ export function TeamsNewBountyModal({
   };
 
   const fieldLabel =
-    "mb-1.5 block font-mono text-xs uppercase tracking-widest text-ledger-text-muted";
+    "mb-1.5 block text-xs font-semibold uppercase tracking-widest text-muted-foreground";
   const fieldInput =
-    "h-10 w-full rounded-md border border-ledger-border bg-transparent px-3 text-sm text-ledger-text outline-none transition focus:border-ledger-gold";
+    "h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground outline-none transition focus:border-primary";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="border-ledger-border bg-ledger-bg p-0 text-ledger-text sm:max-w-[520px]"
+        className="border bg-card p-0 text-foreground sm:max-w-[520px]"
       >
         <form onSubmit={handleSubmit}>
           {/* Header */}
-          <div className="flex items-start justify-between border-b border-ledger-border px-6 py-5">
+          <div className="flex items-start justify-between border-b px-6 py-5">
             <div>
-              <span className="mb-1.5 block font-mono text-xs uppercase tracking-widest text-ledger-gold">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-widest text-primary">
                 New bounty
               </span>
-              <h2 className="font-mono text-lg font-medium text-ledger-text">
+              <h2 className="text-lg font-semibold text-foreground">
                 {defaultTeamName
                   ? `Post to ${defaultTeamName}`
                   : "Post a bounty"}
@@ -151,7 +151,7 @@ export function TeamsNewBountyModal({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="text-ledger-text-muted transition hover:text-ledger-text"
+              className="text-muted-foreground transition hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
@@ -160,8 +160,8 @@ export function TeamsNewBountyModal({
           {/* Fields */}
           <div className="space-y-4 px-6 py-6">
             {defaultTeamName && (
-              <div className="flex items-center gap-2 rounded-md border border-ledger-gold/30 bg-ledger-gold/10 px-3 py-2 font-mono text-xs text-ledger-gold">
-                <span className="h-1.5 w-1.5 rounded-full bg-ledger-gold" />
+              <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                 Posting to {defaultTeamName}
               </div>
             )}
@@ -229,7 +229,7 @@ export function TeamsNewBountyModal({
                   }
                   placeholder="0.00"
                   required
-                  className={`${fieldInput} font-mono`}
+                  className={fieldInput}
                 />
               </div>
             </div>
@@ -274,21 +274,21 @@ export function TeamsNewBountyModal({
               />
             </div>
 
-            {/* Live receipt preview — the ledger metaphor made literal */}
-            <div className="rounded-md border border-dashed border-ledger-border bg-ledger-panel px-4 py-3">
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-ledger-text-muted">
+            {/* Live receipt preview */}
+            <div className="rounded-md border border-dashed bg-muted/30 px-4 py-3">
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Preview
               </div>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm text-ledger-text">
+                  <div className="truncate text-sm text-foreground">
                     {formData.title || "Untitled bounty"}
                   </div>
-                  <div className="mt-0.5 font-mono text-xs text-ledger-text-muted">
+                  <div className="mt-0.5 text-xs text-muted-foreground">
                     {formData.category || "uncategorized"} · {deadlineLabel}
                   </div>
                 </div>
-                <span className="shrink-0 font-mono text-sm text-ledger-gold">
+                <span className="shrink-0 text-sm font-semibold text-primary">
                   {formatZec(formData.bountyAmount)}
                 </span>
               </div>
@@ -296,13 +296,13 @@ export function TeamsNewBountyModal({
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end gap-3 border-t border-ledger-border px-6 py-4">
+          <div className="flex justify-end gap-3 border-t px-6 py-4">
             {onCancel && (
               <button
                 type="button"
                 onClick={onCancel}
                 disabled={isSubmitting}
-                className="h-10 rounded-md border border-ledger-border px-4 font-mono text-sm text-ledger-text-muted transition hover:text-ledger-text disabled:opacity-50"
+                className="h-10 rounded-md border px-4 text-sm text-muted-foreground transition hover:text-foreground disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -310,7 +310,7 @@ export function TeamsNewBountyModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex h-10 items-center gap-2 rounded-md border border-ledger-gold bg-ledger-gold/10 px-4 font-mono text-sm text-ledger-gold transition hover:bg-ledger-gold/20 disabled:opacity-50"
+              className="flex h-10 items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-4 text-sm font-medium text-primary transition hover:bg-primary/20 disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>

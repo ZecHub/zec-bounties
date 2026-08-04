@@ -43,6 +43,7 @@ import { useState } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
+import { ThemePicker } from "@/components/theme/theme-picker";
 
 // ── Role toggle button ────────────────────────────────────────────────────────
 function RoleToggleButton({ compact = false }: { compact?: boolean }) {
@@ -216,6 +217,8 @@ export function TeamNavbar({
               <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
               <span className="sr-only">Toggle theme</span>
             </Button>
+
+            <ThemePicker />
 
             {currentUser && (
               <Button variant="ghost" size="icon" className="h-9 w-9">
