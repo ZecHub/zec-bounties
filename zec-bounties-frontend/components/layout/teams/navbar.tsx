@@ -112,7 +112,7 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function Navbar({
+export function TeamNavbar({
   isAdmin = false,
   searchQuery,
   onSearchChange,
@@ -158,34 +158,24 @@ export function Navbar({
             <div className="hidden xl:flex items-center space-x-5 text-sm font-medium mr-auto">
               {/* Dashboard Link - Visible to everyone */}
               <Link
-                href="/kpis"
+                href="/teams"
                 className="flex items-center gap-1.5 transition-colors hover:text-primary"
               >
-                <BarChart3 className="h-4 w-4" />
-                Dashboard
+                Teams
               </Link>
 
               <Link
-                href="/my-bounties"
+                href="/teams/bounties"
                 className="transition-colors hover:text-primary"
               >
-                My Bounties
+                Bounties
               </Link>
               <Link
-                href="/profile"
+                href="/teams/profile"
                 className="transition-colors hover:text-primary"
               >
                 Profile
               </Link>
-
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  className="transition-colors text-primary font-bold"
-                >
-                  Admin Console
-                </Link>
-              )}
             </div>
           )}
 
@@ -332,23 +322,23 @@ export function Navbar({
                       <div className="flex flex-col gap-2">
                         {/* Dashboard - Mobile */}
                         <Link
-                          href="/kpis"
+                          href="/teams"
                           className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
                           <BarChart3 className="h-4 w-4" />
-                          Dashboard
+                          Teams
                         </Link>
 
                         <Link
-                          href="/my-bounties"
+                          href="/teams/bounties"
                           className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
                           My Bounties
                         </Link>
                         <Link
-                          href="/profile"
+                          href="/teams/profile"
                           className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >

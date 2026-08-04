@@ -1,4 +1,4 @@
-export type UserRole = "ADMIN" | "CLIENT";
+export type UserRole = "ADMIN" | "CLIENT" | "TEAM" | "HUNTER";
 
 export type BountyStatus =
   | "TO_DO"
@@ -36,6 +36,7 @@ export interface BountyApplication {
   status: string;
   appliedAt: Date;
   applicantUser?: User; // Populated user data
+  bounty?: { id: string; title: string };
 }
 
 export interface Bounty {
@@ -63,6 +64,8 @@ export interface Bounty {
   difficulty: "Easy" | "Medium" | "Hard";
   chain: "MAIN" | "TEST";
   assignees?: BountyAssignee[];
+  teamId?: string | null;
+  team?: { id: string; name: string; logo?: string | null } | null;
 }
 
 export interface BountyFormData {
@@ -121,6 +124,7 @@ export interface WorkSubmission {
   status: "pending" | "approved" | "rejected" | "needs_revision";
   submitterUser?: User; // Populated user data
   reviewerUser?: User; // Populated user data
+  bounty?: { id: string; title: string };
 }
 
 export interface BountyAssignee {
@@ -171,6 +175,7 @@ export interface Team {
   updatedAt: string;
   members: TeamMember[];
   wallet?: TeamWallet | null;
+  logo?: string | null;
 }
 
 export interface RecoveryData {
@@ -256,3 +261,11 @@ export type BountyTypesOverTime = {
   month: string;
   [category: string]: string | number;
 };
+
+export interface Community {
+  id: string;
+  name: string;
+  description: string | null;
+  logo?: string | null;
+  memberCount: number;
+}

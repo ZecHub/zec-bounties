@@ -40,6 +40,17 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Ledger theme — fixed-dark "contract" surface used for onboarding
+     and other bounty/sealing flows. Not affected by .dark, since it's
+     intentionally dark regardless of the site's light/dark mode. */
+  --ledger-bg: oklch(0.16 0.006 250);
+  --ledger-panel: oklch(0.205 0.006 245);
+  --ledger-border: oklch(0.28 0.008 240);
+  --ledger-text: oklch(0.92 0.004 240);
+  --ledger-text-muted: oklch(0.65 0.02 240);
+  --ledger-gold: oklch(0.8 0.16 80);
+  --ledger-gold-muted: oklch(0.8 0.16 80 / 0.4);
 }
 
 .dark {
@@ -129,6 +140,14 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --radius: 0.5rem;
+
+  --color-ledger-bg: var(--ledger-bg);
+  --color-ledger-panel: var(--ledger-panel);
+  --color-ledger-border: var(--ledger-border);
+  --color-ledger-text: var(--ledger-text);
+  --color-ledger-text-muted: var(--ledger-text-muted);
+  --color-ledger-gold: var(--ledger-gold);
+  --color-ledger-gold-muted: var(--ledger-gold-muted);
 }
 
 @layer base {
@@ -137,5 +156,25 @@
   }
   body {
     @apply bg-background text-foreground selection:bg-primary selection:text-primary-foreground;
+  }
+}
+
+@keyframes seal-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes seal-stamp {
+  from {
+    transform: rotate(-8deg) scale(1.6);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(-8deg) scale(1);
+    opacity: 1;
   }
 }

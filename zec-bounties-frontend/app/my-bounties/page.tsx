@@ -234,7 +234,7 @@ export default function MyBountiesPage() {
   };
 
   return (
-    <ProtectedRoute blockAdmin>
+    <ProtectedRoute blockAdmin blockTeam>
       <main className="min-h-screen bg-background">
         <Navbar />
 

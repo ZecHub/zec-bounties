@@ -150,7 +150,7 @@ export default function AdminDashboard() {
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
-    () => bounties.filter((b) => b.chain === chainFilter),
+    () => bounties.filter((b) => b.chain === chainFilter && !b.teamId),
     [bounties, chainFilter],
   );
 
