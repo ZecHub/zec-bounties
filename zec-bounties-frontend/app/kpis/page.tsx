@@ -691,38 +691,65 @@ export default function KpisDashboard() {
   };
 
   // Address Type Helpers
-  const getAddressTypeBadge = (type?: string) => {
-    const normalized = type?.toLowerCase();
-    if (normalized === "none")
-      return "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30";
-    if (normalized?.includes("orchard") && normalized?.includes("sapling"))
-      return "bg-gradient-to-r from-emerald-500 to-blue-500 text-white";
-    if (normalized?.includes("orchard"))
-      return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
-    if (normalized?.includes("sapling"))
-      return "bg-gradient-to-r from-blue-500 to-indigo-500 text-white";
-    if (normalized?.includes("transparent"))
-      return "bg-gradient-to-r from-slate-500 to-slate-600 text-white";
-    if (normalized === "ua + z" || normalized === "full")
-      return "bg-gradient-to-r from-emerald-500 to-blue-500 text-white";
-    if (normalized === "ua only")
-      return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
-    return "bg-muted text-muted-foreground";
-  };
+const getAddressTypeBadge = (type?: string) => {
+  const n = type?.toLowerCase() ?? "";
 
-  const getDisplayAddressType = (type?: string) => {
-    const normalized = type?.toLowerCase();
-    if (normalized === "none") return "No UA";
-    if (normalized?.includes("orchard") && normalized?.includes("sapling"))
-      return "Orchard + Sapling";
-    if (normalized?.includes("orchard")) return "Orchard";
-    if (normalized?.includes("sapling")) return "Sapling";
-    if (normalized?.includes("transparent")) return "Transparent";
-    if (normalized === "ua + z" || normalized === "full")
-      return "Orchard + Sapling";
-    if (normalized === "ua only") return "Orchard";
+  if (!n || n === "none" || n === "unknown" || n === "invalid" || n === "error") {
+    return "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30";
+  }
+
+  const hasIronwood = n.includes("ironwood") || n.includes("orchard"); // legacy
+  const hasSapling = n.includes("sapling");
+  const hasTransparent = n.includes("transparent");
+
+  // Multi-receiver summaries (e.g. "Ironwood + Sapling + Transparent")
+  if (hasIronwood && hasSapling) {
+    return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
+  }
+  if (hasIronwood) {
+    return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
+  }
+  if (hasSapling) {
+    return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
+  }
+  if (hasTransparent) {
+    return "bg-gradient-to-r from-slate-500 to-slate-600 text-white";
+  }
+
+  // Legacy single labels
+  if (n === "full" || n === "ua + z") {
+    return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
+  }
+  if (n === "ua only") {
+    return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
+  }
+
+  return "bg-muted text-muted-foreground";
+};
+
+const getDisplayAddressType = (type?: string) => {
+  if (!type) return "Unknown";
+
+  const n = type.toLowerCase();
+
+  if (n === "none") return "No UA";
+  if (n === "unknown" || n === "invalid" || n === "error") {
     return type;
-  };
+  }
+
+  // Already a decoder summary — normalize Orchard → Ironwood for display
+  if (n.includes("ironwood") || n.includes("orchard") || n.includes("sapling") || n.includes("transparent")) {
+    return type
+      .replace(/orchard/gi, "Ironwood")
+      .replace(/\s*\+\s*/g, " + ");
+  }
+
+  // Legacy single labels
+  if (n === "full" || n === "ua + z") return "Ironwood + Sapling";
+  if (n === "ua only") return "Ironwood";
+
+  return type;
+};
 
   return (
     <ProtectedRoute>
