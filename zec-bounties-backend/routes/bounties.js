@@ -259,7 +259,7 @@ router.get("/", async (req, res) => {
 router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
   try {
     const { id: bountyId } = req.params;
-    const { userIds } = req.body;
+    const { userIds, notifyUsers = false } = req.body;
 
     if (!Array.isArray(userIds)) {
       return res.status(400).json({ error: "userIds must be an array" });
@@ -267,11 +267,18 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
 
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, title: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
-    // Run delete + create + optional status update mail(in one transaction
+    // Snapshot BEFORE the transaction wipes/recreates the roster
+    const existingAssignees = await prisma.bountyAssignee.findMany({
+      where: { bountyId },
+      include: { user: { select: USER_SELECT_FULL } },
+    });
+    const existingAssigneeIds = new Set(existingAssignees.map((a) => a.userId));
+    const newAssigneeIds = new Set(userIds);
+
     const [, assignees] = await prisma.$transaction(async (tx) => {
       await tx.bountyAssignee.deleteMany({ where: { bountyId } });
 
@@ -283,7 +290,6 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
         return [null, []];
       }
 
-      // Batch insert — O(1) round-trips instead of O(n)
       await tx.bountyAssignee.createMany({
         data: userIds.map((userId) => ({ bountyId, userId })),
       });
@@ -295,7 +301,6 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
         });
       }
 
-      // Single query to fetch what we just created
       const created = await tx.bountyAssignee.findMany({
         where: { bountyId },
         include: { user: { select: USER_SELECT_FULL } },
@@ -310,9 +315,76 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
     );
     await invalidateBounty(bountyId);
     res.status(200).json({ assignees });
+
+    try {
+      console.log("[assignee notify] notifyUsers:", notifyUsers);
+
+      if (notifyUsers === true) {
+        // Added: in the new list, weren't in the old list
+        const added = assignees.filter(
+          (a) => !existingAssigneeIds.has(a.userId) && a.user?.email,
+        );
+
+        // Removed: were in the old list, aren't in the new list
+        const removed = existingAssignees.filter(
+          (a) => !newAssigneeIds.has(a.userId) && a.user?.email,
+        );
+
+        console.log(
+          "[assignee notify] added:",
+          added.map((a) => a.user.email),
+          "removed:",
+          removed.map((a) => a.user.email),
+        );
+
+        const emailJobs = [];
+
+        for (const a of added) {
+          emailJobs.push(
+            sendMail({
+              to: a.user.email,
+              subject: `🎉 You've been assigned: ${bounty.title}`,
+              text: `Hi ${a.user.nickname || a.user.name},\n\nCongratulations! You've been assigned to "${bounty.title}". You can start working on it now.`,
+              html: `
+                <h2>🎉 Congratulations, you were assigned!</h2>
+                <p>Hi ${a.user.nickname || a.user.name},</p>
+                <p>You've been assigned to:</p>
+                <p><strong>${bounty.title}</strong></p>
+                <p>You can start working on it now.</p>
+              `,
+            }),
+          );
+        }
+
+        for (const a of removed) {
+          emailJobs.push(
+            sendMail({
+              to: a.user.email,
+              subject: `Removed from bounty: ${bounty.title}`,
+              text: `Hi ${a.user.nickname || a.user.name},\n\nYou've been removed from "${bounty.title}". Reach out to the bounty creator if you have questions.`,
+              html: `
+                <h2>You've been removed from a bounty</h2>
+                <p>Hi ${a.user.nickname || a.user.name},</p>
+                <p>You've been removed from:</p>
+                <p><strong>${bounty.title}</strong></p>
+                <p>Reach out to the bounty creator if you have questions.</p>
+              `,
+            }),
+          );
+        }
+
+        if (emailJobs.length > 0) {
+          await Promise.all(emailJobs);
+        }
+      }
+    } catch (mailErr) {
+      console.error("Assignee notification email failed:", mailErr);
+    }
   } catch (error) {
     console.error("Error updating assignees:", error);
-    res.status(500).json({ error: "Failed to update assignees" });
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to update assignees" });
+    }
   }
 });
 
@@ -1133,7 +1205,12 @@ router.put(
 
       const application = await prisma.bountyApplication.findUnique({
         where: { id: applicationId },
-        select: { id: true, bountyId: true, applicantId: true },
+        select: {
+          id: true,
+          bountyId: true,
+          applicantId: true,
+          bounty: { select: { title: true } },
+        },
       });
       if (!application)
         return res.status(404).json({ error: "Application not found" });
@@ -1176,6 +1253,26 @@ router.put(
 
       sendRealtimeUpdate("application_updated", result, req.user.id);
       res.json(result);
+
+      // Fire-and-forget — applicant just got assigned via acceptance
+      if (status === "accepted" && result.applicantUser?.email) {
+        const recipient = result.applicantUser;
+        const bountyTitle = application.bounty?.title ?? "a bounty";
+        sendMail({
+          to: recipient.email,
+          subject: `You've been assigned: ${bountyTitle}`,
+          text: `Hi ${recipient.nickname || recipient.name},\n\nYour application was accepted and you've been assigned to "${bountyTitle}". You can start working on it now.`,
+          html: `
+            <h2>You've been assigned a bounty</h2>
+            <p>Hi ${recipient.nickname || recipient.name},</p>
+            <p>Your application was accepted and you've been assigned to:</p>
+            <p><strong>${bountyTitle}</strong></p>
+            <p>You can start working on it now.</p>
+          `,
+        }).catch((mailErr) =>
+          console.error("Assignment notification email failed:", mailErr),
+        );
+      }
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -1315,7 +1412,7 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
           },
         },
       },
-      orderBy: { dateCreated: "desc" },
+      orderBy: { completedAt: "desc" },
     });
     res.json({ success: true, data: bounties });
   } catch (error) {
@@ -1418,6 +1515,28 @@ router.put("/:id", authenticate, isAdmin, async (req, res) => {
       return res.status(400).json({ error: "Invalid chain value" });
     }
 
+    const { notifyUsers = false } = req.body;
+
+    // including the status flip hidden inside isApproved
+    const before = await prisma.bounty.findUnique({
+      where: { id: req.params.id },
+      select: {
+        title: true,
+        description: true,
+        bountyAmount: true,
+        timeToComplete: true,
+        status: true,
+      },
+    });
+    if (!before) return res.status(404).json({ error: "Bounty not found" });
+
+    const nextStatus =
+      req.body.isApproved !== undefined
+        ? req.body.isApproved
+          ? "IN_PROGRESS"
+          : "CANCELLED"
+        : before.status;
+
     const updated = await prisma.bounty.update({
       where: { id: req.params.id },
       data: {
@@ -1428,17 +1547,79 @@ router.put("/:id", authenticate, isAdmin, async (req, res) => {
           timeToComplete: req.body.timeToComplete,
         }),
         ...(req.body.assignee !== undefined && { assignee: req.body.assignee }),
-        ...(req.body.chain !== undefined && { chain: req.body.chain }), // NEW
+        ...(req.body.chain !== undefined && { chain: req.body.chain }),
         ...(req.body.isApproved !== undefined && {
           isApproved: req.body.isApproved,
-          status: req.body.isApproved ? "IN_PROGRESS" : "CANCELLED",
+          status: nextStatus,
         }),
+      },
+      include: {
+        assignees: {
+          include: { user: { select: USER_SELECT_FULL } },
+        },
       },
     });
 
     sendRealtimeUpdate("bounty_updated", updated, req.user.id);
     await invalidateBounty(req.params.id);
     res.json(updated);
+
+    if (notifyUsers === true) {
+      const changes = [];
+
+      if (nextStatus !== before.status) {
+        changes.push(`Status changed to ${nextStatus.replace("_", " ")}`);
+      }
+      if (req.body.title && req.body.title !== before.title) {
+        changes.push(`Title updated to "${updated.title}"`);
+      }
+      if (req.body.description && req.body.description !== before.description) {
+        changes.push(`Description updated`);
+      }
+      if (
+        req.body.bountyAmount &&
+        Number(req.body.bountyAmount) !== before.bountyAmount
+      ) {
+        changes.push(`Reward updated to ${updated.bountyAmount} ZEC`);
+      }
+      if (
+        req.body.timeToComplete &&
+        new Date(req.body.timeToComplete).getTime() !==
+          new Date(before.timeToComplete).getTime()
+      ) {
+        changes.push(
+          `Deadline updated to ${new Date(updated.timeToComplete).toLocaleDateString()}`,
+        );
+      }
+
+      if (changes.length > 0) {
+        const recipients = updated.assignees
+          .map((a) => a.user)
+          .filter((u) => u?.email);
+
+        if (recipients.length > 0) {
+          Promise.all(
+            recipients.map((u) =>
+              sendMail({
+                to: u.email,
+                subject: `Bounty update: ${updated.title}`,
+                text: `Hi ${u.nickname || u.name},\n\n"${updated.title}" was updated:\n\n${changes.map((c) => `- ${c}`).join("\n")}`,
+                html: `
+                  <h2>Bounty update</h2>
+                  <p>Hi ${u.nickname || u.name},</p>
+                  <p><strong>${updated.title}</strong> was updated:</p>
+                  <ul>
+                    ${changes.map((c) => `<li>${c}</li>`).join("")}
+                  </ul>
+                `,
+              }),
+            ),
+          ).catch((mailErr) =>
+            console.error("Bounty update notification email failed:", mailErr),
+          );
+        }
+      }
+    }
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to update bounty" });

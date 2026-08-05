@@ -75,6 +75,7 @@ router.get("/top-contributors", async (req, res) => {
           addressType,
           badges: userBadges,
           completed: 0,
+          cancelled: 0,
           submitted: 0,
           totalEarned: 0,
         });
@@ -101,6 +102,11 @@ router.get("/top-contributors", async (req, res) => {
         const stats = userMap.get(bounty.assignee);
         if (!stats) return;
         stats.submitted += 1;
+
+        if (bounty.status === "CANCELLED") {
+          stats.cancelled += 1;
+          return;
+        }
 
         const isCompleted = bounty.status === "DONE" && bounty.completedAt;
         if (!isCompleted) return;
@@ -186,6 +192,11 @@ router.get("/top-contributors", async (req, res) => {
 
       const stats = userStats.get(userId);
       stats.submitted += 1;
+
+      if (bounty.status === "CANCELLED") {
+        stats.cancelled += 1;
+        return;
+      }
 
       const isCompleted = bounty.status === "DONE" && bounty.completedAt;
       if (!isCompleted) return;
