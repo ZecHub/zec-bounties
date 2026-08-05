@@ -16,6 +16,7 @@ import {
   ArrowUpDown,
   Zap,
   Users,
+  Ban,
   Shield,
   Pencil,
   Server,
@@ -508,18 +509,26 @@ export default function KpisDashboard() {
         let data = await res.json();
 
         if (isAdmin) {
-          data = data.map((user: any) => {
-            if (user.UA_address) {
-              try {
-                const decoded = getAddressReceivers(user.UA_address);
-                return { ...user, addressType: decoded.type };
-              } catch {
-                return user;
-              }
-            }
-            return user;
-          });
-        }
+	  data = data.map((user: any) => {
+	    if (user.UA_address) {
+	      try {
+		const decoded = getAddressReceivers(user.UA_address);
+		return {
+		  ...user,
+		  addressType: decoded.type,
+		  receivers: {
+		    ironwood: decoded.ironwood,
+		    sapling: decoded.sapling,
+		    transparent: decoded.transparent,
+		  },
+		};
+	      } catch {
+		return user;
+	      }
+	    }
+	    return user;
+	  });
+	}
         setTopContributors(data);
       } catch (error) {
         console.error(error);
@@ -778,81 +787,66 @@ export default function KpisDashboard() {
     }
   };
 
-  const getAddressTypeIcons = (type: string | undefined) => {
-    if (!type) {
-      return [
-        <div
-          key="none"
-          title="No Shielded Address"
-          className="flex items-center justify-center"
-        >
-          <AlertTriangle className="w-5 h-5 text-yellow-400" />
-        </div>,
-      ];
-    }
-
-    const normalized = type.toLowerCase().trim();
-
-    // Ironwood (any UA containing Orchard or Ironwood)
-    if (
-      normalized.includes("ironwood") ||
-      normalized.includes("orchard") ||
-      normalized === "ua only" ||
-      normalized === "ua + z" ||
-      normalized === "full"
-    ) {
-      return [
-        <div
-          key="ironwood"
-          title={getDisplayAddressType(type)}
-          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
-        >
-          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
-        </div>,
-      ];
-    }
-
-    // Pure Sapling
-    if (normalized.includes("sapling")) {
-      return [
-        <div
-          key="sapling"
-          title="Sapling"
-          className="flex items-center justify-center"
-        >
-          <Leaf className="w-5 h-5 text-emerald-400" />
-        </div>,
-      ];
-    }
-
-    // Transparent or None
-    if (
-      normalized.includes("transparent") ||
-      normalized === "none" ||
-      normalized === ""
-    ) {
-      return [
-        <div
-          key="transparent"
-          title="none"
-          className="flex items-center justify-center"
-        >
-          -
-        </div>,
-      ];
-    }
-
-    // Fallback
+  const getAddressTypeIcons = (receivers?: {
+  ironwood?: boolean;
+  sapling?: boolean;
+  transparent?: boolean;
+}) => {
+  if (
+    !receivers ||
+    (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
+  ) {
     return [
       <div
-        key="unknown"
-        title={type}
+        key="none"
+        title="No Address"
         className="flex items-center justify-center"
       >
-        <HelpCircle className="w-5 h-5 text-slate-400" />
+        <Ban className="w-5 h-5 text-red-500" />
       </div>,
     ];
-  };
+  }
+
+  const icons = [];
+
+  if (receivers.transparent) {
+    icons.push(
+      <div
+        key="transparent"
+        title="Transparent"
+        className="flex items-center justify-center"
+      >
+        <AlertTriangle className="w-5 h-5 text-yellow-400" />
+      </div>,
+    );
+  }
+
+  if (receivers.sapling) {
+    icons.push(
+      <div
+        key="sapling"
+        title="Sapling"
+        className="flex items-center justify-center"
+      >
+        <Leaf className="w-5 h-5 text-emerald-400" />
+      </div>,
+    );
+  }
+
+  if (receivers.ironwood) {
+    icons.push(
+      <div
+        key="ironwood"
+        title="Ironwood"
+        className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
+      >
+        <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
+      </div>,
+    );
+  }
+
+  return icons;
+};
 
   // Address Type Helpers
   const getAddressTypeBadge = (type?: string) => {
@@ -1173,7 +1167,7 @@ export default function KpisDashboard() {
 				{viewMode === "admin" && (
 				  <TableCell>
 				    <div className="flex items-center justify-center gap-1.5">
-				      {getAddressTypeIcons(user.addressType)}
+				      {getAddressTypeIcons(user.receivers)}
 				    </div>
 				  </TableCell>
 				)}
