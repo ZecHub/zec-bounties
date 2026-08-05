@@ -1083,53 +1083,51 @@ export default function KpisDashboard() {
                       >
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
-                      {/* Admin-only columns */}
-                      {viewMode === "admin" && (
-                        <TableHead>
-                          <div className="flex items-center gap-2">
-                            <span>Badges</span>
-                            <button
-                              onClick={() => {
-                                setSelectedUserForBadges(null);
-                                setSelectedBadges([]);
-                                setIsBadgeModalOpen(true);
-                              }}
-                              className="p-1 hover:bg-muted rounded transition-colors"
-                              title="Manage User Badges"
-                            >
-                              <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                            </button>
-                          </div>
-                        </TableHead>
-                      )}
-                      {viewMode === "admin" && (
-                        <TableHead>Address Type</TableHead>
-                      )}
-                      {viewMode === "admin" && (
-                        <TableHead
-                          className="text-right cursor-pointer"
-                          onClick={() => toggleSort("totalEarned")}
-                        >
-                          Total ZEC Earned{" "}
-                          <ArrowUpDown className="inline w-4 h-4" />
-                        </TableHead>
-                      )}
-                      {viewMode === "admin" && (
-                        <TableHead
-                          className="text-right cursor-pointer"
-                          onClick={() => toggleSort("completionRate")}
-                        >
-                          Completion %{" "}
-                          <ArrowUpDown className="inline w-4 h-4" />
-                        </TableHead>
-                      )}
+                      {/* Badges — public; edit control admin-only */}
+			<TableHead>
+			  <div className="flex items-center gap-2">
+			    <span>Badges</span>
+			    {isAdmin && viewMode === "admin" && (
+			      <button
+				onClick={() => {
+				  setSelectedUserForBadges(null);
+				  setSelectedBadges([]);
+				  setIsBadgeModalOpen(true);
+				}}
+				className="p-1 hover:bg-muted rounded transition-colors"
+				title="Manage User Badges"
+			      >
+				<Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+			      </button>
+			    )}
+			  </div>
+			</TableHead>
+			{viewMode === "admin" && (
+			  <TableHead>Address Type</TableHead>
+			)}
+			{viewMode === "admin" && (
+			  <TableHead
+			    className="text-right cursor-pointer"
+			    onClick={() => toggleSort("totalEarned")}
+			  >
+			    Total ZEC Earned <ArrowUpDown className="inline w-4 h-4" />
+			  </TableHead>
+			)}
+			{viewMode === "admin" && (
+			  <TableHead
+			    className="text-right cursor-pointer"
+			    onClick={() => toggleSort("completionRate")}
+			  >
+			    Completion % <ArrowUpDown className="inline w-4 h-4" />
+			  </TableHead>
+			)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sortedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={viewMode === "admin" ? 9 : 5}
+                          colSpan={viewMode === "admin" ? 9 : 6}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No data available.
@@ -1161,54 +1159,34 @@ export default function KpisDashboard() {
                             </TableCell>
                             <TableCell>{user.name}</TableCell>
                             <TableCell>{user.completed}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {user.submitted}
-                            </TableCell>
+				<TableCell className="text-muted-foreground">
+				  {user.submitted}
+				</TableCell>
 
-                            {/* Admin-only columns */}
-                            {viewMode === "admin" && (
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  {getBadgeIcons(
-                                    user.completed,
-                                    user.badges,
-                                    user.role,
-                                  )}
-                                </div>
-                              </TableCell>
-                            )}
+				{/* Badges — public */}
+				<TableCell>
+				  <div className="flex items-center gap-1.5">
+				    {getBadgeIcons(user.completed, user.badges, user.role)}
+				  </div>
+				</TableCell>
 
-                            {viewMode === "admin" && (
-                              <TableCell>
-                                <div className="flex items-center justify-center gap-1.5">
-                                  {getAddressTypeIcons(user.addressType)}
-                                </div>
-                              </TableCell>
-                            )}
+				{viewMode === "admin" && (
+				  <TableCell>
+				    <div className="flex items-center justify-center gap-1.5">
+				      {getAddressTypeIcons(user.addressType)}
+				    </div>
+				  </TableCell>
+				)}
 
-                            {/* {viewMode === "admin" && (
-                              <TableCell>
-                                <span
-                                  className={`px-2.5 py-0.5 text-xs rounded-full ${getAddressTypeBadge(user.addressType)}`}
-                                >
-                                  {getDisplayAddressType(user.addressType)}
-                                </span>
-                              </TableCell>
-                            )} */}
+				{viewMode === "admin" && (
+				  <TableCell className="text-right font-medium">
+				    {user.totalEarned ? user.totalEarned.toFixed(4) : "0.0000"}
+				  </TableCell>
+				)}
 
-                            {viewMode === "admin" && (
-                              <TableCell className="text-right font-medium">
-                                {user.totalEarned
-                                  ? user.totalEarned.toFixed(4)
-                                  : "0.0000"}
-                              </TableCell>
-                            )}
-
-                            {viewMode === "admin" && (
-                              <TableCell className="text-right font-medium">
-                                {rate}%
-                              </TableCell>
-                            )}
+				{viewMode === "admin" && (
+				  <TableCell className="text-right font-medium">{rate}%</TableCell>
+				)}
                           </TableRow>
                         );
                       })
