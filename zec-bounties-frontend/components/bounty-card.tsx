@@ -284,10 +284,10 @@ export function BountyCard({
                   <Button
                     size="icon"
                     className="h-6 w-6 bg-green-600 hover:bg-green-700 text-white rounded-full"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSubmissionDialogOpen(true);
-                    }}
+                    // onClick={(e) => {
+                    //   e.stopPropagation();
+                    //   setIsSubmissionDialogOpen(true);
+                    // }}
                   >
                     <Upload className="h-3 w-3" />
                   </Button>
