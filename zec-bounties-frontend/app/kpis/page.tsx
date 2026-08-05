@@ -198,118 +198,96 @@ export default function KpisDashboard() {
 
   // Final simplified badge logic
   // Updated: Supports showing multiple badges at once
-  const getBadgeIcons = (badges?: string[], role?: string) => {
-    const icons = [];
+  const getBadgeIcons = (
+  completed: number,
+  badges?: string[],
+  role?: string,
+	) => {
+	  const icons = [];
+	  const list = Array.isArray(badges) ? badges : [];
 
-    // Check for avatar color override first
-    const avatarOverride = badges?.find((b) => b.startsWith("avatar:"));
+	  let badgeClass = "text-muted-foreground";
 
-    if (avatarOverride) {
-      let avatarClass = "text-muted-foreground";
+	  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
+	  if (avatarOverride) {
+	    switch (avatarOverride) {
+	      case "avatar:red":
+		badgeClass = "text-red-500";
+		break;
+	      case "avatar:blue":
+		badgeClass = "text-blue-500";
+		break;
+	      case "avatar:purple":
+		badgeClass = "text-purple-500";
+		break;
+	      case "avatar:gold":
+		badgeClass = "text-yellow-500";
+		break;
+	      case "avatar:pink":
+		badgeClass = "text-pink-500";
+		break;
+	      default:
+		break;
+	    }
+	  }
 
-      switch (avatarOverride) {
-        case "avatar:red":
-          avatarClass = "text-red-500";
-          break;
-        case "avatar:blue":
-          avatarClass = "text-blue-500";
-          break;
-        case "avatar:purple":
-          avatarClass = "text-purple-500";
-          break;
-        case "avatar:gold":
-          avatarClass = "text-yellow-500";
-          break;
-        case "avatar:pink":
-          avatarClass = "text-pink-500";
-          break;
-        default:
-          avatarClass = "text-muted-foreground";
-      }
+	  if (!avatarOverride || avatarOverride === "avatar:default") {
+	    if (completed >= 60) badgeClass = "text-pink-500";
+	    else if (completed >= 20) badgeClass = "text-yellow-500";
+	    else if (completed >= 10) badgeClass = "text-purple-500";
+	    else if (completed >= 5) badgeClass = "text-blue-500";
+	    else if (completed >= 1) badgeClass = "text-red-500";
+	    else badgeClass = "text-muted-foreground";
+	  }
 
-      icons.push(
-        <div key="avatar-override" title="Custom Avatar Color">
-          <Users className={`w-4 h-4 ${avatarClass}`} />
-        </div>,
-      );
-    }
+	  icons.push(
+	    <div key="member" title="Member">
+	      <Users className={`w-4 h-4 ${badgeClass}`} />
+	    </div>,
+	  );
 
-    // Regular badges
-    if (role === "ADMIN" || badges?.includes("admin")) {
-      icons.push(
-        <div
-          key="admin"
-          title="Admin"
-          className="text-purple-500 dark:text-purple-400"
-        >
-          <Shield className="w-4 h-4" />
-        </div>,
-      );
-    }
+	  if (role === "ADMIN" || list.includes("admin")) {
+	    icons.push(
+	      <div key="admin" title="Admin" className="text-purple-500 dark:text-purple-400">
+		<Shield className="w-4 h-4" />
+	      </div>,
+	    );
+	  }
 
-    if (badges?.includes("dao-member")) {
-      icons.push(
-        <div
-          key="dao-member"
-          title="DAO Member"
-          className="text-teal-500 dark:text-teal-400"
-        >
-          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
-        </div>,
-      );
-    }
+	  if (list.includes("dao-member")) {
+	    icons.push(
+	      <div key="dao-member" title="DAO Member" className="text-teal-500 dark:text-teal-400">
+		<img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
+	      </div>,
+	    );
+	  }
 
-    if (badges?.includes("node-runner")) {
-      icons.push(
-        <div
-          key="node-runner"
-          title="Node Runner"
-          className="text-blue-500 dark:text-blue-400"
-        >
-          <Server className="w-4 h-4" />
-        </div>,
-      );
-    }
+	  if (list.includes("node-runner")) {
+	    icons.push(
+	      <div key="node-runner" title="Node Runner" className="text-blue-500 dark:text-blue-400">
+		<Server className="w-4 h-4" />
+	      </div>,
+	    );
+	  }
 
-    if (badges?.includes("miner")) {
-      icons.push(
-        <div
-          key="miner"
-          title="Miner"
-          className="text-orange-500 dark:text-orange-400"
-        >
-          <Pickaxe className="w-4 h-4" />
-        </div>,
-      );
-    }
+	  if (list.includes("miner")) {
+	    icons.push(
+	      <div key="miner" title="Miner" className="text-orange-500 dark:text-orange-400">
+		<Pickaxe className="w-4 h-4" />
+	      </div>,
+	    );
+	  }
 
-    if (badges?.includes("researcher")) {
-      icons.push(
-        <div
-          key="researcher"
-          title="Researcher"
-          className="text-emerald-500 dark:text-emerald-400"
-        >
-          <BookOpen className="w-4 h-4" />
-        </div>,
-      );
-    }
+	  if (list.includes("researcher")) {
+	    icons.push(
+	      <div key="researcher" title="Researcher" className="text-emerald-500 dark:text-emerald-400">
+		<BookOpen className="w-4 h-4" />
+	      </div>,
+	    );
+	  }
 
-    // Default regular user icon (only if no override and no other badges)
-    if (icons.length === 0) {
-      icons.push(
-        <div
-          key="regular"
-          title="Regular User"
-          className="text-muted-foreground"
-        >
-          <Users className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    return icons;
-  };
+	  return icons;
+	};
 
   // Dynamic default avatar color based on completed bounties
   const getDefaultAvatarClasses = (
@@ -896,25 +874,26 @@ export default function KpisDashboard() {
                       >
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
-                      {/* Admin-only columns */}
-                      {viewMode === "admin" && (
+                      
+                     
                         <TableHead>
-                          <div className="flex items-center gap-2">
-                            <span>Badges</span>
-                            <button
-                              onClick={() => {
-                                setSelectedUserForBadges(null);
-                                setSelectedBadges([]);
-                                setIsBadgeModalOpen(true);
-                              }}
-                              className="p-1 hover:bg-muted rounded transition-colors"
-                              title="Manage User Badges"
-                            >
-                              <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                            </button>
-                          </div>
-                        </TableHead>
-                      )}
+			  <div className="flex items-center gap-2">
+			    <span>Badges</span>
+			    {isAdmin && viewMode === "admin" && (
+			      <button
+				onClick={() => {
+				  setSelectedUserForBadges(null);
+				  setSelectedBadges([]);
+				  setIsBadgeModalOpen(true);
+				}}
+				className="p-1 hover:bg-muted rounded transition-colors"
+				title="Manage User Badges"
+			      >
+				<Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+			      </button>
+			    )}
+			  </div>
+			</TableHead>
                       {viewMode === "admin" && (
                         <TableHead>Address Type</TableHead>
                       )}
@@ -942,7 +921,7 @@ export default function KpisDashboard() {
                     {sortedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={viewMode === "admin" ? 9 : 5}
+                          colSpan={viewMode === "admin" ? 9 : 6}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No data available.
@@ -977,15 +956,11 @@ export default function KpisDashboard() {
                             <TableCell className="text-muted-foreground">
                               {user.submitted}
                             </TableCell>
-
-                            {/* Admin-only columns */}
-                            {viewMode === "admin" && (
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  {getBadgeIcons(user?.badges, user.role)}
-                                </div>
-                              </TableCell>
-                            )}
+                            <TableCell>
+				  <div className="flex items-center gap-1.5">
+				    {getBadgeIcons(user.completed, user.badges, user.role)}
+				  </div>
+				</TableCell>
 
                             {viewMode === "admin" && (
                               <TableCell>
