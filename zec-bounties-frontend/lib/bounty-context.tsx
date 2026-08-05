@@ -210,6 +210,10 @@ interface BountyContextType {
   fetchBountySubmissions: (bountyId: string) => Promise<WorkSubmission[]>;
   getUserSubmissionForBounty: (bountyId: string) => WorkSubmission | null;
   getAllSubmissionsForBounty: (bountyId: string) => WorkSubmission[];
+  editSubmission: (
+    submissionId: string,
+    data: { description: string; deliverableUrl?: string },
+  ) => Promise<WorkSubmission>;
 
   // Fetch methods
   fetchUserApplications: () => Promise<void>;
@@ -1316,6 +1320,50 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return [];
   };
 
+  const editSubmission = async (
+    submissionId: string,
+    data: { description: string; deliverableUrl?: string },
+  ) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/submissions/${submissionId}`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to edit submission");
+      }
+
+      const result = await res.json();
+      const updated: WorkSubmission = result.workSubmission;
+
+      setSubmissions((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s)),
+      );
+      setAllSubmissions((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s)),
+      );
+      setBountySubmissions((prev) => ({
+        ...prev,
+        [updated.bountyId]: (prev[updated.bountyId] || []).map((s) =>
+          s.id === updated.id ? updated : s,
+        ),
+      }));
+
+      return updated;
+    } catch (error) {
+      console.error("Failed to edit submission:", error);
+      throw error;
+    }
+  };
+
   const acceptApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
@@ -2135,6 +2183,21 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             fetchBounties();
             fetchUsers();
             break;
+
+          case "submission_edited":
+            setSubmissions((prev) =>
+              prev.map((s) => (s.id === msg.payload.id ? msg.payload : s)),
+            );
+            setAllSubmissions((prev) =>
+              prev.map((s) => (s.id === msg.payload.id ? msg.payload : s)),
+            );
+            setBountySubmissions((prev) => ({
+              ...prev,
+              [msg.payload.bountyId]: (prev[msg.payload.bountyId] || []).map(
+                (s) => (s.id === msg.payload.id ? msg.payload : s),
+              ),
+            }));
+            break;
         }
       };
 
@@ -2815,6 +2878,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         importTeamWallet,
         deleteTeamWallet,
         currentTeam,
+        editSubmission,
       }}
     >
       {children}

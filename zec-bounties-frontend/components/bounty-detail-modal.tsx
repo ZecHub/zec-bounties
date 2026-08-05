@@ -47,6 +47,7 @@ export function BountyDetailModal({
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
+    editSubmission,
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
@@ -56,6 +57,17 @@ export function BountyDetailModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmission[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDescription, setEditDescription] = useState("");
+  const [editDeliverableUrl, setEditDeliverableUrl] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
@@ -117,6 +129,42 @@ export function BountyDetailModal({
     ? (workSubmissions.find((s) => s.submittedBy === currentUser.id) ?? null)
     : null;
   const hasCurrentUserSubmitted = !!userWorkSubmission;
+
+  const EDIT_WINDOW_MS = 15 * 60 * 1000;
+  const submittedAtMs = userWorkSubmission?.submittedAt
+    ? new Date(userWorkSubmission.submittedAt).getTime()
+    : null;
+  const editMsRemaining = submittedAtMs
+    ? EDIT_WINDOW_MS - (now - submittedAtMs)
+    : 0;
+  const canEditSubmission =
+    hasCurrentUserSubmitted &&
+    userWorkSubmission?.status === "pending" &&
+    editMsRemaining > 0;
+
+  const startEdit = () => {
+    setEditDescription(userWorkSubmission?.description ?? "");
+    setEditDeliverableUrl(userWorkSubmission?.deliverableUrl ?? "");
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!userWorkSubmission || !editDescription.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      await editSubmission(userWorkSubmission.id, {
+        description: editDescription,
+        deliverableUrl: editDeliverableUrl,
+      });
+      setIsEditing(false);
+      toast.success("Submission updated!");
+    } catch (error) {
+      console.error("Failed to edit submission:", error);
+      toast.error("Failed to update submission");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   const canSubmitWork =
     isAssignedToCurrentUser &&
@@ -396,20 +444,74 @@ export function BountyDetailModal({
                     </Badge>
                   </div>
 
-                  <div className="p-2.5 bg-white dark:bg-green-950/30 border rounded text-xs text-green-700 dark:text-green-300 leading-relaxed">
-                    {userWorkSubmission?.description}
-                  </div>
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        className="min-h-[80px] text-sm bg-white dark:bg-green-950/30"
+                      />
+                      <input
+                        type="url"
+                        value={editDeliverableUrl}
+                        onChange={(e) => setEditDeliverableUrl(e.target.value)}
+                        placeholder="https://github.com/username/repo"
+                        className="w-full px-3 py-1.5 border rounded-md text-sm"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveEdit}
+                          disabled={!editDescription.trim() || isSavingEdit}
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          {isSavingEdit ? "Saving..." : "Save Changes"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setIsEditing(false)}
+                          disabled={isSavingEdit}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="p-2.5 bg-white dark:bg-green-950/30 border rounded text-xs text-green-700 dark:text-green-300 leading-relaxed">
+                        {userWorkSubmission?.description}
+                      </div>
 
-                  {userWorkSubmission?.deliverableUrl && (
-                    <a
-                      href={userWorkSubmission.deliverableUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all"
-                    >
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      {userWorkSubmission.deliverableUrl}
-                    </a>
+                      {userWorkSubmission?.deliverableUrl && (
+                        <a
+                          href={userWorkSubmission.deliverableUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all"
+                        >
+                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                          {userWorkSubmission.deliverableUrl}
+                        </a>
+                      )}
+
+                      {canEditSubmission && (
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[11px] text-green-600 dark:text-green-400">
+                            You can edit for{" "}
+                            {Math.ceil(editMsRemaining / 60000)} more min
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={startEdit}
+                          >
+                            Edit Submission
+                          </Button>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   <p className="text-[11px] text-green-600 dark:text-green-400">
