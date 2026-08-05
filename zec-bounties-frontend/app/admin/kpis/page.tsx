@@ -210,14 +210,41 @@ export default function KpisDashboard() {
   // Final simplified badge logic
   // Updated: Supports showing multiple badges at once
   const getBadgeIcons = (
-    completed: number,
-    badges?: string[],
-    role?: string,
-  ) => {
-    const icons = [];
+  completed: number,
+  badges?: string[],
+  role?: string,
+) => {
+  const icons = [];
 
-    let badgeClass = "text-muted-foreground";
+  let badgeClass = "text-muted-foreground";
 
+  // Manual avatar color override (same source as getDefaultAvatarClasses)
+  const avatarOverride = badges?.find((b) => b.startsWith("avatar:"));
+  if (avatarOverride) {
+    switch (avatarOverride) {
+      case "avatar:red":
+        badgeClass = "text-red-500";
+        break;
+      case "avatar:blue":
+        badgeClass = "text-blue-500";
+        break;
+      case "avatar:purple":
+        badgeClass = "text-purple-500";
+        break;
+      case "avatar:gold":
+        badgeClass = "text-yellow-500";
+        break;
+      case "avatar:pink":
+        badgeClass = "text-pink-500";
+        break;
+      case "avatar:default":
+      default:
+        break;
+    }
+  }
+
+  // Fall back to completed-bounty tiers when no override (or default)
+  if (!avatarOverride || avatarOverride === "avatar:default") {
     if (completed >= 60) {
       badgeClass = "text-pink-500";
     } else if (completed >= 20) {
@@ -228,90 +255,92 @@ export default function KpisDashboard() {
       badgeClass = "text-blue-500";
     } else if (completed >= 1) {
       badgeClass = "text-red-500";
+    } else {
+      badgeClass = "text-muted-foreground";
     }
+  }
 
+  icons.push(
+    <div key="member" title="Member">
+      <Users className={`w-4 h-4 ${badgeClass}`} />
+    </div>,
+  );
+
+  if (role === "ADMIN" || badges?.includes("admin")) {
     icons.push(
-      <div key="member" title="Member">
-        <Users className={`w-4 h-4 ${badgeClass}`} />
+      <div
+        key="admin"
+        title="Admin"
+        className="text-purple-500 dark:text-purple-400"
+      >
+        <Shield className="w-4 h-4" />
       </div>,
     );
+  }
 
-    // Regular badges
-    if (role === "ADMIN" || badges?.includes("admin")) {
-      icons.push(
-        <div
-          key="admin"
-          title="Admin"
-          className="text-purple-500 dark:text-purple-400"
-        >
-          <Shield className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("dao-member")) {
+    icons.push(
+      <div
+        key="dao-member"
+        title="DAO Member"
+        className="text-teal-500 dark:text-teal-400"
+      >
+        <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("dao-member")) {
-      icons.push(
-        <div
-          key="dao-member"
-          title="DAO Member"
-          className="text-teal-500 dark:text-teal-400"
-        >
-          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("node-runner")) {
+    icons.push(
+      <div
+        key="node-runner"
+        title="Node Runner"
+        className="text-blue-500 dark:text-blue-400"
+      >
+        <Server className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("node-runner")) {
-      icons.push(
-        <div
-          key="node-runner"
-          title="Node Runner"
-          className="text-blue-500 dark:text-blue-400"
-        >
-          <Server className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("miner")) {
+    icons.push(
+      <div
+        key="miner"
+        title="Miner"
+        className="text-orange-500 dark:text-orange-400"
+      >
+        <Pickaxe className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("miner")) {
-      icons.push(
-        <div
-          key="miner"
-          title="Miner"
-          className="text-orange-500 dark:text-orange-400"
-        >
-          <Pickaxe className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("researcher")) {
+    icons.push(
+      <div
+        key="researcher"
+        title="Researcher"
+        className="text-emerald-500 dark:text-emerald-400"
+      >
+        <BookOpen className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("researcher")) {
-      icons.push(
-        <div
-          key="researcher"
-          title="Researcher"
-          className="text-emerald-500 dark:text-emerald-400"
-        >
-          <BookOpen className="w-4 h-4" />
-        </div>,
-      );
-    }
+  // Member icon is always pushed above; this branch is unreachable in practice
+  if (icons.length === 0) {
+    icons.push(
+      <div
+        key="regular"
+        title="Regular User"
+        className="text-muted-foreground"
+      >
+        <Users className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    // Default regular user icon (only if no override and no other badges)
-    if (icons.length === 0) {
-      icons.push(
-        <div
-          key="regular"
-          title="Regular User"
-          className="text-muted-foreground"
-        >
-          <Users className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    return icons;
-  };
+  return icons;
+};
 
   // Dynamic default avatar color based on completed bounties
   const getDefaultAvatarClasses = (
