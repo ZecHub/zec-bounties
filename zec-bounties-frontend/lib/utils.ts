@@ -20,7 +20,7 @@ export function formatAddress(str: string, keep = 36) {
 }
 
 export const confirmedTotal = (b: Balance) =>
-  ((b.confirmed_orchard_balance ?? 0) +
+  ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
     (b.confirmed_sapling_balance ?? 0) +
     (b.confirmed_transparent_balance ?? 0)) /
   1e8;
