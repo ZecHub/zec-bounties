@@ -245,6 +245,11 @@ export interface TopContributor extends User {
   completed: number;
   totalEarned: number;
   addressType?: string;
+  receivers?: {
+    ironwood?: boolean | undefined;
+    sapling?: boolean | undefined;
+    transparent?: boolean | undefined;
+  };
 }
 
 export interface ContributorsOverTime {
