@@ -280,10 +280,10 @@ export function AdminNavbar({
   const activeIsTeam = !!(activeWallet?.isTeam && activeWallet?.teamId);
 
   const confirmedTotal = (b: Balance) =>
-    ((b.confirmed_orchard_balance ?? 0) +
-      (b.confirmed_sapling_balance ?? 0) +
-      (b.confirmed_transparent_balance ?? 0)) /
-    1e8;
+  ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
+    (b.confirmed_sapling_balance ?? 0) +
+    (b.confirmed_transparent_balance ?? 0)) /
+  1e8;
 
   const fmt = (n: number) => n.toFixed(4);
 
@@ -480,9 +480,14 @@ export function AdminNavbar({
                       Confirmed balances
                     </p>
                     <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">Orchard</span>
+                      <span className="text-muted-foreground">Ironwood</span>
                       <span className="font-mono">
-                        {fmt(balance.confirmed_orchard_balance / 1e8)} ZEC
+                        {fmt(
+				  (balance.confirmed_ironwood_balance ??
+				    balance.confirmed_orchard_balance ??
+				    0) / 1e8,
+				)}{" "}
+				ZEC
                       </span>
                     </div>
                     <div className="flex justify-between gap-4">
