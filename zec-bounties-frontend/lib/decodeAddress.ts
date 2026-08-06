@@ -10,7 +10,6 @@ export function isDecoderReady() {
 
 export async function initAddressDecoder() {
   if (wasmInitialized) return;
-
   try {
     const mod: ZaddrModuleAny =
       await import("@elemental-zcash/zaddr_wasm_parser");
@@ -25,53 +24,95 @@ export async function initAddressDecoder() {
   }
 }
 
-export function getAddressReceivers(address: string) {
-  if (!wasmModule || !address) {
-    return {
-      orchard: false,
-      sapling: false,
-      transparent: false,
-      type: "Unknown",
-    };
+export type AddressReceivers = {
+  /** Orchard receiver bit — product name Ironwood */
+  ironwood: boolean;
+  /** @deprecated use ironwood */
+  orchard: boolean;
+  sapling: boolean;
+  transparent: boolean;
+  tex: boolean;
+  /** WASM getZcashAddressType string, when available */
+  rawType: string | null;
+  /**
+   * Tooltip / summary only — not a single icon key.
+   * e.g. "Ironwood + Sapling + Transparent" or "None"
+   */
+  type: string;
+};
+
+function summaryType(flags: {
+  ironwood: boolean;
+  sapling: boolean;
+  transparent: boolean;
+}): string {
+  const parts: string[] = [];
+  if (flags.ironwood) parts.push("Ironwood");
+  if (flags.sapling) parts.push("Sapling");
+  if (flags.transparent) parts.push("Transparent");
+  return parts.length > 0 ? parts.join(" + ") : "None";
+}
+
+export function getAddressReceivers(address: string): AddressReceivers {
+  const empty: AddressReceivers = {
+    ironwood: false,
+    orchard: false,
+    sapling: false,
+    transparent: false,
+    tex: false,
+    rawType: null,
+    type: "Unknown",
+  };
+
+  if (!wasmModule || !address?.trim()) {
+    return empty;
   }
 
   try {
+    const validateFn =
+      wasmModule.isZcashAddressValid ?? wasmModule.is_valid_zcash_address;
+    const typeFn =
+      wasmModule.getZcashAddressType ?? wasmModule.get_zcash_address_type;
     const receiversFn =
       wasmModule.getAddressReceivers ?? wasmModule.get_address_receivers;
+
     if (!receiversFn) {
-      return {
-        orchard: false,
-        sapling: false,
-        transparent: false,
-        type: "Unknown",
-      };
+      return empty;
     }
 
-    const result = receiversFn(address);
+    const addr = address.trim();
 
-    const hasOrchard = !!result.orchard;
-    const hasSapling = !!result.sapling;
-    const hasTransparent = !!result.p2pkh || !!result.p2sh || !!result.tex;
+    if (validateFn && !validateFn(addr)) {
+      return { ...empty, type: "Invalid" };
+    }
 
-    let type = "None";
-    if (hasOrchard && hasSapling && hasTransparent) type = "Full";
-    else if (hasOrchard && hasSapling) type = "Orchard + Sapling";
-    else if (hasOrchard) type = "Orchard";
-    else if (hasSapling) type = "Sapling";
-    else if (hasTransparent) type = "Transparent";
+    const rawType = typeFn ? String(typeFn(addr)) : null;
+    const result = receiversFn(addr);
+
+    // WASM still exposes orchard; product label is Ironwood
+    const ironwood = !!result.orchard;
+    const sapling = !!result.sapling;
+    const tex = !!result.tex;
+    const transparent = !!result.p2pkh || !!result.p2sh || tex;
 
     return {
-      orchard: hasOrchard,
-      sapling: hasSapling,
-      transparent: hasTransparent,
-      type,
+      ironwood,
+      orchard: ironwood,
+      sapling,
+      transparent,
+      tex,
+      rawType,
+      type: summaryType({ ironwood, sapling, transparent }),
     };
   } catch (err) {
     console.error("Failed to decode address:", err);
     return {
+      ironwood: false,
       orchard: false,
       sapling: false,
       transparent: false,
+      tex: false,
+      rawType: null,
       type: "Error",
     };
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +16,16 @@ import {
   ArrowUpDown,
   Zap,
   Users,
+  Ban,
   Shield,
   Pencil,
   Server,
   Pickaxe,
   BookOpen,
+  AlertTriangle,
+  TreeDeciduous,
+  Leaf,
+  HelpCircle,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -43,6 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SlidersHorizontal, Check } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { getAddressReceivers, initAddressDecoder } from "@/lib/decodeAddress";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -53,10 +59,11 @@ import {
 } from "@/lib/types";
 import { confirmedTotal, fmt } from "@/lib/utils";
 import { backendUrl } from "@/lib/configENV";
-import { Navbar } from "@/components/layout/navbar";
+import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { cn } from "@/lib/utils";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
+type ChainFilter = "all" | "MAIN" | "TEST";
 type ChartType =
   | "contributors"
   | "earned"
@@ -81,10 +88,12 @@ const BADGE_LABELS: Record<string, string> = {
   admin: "Admin",
 };
 
-const getBadgeTooltip = (badges?: string[]) =>
-  badges && badges.length > 0
-    ? badges.map((b) => BADGE_LABELS[b] ?? b).join(" • ")
+const getBadgeTooltip = (badges?: string[]) => {
+  const realBadges = badges?.filter((b) => !b.startsWith("avatar:"));
+  return realBadges && realBadges.length > 0
+    ? realBadges.map((b) => BADGE_LABELS[b] ?? b).join(" • ")
     : "Regular User";
+};
 
 function UserAvatar({
   user,
@@ -188,6 +197,9 @@ export default function KpisDashboard() {
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<any>(null);
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
   const [isSavingBadges, setIsSavingBadges] = useState(false);
+  const [chainFilter, setChainFilter] = useState<ChainFilter>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
 
   const availableBadges = [
     { key: "dao-member", label: "DAO Member" },
@@ -198,43 +210,63 @@ export default function KpisDashboard() {
 
   // Final simplified badge logic
   // Updated: Supports showing multiple badges at once
-  const getBadgeIcons = (badges?: string[], role?: string) => {
+  const getBadgeIcons = (
+    completed: number,
+    badges?: string[],
+    role?: string,
+  ) => {
     const icons = [];
 
-    // Check for avatar color override first
+    let badgeClass = "text-muted-foreground";
+
+    // Manual avatar color override (same source as getDefaultAvatarClasses)
     const avatarOverride = badges?.find((b) => b.startsWith("avatar:"));
-
     if (avatarOverride) {
-      let avatarClass = "text-muted-foreground";
-
       switch (avatarOverride) {
         case "avatar:red":
-          avatarClass = "text-red-500";
+          badgeClass = "text-red-500";
           break;
         case "avatar:blue":
-          avatarClass = "text-blue-500";
+          badgeClass = "text-blue-500";
           break;
         case "avatar:purple":
-          avatarClass = "text-purple-500";
+          badgeClass = "text-purple-500";
           break;
         case "avatar:gold":
-          avatarClass = "text-yellow-500";
+          badgeClass = "text-yellow-500";
           break;
         case "avatar:pink":
-          avatarClass = "text-pink-500";
+          badgeClass = "text-pink-500";
           break;
+        case "avatar:default":
         default:
-          avatarClass = "text-muted-foreground";
+          break;
       }
-
-      icons.push(
-        <div key="avatar-override" title="Custom Avatar Color">
-          <Users className={`w-4 h-4 ${avatarClass}`} />
-        </div>,
-      );
     }
 
-    // Regular badges
+    // Fall back to completed-bounty tiers when no override (or default)
+    if (!avatarOverride || avatarOverride === "avatar:default") {
+      if (completed >= 60) {
+        badgeClass = "text-pink-500";
+      } else if (completed >= 20) {
+        badgeClass = "text-yellow-500";
+      } else if (completed >= 10) {
+        badgeClass = "text-purple-500";
+      } else if (completed >= 5) {
+        badgeClass = "text-blue-500";
+      } else if (completed >= 1) {
+        badgeClass = "text-red-500";
+      } else {
+        badgeClass = "text-muted-foreground";
+      }
+    }
+
+    icons.push(
+      <div key="member" title="Member">
+        <Users className={`w-4 h-4 ${badgeClass}`} />
+      </div>,
+    );
+
     if (role === "ADMIN" || badges?.includes("admin")) {
       icons.push(
         <div
@@ -295,7 +327,7 @@ export default function KpisDashboard() {
       );
     }
 
-    // Default regular user icon (only if no override and no other badges)
+    // Member icon is always pushed above; this branch is unreachable in practice
     if (icons.length === 0) {
       icons.push(
         <div
@@ -398,6 +430,26 @@ export default function KpisDashboard() {
   }, [availableWallets, selectedWalletId]);
 
   useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        filtersRef.current &&
+        !filtersRef.current.contains(e.target as Node)
+      ) {
+        setFiltersOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const chainLabel =
+    chainFilter === "all"
+      ? "Both chains"
+      : chainFilter === "MAIN"
+        ? "Mainnet"
+        : "Testnet";
+
+  useEffect(() => {
     if (availableWallets.length > 0 && !selectedWalletId) {
       const defaultWallet =
         availableWallets.find((w: any) => w.isDefault) || availableWallets[0];
@@ -442,6 +494,7 @@ export default function KpisDashboard() {
         const params = new URLSearchParams();
         if (showAllUsers) params.set("all", "true");
         params.set("timeRange", timeRange);
+        params.set("chain", chainFilter === "all" ? "ALL" : chainFilter);
 
         const res = await fetch(
           `${backendUrl}/api/kpis/top-contributors?${params.toString()}`,
@@ -460,7 +513,15 @@ export default function KpisDashboard() {
             if (user.UA_address) {
               try {
                 const decoded = getAddressReceivers(user.UA_address);
-                return { ...user, addressType: decoded.type };
+                return {
+                  ...user,
+                  addressType: decoded.type,
+                  receivers: {
+                    ironwood: decoded.ironwood,
+                    sapling: decoded.sapling,
+                    transparent: decoded.transparent,
+                  },
+                };
               } catch {
                 return user;
               }
@@ -477,14 +538,18 @@ export default function KpisDashboard() {
       }
     };
     loadData();
-  }, [isAdmin, showAllUsers, timeRange]);
+  }, [isAdmin, showAllUsers, timeRange, chainFilter]);
 
   // Fetch time series data
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const params = new URLSearchParams();
+        const chain = chainFilter === "all" ? "ALL" : chainFilter;
+        params.set("chain", chain);
+
         const res = await fetch(
-          `${backendUrl}/api/kpis/contributors-over-time`,
+          `${backendUrl}/api/kpis/contributors-over-time?${params.toString()}`,
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("authToken")}`,
@@ -495,7 +560,7 @@ export default function KpisDashboard() {
       } catch {}
     };
     fetchData();
-  }, []);
+  }, [chainFilter]);
 
   // Fetch Average + Median Earnings Over Time
   useEffect(() => {
@@ -503,6 +568,8 @@ export default function KpisDashboard() {
       try {
         const params = new URLSearchParams();
         params.set("timeRange", timeRange);
+        const chain = chainFilter === "all" ? "ALL" : chainFilter;
+        params.set("chain", chain);
 
         const res = await fetch(
           `${backendUrl}/api/kpis/average-earnings-over-time?${params.toString()}`,
@@ -521,14 +588,18 @@ export default function KpisDashboard() {
       }
     };
     fetchData();
-  }, [timeRange]);
+  }, [timeRange, chainFilter]);
 
   useEffect(() => {
     if (viewMode !== "admin") return;
     const fetchBountyTypes = async () => {
       try {
+        const params = new URLSearchParams();
+        const chain = chainFilter === "all" ? "ALL" : chainFilter;
+        params.set("chain", chain);
+
         const res = await fetch(
-          `${backendUrl}/api/kpis/bounty-types-over-time`,
+          `${backendUrl}/api/kpis/bounty-types-over-time?${params.toString()}`,
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("authToken")}`,
@@ -539,7 +610,7 @@ export default function KpisDashboard() {
       } catch {}
     };
     fetchBountyTypes();
-  }, [viewMode]);
+  }, [viewMode, chainFilter]);
 
   // === Derived Values ===
   const sortedContributors = useMemo(() => {
@@ -570,7 +641,11 @@ export default function KpisDashboard() {
     () => topContributors.reduce((sum, u) => sum + (u.completed || 0), 0),
     [topContributors],
   );
-  const activeBounties = totalBounties - completedBounties;
+  const cancelledBounties = useMemo(
+    () => topContributors.reduce((sum, u) => sum + (u.cancelled || 0), 0),
+    [topContributors],
+  );
+  const activeBounties = totalBounties - completedBounties - cancelledBounties;
   const uniqueContributors = topContributors.length;
   const totalZecPaid = useMemo(
     () => sortedContributors.reduce((sum, u) => sum + (u.totalEarned || 0), 0),
@@ -712,6 +787,67 @@ export default function KpisDashboard() {
     }
   };
 
+  const getAddressTypeIcons = (receivers?: {
+    ironwood?: boolean;
+    sapling?: boolean;
+    transparent?: boolean;
+  }) => {
+    if (
+      !receivers ||
+      (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
+    ) {
+      return [
+        <div
+          key="none"
+          title="No Address"
+          className="flex items-center justify-center"
+        >
+          <Ban className="w-5 h-5 text-red-500" />
+        </div>,
+      ];
+    }
+
+    const icons = [];
+
+    if (receivers.transparent) {
+      icons.push(
+        <div
+          key="transparent"
+          title="Transparent"
+          className="flex items-center justify-center"
+        >
+          <AlertTriangle className="w-5 h-5 text-yellow-400" />
+        </div>,
+      );
+    }
+
+    if (receivers.sapling) {
+      icons.push(
+        <div
+          key="sapling"
+          title="Sapling"
+          className="flex items-center justify-center"
+        >
+          <Leaf className="w-5 h-5 text-emerald-400" />
+        </div>,
+      );
+    }
+
+    if (receivers.ironwood) {
+      icons.push(
+        <div
+          key="ironwood"
+          title="Ironwood"
+          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
+        >
+          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
+        </div>,
+      );
+    }
+
+    return icons;
+  };
+
   // Address Type Helpers
   const getAddressTypeBadge = (type?: string) => {
     const normalized = type?.toLowerCase();
@@ -749,7 +885,7 @@ export default function KpisDashboard() {
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
-        <Navbar />
+        <AdminNavbar isAdmin={true} />
         <div className="imd:container max-w-7xl mx-auto px-6 py-8 bg-background min-h-screen text-foreground">
           {/* Header */}
           <div className="grid grid-cols-1 imd:flex flex-col imd:flex-row justify-between items-center mb-8 gap-4">
@@ -762,47 +898,92 @@ export default function KpisDashboard() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 imd:flex items-center gap-3">
-              {/* View Mode Toggle */}
+            <div className="grid grid-cols-1 imd:flex items-center gap-4">
+              {/* View Mode Toggle - subtle text switch */}
               {isAdmin && (
-                <div className="flex items-center gap-1 bg-muted p-0 rounded-lg w-fit">
-                  <Button
-                    variant={viewMode === "public" ? "default" : "ghost"}
-                    size="sm"
+                <div className="flex items-center gap-1 text-sm">
+                  <button
                     onClick={() => setViewMode("public")}
+                    className={cn(
+                      "px-2 py-1 rounded transition-colors",
+                      viewMode === "public"
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
                   >
                     Public
-                  </Button>
-                  <Button
-                    variant={viewMode === "admin" ? "default" : "ghost"}
-                    size="sm"
+                  </button>
+                  <span className="text-muted-foreground">/</span>
+                  <button
                     onClick={() => setViewMode("admin")}
+                    className={cn(
+                      "px-2 py-1 rounded transition-colors",
+                      viewMode === "admin"
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
                   >
                     Admin
-                  </Button>
+                  </button>
                 </div>
               )}
 
-              {/* Time Range Dropdown */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  Time Range
-                </span>
-                <Select
-                  value={timeRange}
-                  onValueChange={(value) => setTimeRange(value as any)}
+              {/* Combined Filters Popover */}
+              <div className="relative" ref={filtersRef}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFiltersOpen(!filtersOpen)}
+                  className="gap-2 text-muted-foreground font-normal"
                 >
-                  <SelectTrigger
-                    className={cn("w-[160px]", currentTimeConfig.border)}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="30d">Last 30 Days</SelectItem>
-                    <SelectItem value="90d">Last 90 Days</SelectItem>
-                    <SelectItem value="all">All Time</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  {currentTimeConfig.label} · {chainLabel}
+                </Button>
+
+                {filtersOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
+                    <div className="mb-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Time Range
+                      </p>
+                      {(["30d", "90d", "all"] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          onClick={() => setTimeRange(opt)}
+                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+                        >
+                          {timeRangeConfig[opt].label}
+                          {timeRange === opt && (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Chain
+                      </p>
+                      {(
+                        [
+                          { key: "MAIN", label: "Mainnet" },
+                          { key: "TEST", label: "Testnet" },
+                          { key: "all", label: "Both" },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.key}
+                          onClick={() => setChainFilter(opt.key as ChainFilter)}
+                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+                        >
+                          {opt.label}
+                          {chainFilter === opt.key && (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -896,11 +1077,11 @@ export default function KpisDashboard() {
                       >
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
-                      {/* Admin-only columns */}
-                      {viewMode === "admin" && (
-                        <TableHead>
-                          <div className="flex items-center gap-2">
-                            <span>Badges</span>
+                      {/* Badges — public; edit control admin-only */}
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          <span>Badges</span>
+                          {isAdmin && viewMode === "admin" && (
                             <button
                               onClick={() => {
                                 setSelectedUserForBadges(null);
@@ -912,9 +1093,9 @@ export default function KpisDashboard() {
                             >
                               <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                             </button>
-                          </div>
-                        </TableHead>
-                      )}
+                          )}
+                        </div>
+                      </TableHead>
                       {viewMode === "admin" && (
                         <TableHead>Address Type</TableHead>
                       )}
@@ -942,7 +1123,7 @@ export default function KpisDashboard() {
                     {sortedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={viewMode === "admin" ? 9 : 5}
+                          colSpan={viewMode === "admin" ? 9 : 6}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No data available.
@@ -978,22 +1159,22 @@ export default function KpisDashboard() {
                               {user.submitted}
                             </TableCell>
 
-                            {/* Admin-only columns */}
-                            {viewMode === "admin" && (
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  {getBadgeIcons(user?.badges, user.role)}
-                                </div>
-                              </TableCell>
-                            )}
+                            {/* Badges — public */}
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {getBadgeIcons(
+                                  user.completed,
+                                  user.badges,
+                                  user.role,
+                                )}
+                              </div>
+                            </TableCell>
 
                             {viewMode === "admin" && (
                               <TableCell>
-                                <span
-                                  className={`px-2.5 py-0.5 text-xs rounded-full ${getAddressTypeBadge(user.addressType)}`}
-                                >
-                                  {getDisplayAddressType(user.addressType)}
-                                </span>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {getAddressTypeIcons(user.receivers)}
+                                </div>
                               </TableCell>
                             )}
 
