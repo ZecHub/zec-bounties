@@ -33,6 +33,20 @@ function getChainFilter(chain) {
   return { chain: "MAIN" };
 }
 
+// Helper: deterministic total order for ranking contributors.
+// Ties on `completed` (extremely common) must not fall back to the
+// incidental order Prisma/Postgres returned the rows in. Sort by the
+// real metrics first, then end with the unique `id` (a cuid) so the
+// rank is fully deterministic.
+function byRank(a, b) {
+  return (
+    b.completed - a.completed ||
+    b.totalEarned - a.totalEarned ||
+    b.submitted - a.submitted ||
+    a.id.localeCompare(b.id)
+  );
+}
+
 router.get("/top-contributors", async (req, res) => {
   try {
     const showAll = req.query.all === "true";
@@ -123,9 +137,7 @@ router.get("/top-contributors", async (req, res) => {
         stats.totalEarned += bounty.bountyAmount || 0;
       });
 
-      const sorted = Array.from(userMap.values()).sort(
-        (a, b) => b.completed - a.completed,
-      );
+      const sorted = Array.from(userMap.values()).sort(byRank);
       return res.json(sorted);
     }
 
@@ -208,7 +220,7 @@ router.get("/top-contributors", async (req, res) => {
     });
 
     const sorted = Array.from(userStats.values())
-      .sort((a, b) => b.completed - a.completed)
+      .sort(byRank)
       .slice(0, 25);
     res.json(sorted);
   } catch (error) {

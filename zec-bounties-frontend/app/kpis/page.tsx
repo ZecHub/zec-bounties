@@ -537,7 +537,16 @@ export default function KpisDashboard() {
         valA = a.submitted > 0 ? (a.completed / a.submitted) * 100 : 0;
         valB = b.submitted > 0 ? (b.completed / b.submitted) * 100 : 0;
       }
-      return sortDirection === "desc" ? valB - valA : valA - valB;
+      const primary = sortDirection === "desc" ? valB - valA : valA - valB;
+      // Deterministic total order: break metric ties with totalEarned,
+      // then submitted, then the unique id. Mirrors the server's byRank
+      // so client-side re-sorts agree with the server and never reshuffle.
+      if (primary !== 0) return primary;
+      return (
+        b.totalEarned - (a.totalEarned || 0) ||
+        b.submitted - a.submitted ||
+        a.id.localeCompare(b.id)
+      );
     });
   }, [topContributors, sortKey, sortDirection]);
 
@@ -965,7 +974,7 @@ const getDisplayAddressType = (type?: string) => {
                             : 0;
                         return (
                           <TableRow
-                            key={index}
+                            key={user.id}
                             className="border-b border-border hover:bg-muted/50"
                           >
                             <TableCell>#{index + 1}</TableCell>
