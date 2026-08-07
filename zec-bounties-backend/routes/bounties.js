@@ -1507,6 +1507,46 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
   }
 });
 
+// ─── My bounties (creator or assignee — full list, no pagination) ────────────
+router.get("/mine", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    const where =
+      userRole === "ADMIN"
+        ? {}
+        : {
+            OR: [
+              { createdBy: userId },
+              { assignee: userId },
+              { assignees: { some: { userId } } },
+            ],
+          };
+
+    const bounties = await prisma.bounty.findMany({
+      where,
+      orderBy: { dateCreated: "desc" },
+      include: {
+        assignees: {
+          include: { user: { select: USER_SELECT } },
+        },
+        assigneeUser: {
+          select: USER_SELECT_FULL,
+        },
+        createdByUser: {
+          select: USER_SELECT_WITH_ROLE,
+        },
+      },
+    });
+
+    res.json({ data: bounties, total: bounties.length });
+  } catch (error) {
+    console.error("Error fetching my bounties:", error);
+    res.status(500).json({ error: "Failed to fetch your bounties" });
+  }
+});
+
 router.get("/stats/totals", async (req, res) => {
   try {
     const cacheKey = "stats:totals";
