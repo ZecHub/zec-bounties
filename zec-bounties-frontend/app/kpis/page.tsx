@@ -1011,7 +1011,6 @@ const getDisplayAddressType = (type?: string) => {
                                 {getBadgeIcons(user.completed, user.badges, user.role)}
                               </div>
                             </TableCell>
-                            )}
 
                             {viewMode === "admin" && (
                               <TableCell className="text-right font-medium">
