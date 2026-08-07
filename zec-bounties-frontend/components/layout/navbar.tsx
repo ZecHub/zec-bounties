@@ -140,7 +140,7 @@ export function Navbar({
               className="transition-colors hover:text-primary"
             >
               <img
-                src="ZecHubBlue.png"
+                src="/ZecHubBlue.png"
                 alt="ZecHubBlue.png"
                 style={{ height: "3rem" }}
               />

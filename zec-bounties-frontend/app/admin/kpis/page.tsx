@@ -61,6 +61,7 @@ import { confirmedTotal, fmt } from "@/lib/utils";
 import { backendUrl } from "@/lib/configENV";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChainFilter = "all" | "MAIN" | "TEST";
@@ -1144,32 +1145,43 @@ export default function KpisDashboard() {
 
                             {/* Avatar with hover tooltip */}
                             <TableCell>
-                              <UserAvatar
-                                user={user}
-                                getDefaultAvatarClasses={
-                                  getDefaultAvatarClasses
-                                }
-                              />
+                              <Link
+                                href={`/users/${user.nickname || user.id}`}
+                                className="inline-block hover:opacity-80"
+                                title="View profile"
+                              >
+                                <UserAvatar
+                                  user={user}
+                                  getDefaultAvatarClasses={
+                                    getDefaultAvatarClasses
+                                  }
+                                />
+                              </Link>
                             </TableCell>
-                            <TableCell>{user.name}</TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/users/${user.nickname || user.id}`}
+                                className="hover:underline font-medium"
+                              >
+                                {user.name}
+                              </Link>
+                            </TableCell>
                             <TableCell>{user.completed}</TableCell>
-				<TableCell className="text-muted-foreground">
-				  {user.submitted}
-				</TableCell>
-
-				{/* Badges — public */}
-				<TableCell>
-				  <div className="flex items-center gap-1.5">
-				    {getBadgeIcons(user.completed, user.badges, user.role)}
-				  </div>
-				</TableCell>
-
-				{viewMode === "admin" && (
-				  <TableCell>
-				    <div className="flex items-center justify-center gap-1.5">
-				      {getAddressTypeIcons(user.receivers)}
-				    </div>
-				  </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {user.submitted}
+                            </TableCell>
+                            {/* Badges — public */}
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {getBadgeIcons(user.completed, user.badges, user.role)}
+                              </div>
+                            </TableCell>
+                            {viewMode === "admin" && (
+                              <TableCell>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {getAddressTypeIcons(user.receivers)}
+                                </div>
+                              </TableCell>
 				)}
 
 				{viewMode === "admin" && (

@@ -45,6 +45,7 @@ router.get("/top-contributors", async (req, res) => {
         select: {
           id: true,
           name: true,
+          nickname: true,
           avatar: true,
           UA_address: true,
           z_address: true,
@@ -71,6 +72,7 @@ router.get("/top-contributors", async (req, res) => {
         userMap.set(u.id, {
           id: u.id,
           name: u.name || "Unknown",
+          nickname: u.nickname || null,
           avatar: u.avatar || null,
           UA_address: u.UA_address || null,
           addressType,
@@ -103,15 +105,12 @@ router.get("/top-contributors", async (req, res) => {
         const stats = userMap.get(bounty.assignee);
         if (!stats) return;
         stats.submitted += 1;
-
         if (bounty.status === "CANCELLED") {
           stats.cancelled += 1;
           return;
         }
-
         const isCompleted = bounty.status === "DONE" && bounty.completedAt;
         if (!isCompleted) return;
-
         // Apply the time-range filter only to completion-based stats
         if (completedAtFilter.completedAt) {
           if (
@@ -120,7 +119,6 @@ router.get("/top-contributors", async (req, res) => {
             return;
           }
         }
-
         stats.completed += 1;
         stats.totalEarned += bounty.bountyAmount || 0;
       });
@@ -146,6 +144,7 @@ router.get("/top-contributors", async (req, res) => {
           select: {
             id: true,
             name: true,
+            nickname: true,
             avatar: true,
             UA_address: true,
             z_address: true,
@@ -157,12 +156,9 @@ router.get("/top-contributors", async (req, res) => {
     });
 
     const userStats = new Map();
-
     bounties.forEach((bounty) => {
       if (!bounty.assigneeUser) return;
-
       const userId = bounty.assigneeUser.id;
-
       if (!userStats.has(userId)) {
         const hasUA = !!bounty.assigneeUser.UA_address;
         const hasZ = !!bounty.assigneeUser.z_address;
@@ -182,33 +178,31 @@ router.get("/top-contributors", async (req, res) => {
         userStats.set(userId, {
           id: userId,
           name: bounty.assigneeUser.name || "Unknown",
+          nickname: bounty.assigneeUser.nickname || null,
           avatar: bounty.assigneeUser.avatar || null,
           UA_address: bounty.assigneeUser.UA_address || null,
           addressType,
           badges: userBadges,
           completed: 0,
           submitted: 0,
+          cancelled: 0,
           totalEarned: 0,
         });
       }
 
       const stats = userStats.get(userId);
       stats.submitted += 1;
-
       if (bounty.status === "CANCELLED") {
         stats.cancelled += 1;
         return;
       }
-
       const isCompleted = bounty.status === "DONE" && bounty.completedAt;
       if (!isCompleted) return;
-
       if (completedAtFilter.completedAt) {
         if (new Date(bounty.completedAt) < completedAtFilter.completedAt.gte) {
           return;
         }
       }
-
       stats.completed += 1;
       stats.totalEarned += bounty.bountyAmount || 0;
     });
@@ -216,7 +210,6 @@ router.get("/top-contributors", async (req, res) => {
     const sorted = Array.from(userStats.values())
       .sort((a, b) => b.completed - a.completed)
       .slice(0, 25);
-
     res.json(sorted);
   } catch (error) {
     console.error("Error in /top-contributors:", error);
@@ -228,7 +221,6 @@ router.get("/top-contributors", async (req, res) => {
 router.get("/contributors-over-time", async (req, res) => {
   try {
     const chainFilter = getChainFilter(req.query.chain);
-
     const completedBounties = await prisma.bounty.findMany({
       where: {
         status: "DONE",
@@ -258,7 +250,6 @@ router.get("/contributors-over-time", async (req, res) => {
     const result = [];
     let cumulative = new Set();
     const sortedMonths = Array.from(monthlyData.keys()).sort();
-
     sortedMonths.forEach((month) => {
       const contributorsThisMonth = monthlyData.get(month);
       contributorsThisMonth.forEach((id) => cumulative.add(id));
@@ -267,7 +258,6 @@ router.get("/contributors-over-time", async (req, res) => {
         cumulativeContributors: cumulative.size,
       });
     });
-
     res.json(result);
   } catch (error) {
     console.error("Error in /contributors-over-time:", error);
@@ -281,7 +271,6 @@ router.get("/average-earnings-over-time", async (req, res) => {
     const timeRange = req.query.timeRange || "all";
     const completedAtFilter = getCompletedAtFilter(timeRange);
     const chainFilter = getChainFilter(req.query.chain);
-
     const completedBounties = await prisma.bounty.findMany({
       where: {
         status: "DONE",
@@ -304,12 +293,10 @@ router.get("/average-earnings-over-time", async (req, res) => {
     }
 
     const monthlyData = new Map();
-
     completedBounties.forEach((bounty) => {
       if (!bounty.completedAt) return;
       const date = new Date(bounty.completedAt);
       const monthKey = date.toISOString().slice(0, 7);
-
       if (!monthlyData.has(monthKey)) {
         monthlyData.set(monthKey, {
           totalPaid: 0,
@@ -317,7 +304,6 @@ router.get("/average-earnings-over-time", async (req, res) => {
           earningsList: [],
         });
       }
-
       const monthStats = monthlyData.get(monthKey);
       monthStats.totalPaid += bounty.bountyAmount || 0;
       monthStats.earners.add(bounty.assignee);
@@ -325,18 +311,15 @@ router.get("/average-earnings-over-time", async (req, res) => {
     });
 
     const result = [];
-
     for (const [month, stats] of monthlyData.entries()) {
       const uniqueEarners = stats.earners.size;
       const average = uniqueEarners > 0 ? stats.totalPaid / uniqueEarners : 0;
-
       const sorted = stats.earningsList.sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
       const median =
         sorted.length % 2 === 0
           ? (sorted[mid - 1] + sorted[mid]) / 2
           : sorted[mid];
-
       result.push({
         month,
         average: parseFloat(average.toFixed(4)),
@@ -345,7 +328,6 @@ router.get("/average-earnings-over-time", async (req, res) => {
         uniqueEarners,
       });
     }
-
     result.sort((a, b) => a.month.localeCompare(b.month));
     res.json(result);
   } catch (error) {
@@ -361,13 +343,11 @@ router.patch("/users/:id/badges", authenticate, isAdmin, async (req, res) => {
     if (!Array.isArray(badges)) {
       return res.status(400).json({ error: "badges must be an array" });
     }
-
     const updated = await prisma.user.update({
       where: { id: req.params.id },
       data: { badges },
       select: { id: true, name: true, badges: true },
     });
-
     await delCache("users:all");
     res.json(updated);
   } catch (error) {
@@ -382,7 +362,6 @@ router.patch("/users/:id/badges", authenticate, isAdmin, async (req, res) => {
 router.get("/bounty-types-over-time", async (req, res) => {
   try {
     const chainFilter = getChainFilter(req.query.chain);
-
     const bounties = await prisma.bounty.findMany({
       where: {
         category: { isNot: null },
@@ -400,13 +379,11 @@ router.get("/bounty-types-over-time", async (req, res) => {
     });
 
     const monthlyData = new Map();
-
     bounties.forEach((bounty) => {
       if (!bounty.dateCreated || !bounty.category) return;
       const date = new Date(bounty.dateCreated);
       const monthKey = date.toISOString().slice(0, 7);
       const categoryName = bounty.category.name;
-
       if (!monthlyData.has(monthKey)) {
         monthlyData.set(monthKey, new Map());
       }
@@ -423,7 +400,6 @@ router.get("/bounty-types-over-time", async (req, res) => {
         return entry;
       },
     );
-
     res.json(result);
   } catch (error) {
     console.error("Error in /bounty-types-over-time:", error);

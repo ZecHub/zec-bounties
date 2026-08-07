@@ -30,6 +30,8 @@ model User {
   githubId             String?
   isRobin              Boolean             @default(false)
   isManOfSteel         Boolean             @default(false)
+  bio                  String?
+  profileVisibility    Json                @default("{}")
   assignedBounties     Bounty[]            @relation("AssignedBounties")
   createdBounties      Bounty[]            @relation("CreatedBounties")
   reviewedApplications BountyApplication[] @relation("UserReviews")
