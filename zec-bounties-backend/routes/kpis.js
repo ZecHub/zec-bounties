@@ -34,17 +34,24 @@ function getChainFilter(chain) {
 }
 
 // Helper: deterministic total order for ranking contributors.
-// Ties on `completed` (extremely common) must not fall back to the
-// incidental order Prisma/Postgres returned the rows in. Sort by the
-// real metrics first, then end with the unique `id` (a cuid) so the
-// rank is fully deterministic.
-function byRank(a, b) {
-  return (
+// Ties on the leading metric must not fall back to the incidental
+// order Prisma/Postgres returned the rows in, so every chain ends
+// with the unique `id` (a cuid) and the rank is fully deterministic.
+// `rankBy` picks which perspective leads: bounties completed
+// (throughput, the default) or ZEC earned (value).
+function makeByRank(rankBy) {
+  if (rankBy === "earned") {
+    return (a, b) =>
+      b.totalEarned - a.totalEarned ||
+      b.completed - a.completed ||
+      b.submitted - a.submitted ||
+      a.id.localeCompare(b.id);
+  }
+  return (a, b) =>
     b.completed - a.completed ||
     b.totalEarned - a.totalEarned ||
     b.submitted - a.submitted ||
-    a.id.localeCompare(b.id)
-  );
+    a.id.localeCompare(b.id);
 }
 
 router.get("/top-contributors", async (req, res) => {
@@ -53,6 +60,7 @@ router.get("/top-contributors", async (req, res) => {
     const timeRange = req.query.timeRange || "all";
     const completedAtFilter = getCompletedAtFilter(timeRange);
     const chainFilter = getChainFilter(req.query.chain);
+    const byRank = makeByRank(req.query.rankBy);
 
     if (showAll) {
       const allUsers = await prisma.user.findMany({
