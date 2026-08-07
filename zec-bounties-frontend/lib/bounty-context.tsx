@@ -135,6 +135,9 @@ interface BountyContextType {
   loadMoreBounties: () => Promise<void>;
   hasMoreBounties: boolean;
   bountiesPage: number;
+  myBounties: Bounty[];
+  myBountiesLoading: boolean;
+  fetchMyBounties: () => Promise<void>;
   totalBountyAmount: number;
   totalBountyCount: number;
   totalActiveCount: number;
@@ -363,6 +366,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   );
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+
+  const [myBounties, setMyBounties] = useState<Bounty[]>([]);
+  const [myBountiesLoading, setMyBountiesLoading] = useState(false);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -1841,6 +1847,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       fetchAllUsersApplications();
       fetchUserSubmissions();
       fetchZcashParams();
+      fetchMyBounties();
       if (currentUser.role === "ADMIN") {
         fetchTeams();
         fetchAllSubmissions().then(setAllSubmissions);
@@ -1853,6 +1860,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setAllSubmissions([]);
       setZcashParams([]);
       setTeams([]);
+      setMyBounties([]);
       setSyncStatus(null);
       setSyncStatusError(null);
     }
@@ -2270,6 +2278,23 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const loadMoreBounties = async () => {
     if (!hasMoreBounties || bountiesLoading) return;
     await fetchBounties(false);
+  };
+
+  const fetchMyBounties = async () => {
+    if (!currentUser) return;
+    setMyBountiesLoading(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/bounties/mine`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch your bounties");
+      const data = await res.json();
+      setMyBounties(data.data ?? []);
+    } catch (error) {
+      console.error("Failed to fetch my bounties:", error);
+    } finally {
+      setMyBountiesLoading(false);
+    }
   };
 
   const fetchTotalStats = async () => {
@@ -2879,6 +2904,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         deleteTeamWallet,
         currentTeam,
         editSubmission,
+        fetchMyBounties,
+        myBounties,
+        myBountiesLoading,
       }}
     >
       {children}
