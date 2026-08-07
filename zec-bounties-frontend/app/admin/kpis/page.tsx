@@ -16,6 +16,7 @@ import {
   ArrowUpDown,
   Zap,
   Users,
+  Ban,
   Shield,
   Pencil,
   Server,
@@ -60,6 +61,7 @@ import { confirmedTotal, fmt } from "@/lib/utils";
 import { backendUrl } from "@/lib/configENV";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChainFilter = "all" | "MAIN" | "TEST";
@@ -218,16 +220,46 @@ export default function KpisDashboard() {
 
     let badgeClass = "text-muted-foreground";
 
-    if (completed >= 60) {
-      badgeClass = "text-pink-500";
-    } else if (completed >= 20) {
-      badgeClass = "text-yellow-500";
-    } else if (completed >= 10) {
-      badgeClass = "text-purple-500";
-    } else if (completed >= 5) {
-      badgeClass = "text-blue-500";
-    } else if (completed >= 1) {
-      badgeClass = "text-red-500";
+    // Manual avatar color override (same source as getDefaultAvatarClasses)
+    const avatarOverride = badges?.find((b) => b.startsWith("avatar:"));
+    if (avatarOverride) {
+      switch (avatarOverride) {
+        case "avatar:red":
+          badgeClass = "text-red-500";
+          break;
+        case "avatar:blue":
+          badgeClass = "text-blue-500";
+          break;
+        case "avatar:purple":
+          badgeClass = "text-purple-500";
+          break;
+        case "avatar:gold":
+          badgeClass = "text-yellow-500";
+          break;
+        case "avatar:pink":
+          badgeClass = "text-pink-500";
+          break;
+        case "avatar:default":
+        default:
+          break;
+      }
+    }
+
+    // Fall back to completed-bounty tiers when no override (or default)
+    if (!avatarOverride || avatarOverride === "avatar:default") {
+      if (completed >= 60) {
+        badgeClass = "text-pink-500";
+      } else if (completed >= 20) {
+        badgeClass = "text-yellow-500";
+      } else if (completed >= 10) {
+        badgeClass = "text-purple-500";
+      } else if (completed >= 5) {
+        badgeClass = "text-blue-500";
+      } else if (completed >= 1) {
+        badgeClass = "text-red-500";
+      } else {
+        badgeClass = "text-muted-foreground";
+      }
     }
 
     icons.push(
@@ -236,7 +268,6 @@ export default function KpisDashboard() {
       </div>,
     );
 
-    // Regular badges
     if (role === "ADMIN" || badges?.includes("admin")) {
       icons.push(
         <div
@@ -297,7 +328,7 @@ export default function KpisDashboard() {
       );
     }
 
-    // Default regular user icon (only if no override and no other badges)
+    // Member icon is always pushed above; this branch is unreachable in practice
     if (icons.length === 0) {
       icons.push(
         <div
@@ -483,7 +514,15 @@ export default function KpisDashboard() {
             if (user.UA_address) {
               try {
                 const decoded = getAddressReceivers(user.UA_address);
-                return { ...user, addressType: decoded.type };
+                return {
+                  ...user,
+                  addressType: decoded.type,
+                  receivers: {
+                    ironwood: decoded.ironwood,
+                    sapling: decoded.sapling,
+                    transparent: decoded.transparent,
+                  },
+                };
               } catch {
                 return user;
               }
@@ -749,43 +788,42 @@ export default function KpisDashboard() {
     }
   };
 
-  const getAddressTypeIcons = (type: string | undefined) => {
-    if (!type) {
+  const getAddressTypeIcons = (receivers?: {
+    ironwood?: boolean;
+    sapling?: boolean;
+    transparent?: boolean;
+  }) => {
+    if (
+      !receivers ||
+      (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
+    ) {
       return [
         <div
           key="none"
-          title="No Shielded Address"
+          title="No Address"
+          className="flex items-center justify-center"
+        >
+          <Ban className="w-5 h-5 text-red-500" />
+        </div>,
+      ];
+    }
+
+    const icons = [];
+
+    if (receivers.transparent) {
+      icons.push(
+        <div
+          key="transparent"
+          title="Transparent"
           className="flex items-center justify-center"
         >
           <AlertTriangle className="w-5 h-5 text-yellow-400" />
         </div>,
-      ];
+      );
     }
 
-    const normalized = type.toLowerCase().trim();
-
-    // Ironwood (any UA containing Orchard or Ironwood)
-    if (
-      normalized.includes("ironwood") ||
-      normalized.includes("orchard") ||
-      normalized === "ua only" ||
-      normalized === "ua + z" ||
-      normalized === "full"
-    ) {
-      return [
-        <div
-          key="ironwood"
-          title={getDisplayAddressType(type)}
-          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
-        >
-          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
-        </div>,
-      ];
-    }
-
-    // Pure Sapling
-    if (normalized.includes("sapling")) {
-      return [
+    if (receivers.sapling) {
+      icons.push(
         <div
           key="sapling"
           title="Sapling"
@@ -793,36 +831,22 @@ export default function KpisDashboard() {
         >
           <Leaf className="w-5 h-5 text-emerald-400" />
         </div>,
-      ];
+      );
     }
 
-    // Transparent or None
-    if (
-      normalized.includes("transparent") ||
-      normalized === "none" ||
-      normalized === ""
-    ) {
-      return [
+    if (receivers.ironwood) {
+      icons.push(
         <div
-          key="transparent"
-          title="none"
-          className="flex items-center justify-center"
+          key="ironwood"
+          title="Ironwood"
+          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
         >
-          -
+          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
         </div>,
-      ];
+      );
     }
 
-    // Fallback
-    return [
-      <div
-        key="unknown"
-        title={type}
-        className="flex items-center justify-center"
-      >
-        <HelpCircle className="w-5 h-5 text-slate-400" />
-      </div>,
-    ];
+    return icons;
   };
 
   // Address Type Helpers
@@ -1054,11 +1078,11 @@ export default function KpisDashboard() {
                       >
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
-                      {/* Admin-only columns */}
-                      {viewMode === "admin" && (
-                        <TableHead>
-                          <div className="flex items-center gap-2">
-                            <span>Badges</span>
+                      {/* Badges — public; edit control admin-only */}
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          <span>Badges</span>
+                          {isAdmin && viewMode === "admin" && (
                             <button
                               onClick={() => {
                                 setSelectedUserForBadges(null);
@@ -1070,9 +1094,9 @@ export default function KpisDashboard() {
                             >
                               <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                             </button>
-                          </div>
-                        </TableHead>
-                      )}
+                          )}
+                        </div>
+                      </TableHead>
                       {viewMode === "admin" && (
                         <TableHead>Address Type</TableHead>
                       )}
@@ -1100,7 +1124,7 @@ export default function KpisDashboard() {
                     {sortedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={viewMode === "admin" ? 9 : 5}
+                          colSpan={viewMode === "admin" ? 9 : 6}
                           className="text-center py-8 text-muted-foreground"
                         >
                           No data available.
@@ -1123,49 +1147,48 @@ export default function KpisDashboard() {
 
                             {/* Avatar with hover tooltip */}
                             <TableCell>
-                              <UserAvatar
-                                user={user}
-                                getDefaultAvatarClasses={
-                                  getDefaultAvatarClasses
-                                }
-                              />
+                              <Link
+                                href={`/users/${user.nickname || user.id}`}
+                                className="inline-block hover:opacity-80"
+                                title="View profile"
+                              >
+                                <UserAvatar
+                                  user={user}
+                                  getDefaultAvatarClasses={
+                                    getDefaultAvatarClasses
+                                  }
+                                />
+                              </Link>
                             </TableCell>
-                            <TableCell>{user.name}</TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/users/${user.nickname || user.id}`}
+                                className="hover:underline font-medium"
+                              >
+                                {user.name}
+                              </Link>
+                            </TableCell>
                             <TableCell>{user.completed}</TableCell>
                             <TableCell className="text-muted-foreground">
                               {user.submitted}
                             </TableCell>
-
-                            {/* Admin-only columns */}
-                            {viewMode === "admin" && (
-                              <TableCell>
-                                <div className="flex items-center gap-1.5">
-                                  {getBadgeIcons(
-                                    user.completed,
-                                    user.badges,
-                                    user.role,
-                                  )}
-                                </div>
-                              </TableCell>
-                            )}
-
+                            {/* Badges — public */}
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {getBadgeIcons(
+                                  user.completed,
+                                  user.badges,
+                                  user.role,
+                                )}
+                              </div>
+                            </TableCell>
                             {viewMode === "admin" && (
                               <TableCell>
                                 <div className="flex items-center justify-center gap-1.5">
-                                  {getAddressTypeIcons(user.addressType)}
+                                  {getAddressTypeIcons(user.receivers)}
                                 </div>
                               </TableCell>
                             )}
-
-                            {/* {viewMode === "admin" && (
-                              <TableCell>
-                                <span
-                                  className={`px-2.5 py-0.5 text-xs rounded-full ${getAddressTypeBadge(user.addressType)}`}
-                                >
-                                  {getDisplayAddressType(user.addressType)}
-                                </span>
-                              </TableCell>
-                            )} */}
 
                             {viewMode === "admin" && (
                               <TableCell className="text-right font-medium">

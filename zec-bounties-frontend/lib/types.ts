@@ -23,6 +23,73 @@ export interface User {
   badges?: string[];
 }
 
+/** Privacy-first profile visibility. Missing keys treated as false except avatar/displayName. */
+export interface ProfileVisibility {
+  showAvatar?: boolean;
+  showDisplayName?: boolean;
+  showBio?: boolean;
+  showBadges?: boolean;
+  showCompleted?: boolean;
+  showCreated?: boolean;
+  showEarnings?: boolean;
+  showCompletionRate?: boolean;
+  showAddressType?: boolean;
+  showMemberSince?: boolean;
+  showRecentBounties?: boolean;
+  showRole?: boolean;
+  showGithub?: boolean;
+}
+
+export interface PublicUserProfile {
+  id: string;
+  visibility: Required<ProfileVisibility>;
+  isOwner?: boolean;
+  isAdminViewer?: boolean;
+  displayName?: string;
+  nickname?: string | null;
+  name?: string;
+  avatar?: string | null;
+  bio?: string | null;
+  badges?: string[];
+  role?: UserRole;
+  memberSince?: string | Date;
+  githubId?: string;
+  completed?: number;
+  submitted?: number;
+  created?: number;
+  totalEarned?: number;
+  completionRate?: number | null;
+  addressType?: string;
+  hasUnifiedAddress?: boolean;
+  hasShieldedAddress?: boolean;
+  recentCompleted?: Array<{
+    id: string;
+    title: string;
+    bountyAmount: number;
+    status: string;
+    chain: string;
+    paidAt?: string | null;
+    dateCreated: string;
+  }>;
+  recentCreated?: Array<{
+    id: string;
+    title: string;
+    bountyAmount: number;
+    status: string;
+    isApproved?: boolean;
+    chain: string;
+    dateCreated: string;
+  }>;
+  profileVisibility?: Required<ProfileVisibility>;
+  _private?: {
+    completed: number;
+    created: number;
+    submitted: number;
+    totalEarned: number;
+    completionRate: number | null;
+  };
+}
+
 export interface BountyCategory {
   id: number;
   name: string;
