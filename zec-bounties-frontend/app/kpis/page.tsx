@@ -21,6 +21,10 @@ import {
   Server,
   Pickaxe,
   BookOpen,
+  Ban,
+  AlertTriangle,
+  TreeDeciduous,
+  Leaf,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -64,6 +68,15 @@ type ChartType =
   | "bountyTypes"
   | "addressTypes"
   | "avgEarnings";
+
+type KpiSummary = {
+  totalBounties: number;
+  completed: number;
+  active: number;
+  totalZecPaid: number;
+  uniqueContributors: number;
+  avgZecPerEarner: number;
+};
 
 const CHART_PALETTE = [
   "var(--chart-1)",
@@ -119,7 +132,6 @@ function UserAvatar({
   );
 }
 
-// Reusable KPI Card with colored top border
 function KpiCard({
   children,
   timeRange,
@@ -148,6 +160,41 @@ function KpiCard({
   );
 }
 
+/** Supports both old array and new { summary, contributors } API shapes. */
+function parseTopContributorsResponse(data: any): {
+  list: TopContributor[];
+  summary: KpiSummary | null;
+} {
+  if (Array.isArray(data)) {
+    return { list: data, summary: null };
+  }
+  return {
+    list: data?.contributors ?? [],
+    summary: data?.summary ?? null,
+  };
+}
+
+function enrichWithReceivers(list: any[], isAdmin: boolean) {
+  if (!isAdmin) return list;
+  return list.map((user: any) => {
+    if (!user.UA_address) return user;
+    try {
+      const decoded = getAddressReceivers(user.UA_address);
+      return {
+        ...user,
+        addressType: decoded.type,
+        receivers: {
+          ironwood: !!(decoded as any).ironwood,
+          sapling: !!(decoded as any).sapling,
+          transparent: !!(decoded as any).transparent,
+        },
+      };
+    } catch {
+      return user;
+    }
+  });
+}
+
 export default function KpisDashboard() {
   const {
     currentUser,
@@ -173,6 +220,7 @@ export default function KpisDashboard() {
   const [rescanMessage, setRescanMessage] = useState("");
   const [rescanError, setRescanError] = useState("");
   const [topContributors, setTopContributors] = useState<TopContributor[]>([]);
+  const [kpiSummary, setKpiSummary] = useState<KpiSummary | null>(null);
   const [loadingContributors, setLoadingContributors] = useState(true);
   const [selectedChart, setSelectedChart] = useState<ChartType>("contributors");
   const [contributorsOverTimeData, setContributorsOverTimeData] = useState<
@@ -197,105 +245,121 @@ export default function KpisDashboard() {
     { key: "researcher", label: "Researcher" },
   ];
 
-  // Final simplified badge logic
-  // Updated: Supports showing multiple badges at once
   const getBadgeIcons = (
-  completed: number,
-  badges?: string[],
-  role?: string,
-	) => {
-	  const icons = [];
-	  const list = Array.isArray(badges) ? badges : [];
+    completed: number,
+    badges?: string[],
+    role?: string,
+  ) => {
+    const icons = [];
+    const list = Array.isArray(badges) ? badges : [];
 
-	  let badgeClass = "text-muted-foreground";
+    let badgeClass = "text-muted-foreground";
 
-	  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-	  if (avatarOverride) {
-	    switch (avatarOverride) {
-	      case "avatar:red":
-		badgeClass = "text-red-500";
-		break;
-	      case "avatar:blue":
-		badgeClass = "text-blue-500";
-		break;
-	      case "avatar:purple":
-		badgeClass = "text-purple-500";
-		break;
-	      case "avatar:gold":
-		badgeClass = "text-yellow-500";
-		break;
-	      case "avatar:pink":
-		badgeClass = "text-pink-500";
-		break;
-	      default:
-		break;
-	    }
-	  }
+    const avatarOverride = list.find((b) => b.startsWith("avatar:"));
+    if (avatarOverride) {
+      switch (avatarOverride) {
+        case "avatar:red":
+          badgeClass = "text-red-500";
+          break;
+        case "avatar:blue":
+          badgeClass = "text-blue-500";
+          break;
+        case "avatar:purple":
+          badgeClass = "text-purple-500";
+          break;
+        case "avatar:gold":
+          badgeClass = "text-yellow-500";
+          break;
+        case "avatar:pink":
+          badgeClass = "text-pink-500";
+          break;
+        default:
+          break;
+      }
+    }
 
-	  if (!avatarOverride || avatarOverride === "avatar:default") {
-	    if (completed >= 60) badgeClass = "text-pink-500";
-	    else if (completed >= 20) badgeClass = "text-yellow-500";
-	    else if (completed >= 10) badgeClass = "text-purple-500";
-	    else if (completed >= 5) badgeClass = "text-blue-500";
-	    else if (completed >= 1) badgeClass = "text-red-500";
-	    else badgeClass = "text-muted-foreground";
-	  }
+    if (!avatarOverride || avatarOverride === "avatar:default") {
+      if (completed >= 60) badgeClass = "text-pink-500";
+      else if (completed >= 20) badgeClass = "text-yellow-500";
+      else if (completed >= 10) badgeClass = "text-purple-500";
+      else if (completed >= 5) badgeClass = "text-blue-500";
+      else if (completed >= 1) badgeClass = "text-red-500";
+      else badgeClass = "text-muted-foreground";
+    }
 
-	  icons.push(
-	    <div key="member" title="Member">
-	      <Users className={`w-4 h-4 ${badgeClass}`} />
-	    </div>,
-	  );
+    icons.push(
+      <div key="member" title="Member">
+        <Users className={`w-4 h-4 ${badgeClass}`} />
+      </div>,
+    );
 
-	  if (role === "ADMIN" || list.includes("admin")) {
-	    icons.push(
-	      <div key="admin" title="Admin" className="text-purple-500 dark:text-purple-400">
-		<Shield className="w-4 h-4" />
-	      </div>,
-	    );
-	  }
+    if (role === "ADMIN" || list.includes("admin")) {
+      icons.push(
+        <div
+          key="admin"
+          title="Admin"
+          className="text-purple-500 dark:text-purple-400"
+        >
+          <Shield className="w-4 h-4" />
+        </div>,
+      );
+    }
 
-	  if (list.includes("dao-member")) {
-	    icons.push(
-	      <div key="dao-member" title="DAO Member" className="text-teal-500 dark:text-teal-400">
-		<img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
-	      </div>,
-	    );
-	  }
+    if (list.includes("dao-member")) {
+      icons.push(
+        <div
+          key="dao-member"
+          title="DAO Member"
+          className="text-teal-500 dark:text-teal-400"
+        >
+          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
+        </div>,
+      );
+    }
 
-	  if (list.includes("node-runner")) {
-	    icons.push(
-	      <div key="node-runner" title="Node Runner" className="text-blue-500 dark:text-blue-400">
-		<Server className="w-4 h-4" />
-	      </div>,
-	    );
-	  }
+    if (list.includes("node-runner")) {
+      icons.push(
+        <div
+          key="node-runner"
+          title="Node Runner"
+          className="text-blue-500 dark:text-blue-400"
+        >
+          <Server className="w-4 h-4" />
+        </div>,
+      );
+    }
 
-	  if (list.includes("miner")) {
-	    icons.push(
-	      <div key="miner" title="Miner" className="text-orange-500 dark:text-orange-400">
-		<Pickaxe className="w-4 h-4" />
-	      </div>,
-	    );
-	  }
+    if (list.includes("miner")) {
+      icons.push(
+        <div
+          key="miner"
+          title="Miner"
+          className="text-orange-500 dark:text-orange-400"
+        >
+          <Pickaxe className="w-4 h-4" />
+        </div>,
+      );
+    }
 
-	  if (list.includes("researcher")) {
-	    icons.push(
-	      <div key="researcher" title="Researcher" className="text-emerald-500 dark:text-emerald-400">
-		<BookOpen className="w-4 h-4" />
-	      </div>,
-	    );
-	  }
+    if (list.includes("researcher")) {
+      icons.push(
+        <div
+          key="researcher"
+          title="Researcher"
+          className="text-emerald-500 dark:text-emerald-400"
+        >
+          <BookOpen className="w-4 h-4" />
+        </div>,
+      );
+    }
 
-	  return icons;
-	};
+    return icons;
+  };
 
-  // Dynamic default avatar color based on completed bounties
   const getDefaultAvatarClasses = (
     completed: number,
     badges: string[] = [],
   ) => {
-    // Check for manual avatar override first
     const avatarOverride = badges.find((b) => b.startsWith("avatar:"));
 
     if (avatarOverride) {
@@ -309,33 +373,21 @@ export default function KpisDashboard() {
         case "avatar:gold":
           return "bg-yellow-500 text-black";
         case "avatar:pink":
-          return "bg-pink-500 text-white"; // ← This was missing
+          return "bg-pink-500 text-white";
         case "avatar:default":
         default:
           break;
       }
     }
 
-    // Automatic based on completed bounties
-    if (completed >= 60) {
-      return "bg-pink-500 text-white"; // Pink
-    }
-    if (completed >= 20) {
-      return "bg-yellow-500 text-black"; // Gold
-    }
-    if (completed >= 10) {
-      return "bg-purple-500 text-white"; // Purple
-    }
-    if (completed >= 5) {
-      return "bg-blue-500 text-white"; // Blue
-    }
-    if (completed >= 1) {
-      return "bg-red-500 text-white"; // Red
-    }
-    return "bg-muted text-muted-foreground"; // Default
+    if (completed >= 60) return "bg-pink-500 text-white";
+    if (completed >= 20) return "bg-yellow-500 text-black";
+    if (completed >= 10) return "bg-purple-500 text-white";
+    if (completed >= 5) return "bg-blue-500 text-white";
+    if (completed >= 1) return "bg-red-500 text-white";
+    return "bg-muted text-muted-foreground";
   };
 
-  // === Time Range Filter ===
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
   const timeRangeConfig = {
@@ -358,7 +410,6 @@ export default function KpisDashboard() {
 
   const currentTimeConfig = timeRangeConfig[timeRange];
 
-  // === Wallet Selector ===
   const [selectedWalletId, setSelectedWalletId] = useState<string>("");
   const availableWallets = useMemo(() => {
     if (!zcashParams) return [];
@@ -404,7 +455,6 @@ export default function KpisDashboard() {
     }
   };
 
-  // Reset showAllUsers
   useEffect(() => {
     if (viewMode === "public" && showAllUsers) {
       setShowAllUsers(false);
@@ -432,25 +482,16 @@ export default function KpisDashboard() {
         );
         if (!res.ok) throw new Error("Failed to fetch");
 
-        let data = await res.json();
+        const raw = await res.json();
+        const { list, summary } = parseTopContributorsResponse(raw);
+        const enriched = enrichWithReceivers(list, isAdmin);
 
-        if (isAdmin) {
-          data = data.map((user: any) => {
-            if (user.UA_address) {
-              try {
-                const decoded = getAddressReceivers(user.UA_address);
-                return { ...user, addressType: decoded.type };
-              } catch {
-                return user;
-              }
-            }
-            return user;
-          });
-        }
-        setTopContributors(data);
+        setTopContributors(enriched);
+        setKpiSummary(summary);
       } catch (error) {
         console.error(error);
         setTopContributors([]);
+        setKpiSummary(null);
       } finally {
         setLoadingContributors(false);
       }
@@ -458,7 +499,6 @@ export default function KpisDashboard() {
     loadData();
   }, [isAdmin, showAllUsers, timeRange]);
 
-  // Fetch time series data
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -476,7 +516,6 @@ export default function KpisDashboard() {
     fetchData();
   }, []);
 
-  // Fetch Average + Median Earnings Over Time
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -520,7 +559,6 @@ export default function KpisDashboard() {
     fetchBountyTypes();
   }, [viewMode]);
 
-  // === Derived Values ===
   const sortedContributors = useMemo(() => {
     return [...topContributors].sort((a, b) => {
       let valA: number, valB: number;
@@ -538,38 +576,35 @@ export default function KpisDashboard() {
         valB = b.submitted > 0 ? (b.completed / b.submitted) * 100 : 0;
       }
       const primary = sortDirection === "desc" ? valB - valA : valA - valB;
-      // Deterministic total order: break metric ties with totalEarned,
-      // then submitted, then the unique id. Mirrors the server's byRank
-      // so client-side re-sorts agree with the server and never reshuffle.
       if (primary !== 0) return primary;
       return (
-        b.totalEarned - (a.totalEarned || 0) ||
+        (b.totalEarned || 0) - (a.totalEarned || 0) ||
         b.submitted - a.submitted ||
         a.id.localeCompare(b.id)
       );
     });
   }, [topContributors, sortKey, sortDirection]);
 
-  const totalBounties = useMemo(
-    () => topContributors.reduce((sum, u) => sum + (u.submitted || 0), 0),
-    [topContributors],
-  );
-  const completedBounties = useMemo(
-    () => topContributors.reduce((sum, u) => sum + (u.completed || 0), 0),
-    [topContributors],
-  );
-  const activeBounties = totalBounties - completedBounties;
-  const uniqueContributors = topContributors.length;
-  const totalZecPaid = useMemo(
-    () => sortedContributors.reduce((sum, u) => sum + (u.totalEarned || 0), 0),
-    [sortedContributors],
-  );
-
-  // === NEW: Avg ZEC per Earner ===
-  const avgZecPerEarner = useMemo(() => {
-    const earners = topContributors.filter((u) => u.totalEarned > 0);
-    return earners.length > 0 ? totalZecPaid / earners.length : 0;
-  }, [topContributors, totalZecPaid]);
+  // Prefer server summary; fall back for old API shape
+  const totalBounties =
+    kpiSummary?.totalBounties ??
+    topContributors.reduce((sum, u) => sum + (u.submitted || 0), 0);
+  const completedBounties =
+    kpiSummary?.completed ??
+    topContributors.reduce((sum, u) => sum + (u.completed || 0), 0);
+  const activeBounties =
+    kpiSummary?.active ?? totalBounties - completedBounties;
+  const uniqueContributors =
+    kpiSummary?.uniqueContributors ?? topContributors.length;
+  const totalZecPaid =
+    kpiSummary?.totalZecPaid ??
+    topContributors.reduce((sum, u) => sum + (u.totalEarned || 0), 0);
+  const avgZecPerEarner =
+    kpiSummary?.avgZecPerEarner ??
+    (() => {
+      const earners = topContributors.filter((u) => (u.totalEarned || 0) > 0);
+      return earners.length > 0 ? totalZecPaid / earners.length : 0;
+    })();
 
   const earnedOverTime = useMemo(() => {
     if (!topContributors.length) return [];
@@ -598,7 +633,6 @@ export default function KpisDashboard() {
     }
   };
 
-  // Handlers
   const handleRefreshBalance = async () => {
     setIsRefreshingBalance(true);
     setRescanMessage("");
@@ -671,8 +705,6 @@ export default function KpisDashboard() {
 
       if (!res.ok) throw new Error("Failed to update badges");
 
-      // Better than window.location.reload()
-      // Re-fetch the contributors list
       const params = new URLSearchParams();
       if (showAllUsers) params.set("all", "true");
       params.set("timeRange", timeRange);
@@ -687,8 +719,11 @@ export default function KpisDashboard() {
       );
 
       if (refreshRes.ok) {
-        let newData = await refreshRes.json();
-        setTopContributors(newData);
+        const raw = await refreshRes.json();
+        const { list, summary } = parseTopContributorsResponse(raw);
+        const enriched = enrichWithReceivers(list, isAdmin);
+        setTopContributors(enriched);
+        setKpiSummary(summary);
       }
 
       closeBadgeModal();
@@ -700,73 +735,141 @@ export default function KpisDashboard() {
     }
   };
 
-  // Address Type Helpers
-const getAddressTypeBadge = (type?: string) => {
-  const n = type?.toLowerCase() ?? "";
+  // --- Address type helpers (icons match app/admin/kpis/page.tsx) ---
 
-  if (!n || n === "none" || n === "unknown" || n === "invalid" || n === "error") {
-    return "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30";
-  }
+  const getAddressTypeIcons = (receivers?: {
+    ironwood?: boolean;
+    sapling?: boolean;
+    transparent?: boolean;
+  }) => {
+    if (
+      !receivers ||
+      (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
+    ) {
+      return [
+        <div
+          key="none"
+          title="No Address"
+          className="flex items-center justify-center"
+        >
+          <Ban className="w-5 h-5 text-red-500" />
+        </div>,
+      ];
+    }
 
-  const hasIronwood = n.includes("ironwood") || n.includes("orchard"); // legacy
-  const hasSapling = n.includes("sapling");
-  const hasTransparent = n.includes("transparent");
+    const icons = [];
 
-  // Multi-receiver summaries (e.g. "Ironwood + Sapling + Transparent")
-  if (hasIronwood && hasSapling) {
-    return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
-  }
-  if (hasIronwood) {
-    return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
-  }
-  if (hasSapling) {
-    return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
-  }
-  if (hasTransparent) {
-    return "bg-gradient-to-r from-slate-500 to-slate-600 text-white";
-  }
+    if (receivers.transparent) {
+      icons.push(
+        <div
+          key="transparent"
+          title="Transparent"
+          className="flex items-center justify-center"
+        >
+          <AlertTriangle className="w-5 h-5 text-yellow-400" />
+        </div>,
+      );
+    }
 
-  // Legacy single labels
-  if (n === "full" || n === "ua + z") {
-    return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
-  }
-  if (n === "ua only") {
-    return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
-  }
+    if (receivers.sapling) {
+      icons.push(
+        <div
+          key="sapling"
+          title="Sapling"
+          className="flex items-center justify-center"
+        >
+          <Leaf className="w-5 h-5 text-emerald-400" />
+        </div>,
+      );
+    }
 
-  return "bg-muted text-muted-foreground";
-};
+    if (receivers.ironwood) {
+      icons.push(
+        <div
+          key="ironwood"
+          title="Ironwood"
+          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
+        >
+          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
+        </div>,
+      );
+    }
 
-const getDisplayAddressType = (type?: string) => {
-  if (!type) return "Unknown";
+    return icons;
+  };
 
-  const n = type.toLowerCase();
+  const getAddressTypeBadge = (type?: string) => {
+    const n = type?.toLowerCase() ?? "";
 
-  if (n === "none") return "No UA";
-  if (n === "unknown" || n === "invalid" || n === "error") {
+    if (
+      !n ||
+      n === "none" ||
+      n === "unknown" ||
+      n === "invalid" ||
+      n === "error"
+    ) {
+      return "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30";
+    }
+
+    const hasIronwood = n.includes("ironwood") || n.includes("orchard");
+    const hasSapling = n.includes("sapling");
+    const hasTransparent = n.includes("transparent");
+
+    if (hasIronwood && hasSapling) {
+      return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
+    }
+    if (hasIronwood) {
+      return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
+    }
+    if (hasSapling) {
+      return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
+    }
+    if (hasTransparent) {
+      return "bg-gradient-to-r from-slate-500 to-slate-600 text-white";
+    }
+
+    if (n === "full" || n === "ua + z") {
+      return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
+    }
+    if (n === "ua only") {
+      return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
+    }
+
+    return "bg-muted text-muted-foreground";
+  };
+
+  const getDisplayAddressType = (type?: string) => {
+    if (!type) return "Unknown";
+
+    const n = type.toLowerCase();
+
+    if (n === "none") return "No UA";
+    if (n === "unknown" || n === "invalid" || n === "error") {
+      return type;
+    }
+
+    if (
+      n.includes("ironwood") ||
+      n.includes("orchard") ||
+      n.includes("sapling") ||
+      n.includes("transparent")
+    ) {
+      return type
+        .replace(/orchard/gi, "Ironwood")
+        .replace(/\s*\+\s*/g, " + ");
+    }
+
+    if (n === "full" || n === "ua + z") return "Ironwood + Sapling";
+    if (n === "ua only") return "Ironwood";
+
     return type;
-  }
-
-  // Already a decoder summary — normalize Orchard → Ironwood for display
-  if (n.includes("ironwood") || n.includes("orchard") || n.includes("sapling") || n.includes("transparent")) {
-    return type
-      .replace(/orchard/gi, "Ironwood")
-      .replace(/\s*\+\s*/g, " + ");
-  }
-
-  // Legacy single labels
-  if (n === "full" || n === "ua + z") return "Ironwood + Sapling";
-  if (n === "ua only") return "Ironwood";
-
-  return type;
-};
+  };
 
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
         <Navbar />
         <div className="imd:container max-w-7xl mx-auto px-6 py-8 bg-background min-h-screen text-foreground">
-          {/* Header */}
           <div className="grid grid-cols-1 imd:flex flex-col imd:flex-row justify-between items-center mb-8 gap-4">
             <div>
               <h1 className="text-4xl font-bold tracking-tight">
@@ -778,7 +881,6 @@ const getDisplayAddressType = (type?: string) => {
             </div>
 
             <div className="grid grid-cols-1 imd:flex items-center gap-3">
-              {/* View Mode Toggle */}
               {isAdmin && (
                 <div className="flex items-center gap-1 bg-muted p-0 rounded-lg w-fit">
                   <Button
@@ -798,7 +900,6 @@ const getDisplayAddressType = (type?: string) => {
                 </div>
               )}
 
-              {/* Time Range Dropdown */}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
                   Time Range
@@ -838,13 +939,13 @@ const getDisplayAddressType = (type?: string) => {
               },
               {
                 label: "Total ZEC Paid",
-                value: totalZecPaid.toFixed(4),
+                value: Number(totalZecPaid).toFixed(4),
                 color: "text-primary",
               },
               { label: "Unique Contributors", value: uniqueContributors },
               {
                 label: "Avg ZEC per Earner",
-                value: avgZecPerEarner.toFixed(4),
+                value: Number(avgZecPerEarner).toFixed(4),
                 color: "text-purple-500 dark:text-purple-400",
               },
             ].map((stat, i) => (
@@ -911,26 +1012,24 @@ const getDisplayAddressType = (type?: string) => {
                       >
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
-                      
-                     
-                        <TableHead>
-			  <div className="flex items-center gap-2">
-			    <span>Badges</span>
-			    {isAdmin && viewMode === "admin" && (
-			      <button
-				onClick={() => {
-				  setSelectedUserForBadges(null);
-				  setSelectedBadges([]);
-				  setIsBadgeModalOpen(true);
-				}}
-				className="p-1 hover:bg-muted rounded transition-colors"
-				title="Manage User Badges"
-			      >
-				<Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-			      </button>
-			    )}
-			  </div>
-			</TableHead>
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          <span>Badges</span>
+                          {isAdmin && viewMode === "admin" && (
+                            <button
+                              onClick={() => {
+                                setSelectedUserForBadges(null);
+                                setSelectedBadges([]);
+                                setIsBadgeModalOpen(true);
+                              }}
+                              className="p-1 hover:bg-muted rounded transition-colors"
+                              title="Manage User Badges"
+                            >
+                              <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                            </button>
+                          )}
+                        </div>
+                      </TableHead>
                       {viewMode === "admin" && (
                         <TableHead>Address Type</TableHead>
                       )}
@@ -978,8 +1077,6 @@ const getDisplayAddressType = (type?: string) => {
                             className="border-b border-border hover:bg-muted/50"
                           >
                             <TableCell>#{index + 1}</TableCell>
-
-                            {/* Avatar with hover tooltip */}
                             <TableCell>
                               <Link
                                 href={`/users/${user.nickname || user.id}`}
@@ -1008,9 +1105,23 @@ const getDisplayAddressType = (type?: string) => {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5">
-                                {getBadgeIcons(user.completed, user.badges, user.role)}
+                                {getBadgeIcons(
+                                  user.completed,
+                                  user.badges,
+                                  user.role,
+                                )}
                               </div>
                             </TableCell>
+
+                            {viewMode === "admin" && (
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  {getAddressTypeIcons(
+                                    (user as any).receivers,
+                                  )}
+                                </div>
+                              </TableCell>
+                            )}
 
                             {viewMode === "admin" && (
                               <TableCell className="text-right font-medium">
@@ -1183,7 +1294,6 @@ const getDisplayAddressType = (type?: string) => {
                   </ResponsiveContainer>
                 )}
 
-                {/* NEW: Average + Median Earnings Over Time */}
                 {selectedChart === "avgEarnings" && (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={averageEarningsOverTime}>
@@ -1249,7 +1359,6 @@ const getDisplayAddressType = (type?: string) => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Wallet Selector */}
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1.5 block">
                     Active Wallet
@@ -1319,14 +1428,12 @@ const getDisplayAddressType = (type?: string) => {
                   </Select>
                 </div>
 
-                {/* Balance Display - Improved */}
                 <p className="text-4xl font-bold tracking-tighter">
                   {balance
                     ? `${fmt(confirmedTotal(balance))} ZEC`
                     : `0.0000 ZEC`}
                 </p>
 
-                {/* Actions */}
                 <div className="flex gap-2">
                   <Button
                     onClick={handleRefreshBalance}
@@ -1362,7 +1469,7 @@ const getDisplayAddressType = (type?: string) => {
             </Card>
           )}
 
-          {/* === Badge Management Modal === */}
+          {/* Badge Management Modal */}
           {isBadgeModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
               <div className="w-full max-w-md rounded-xl bg-popover text-popover-foreground p-6 shadow-xl border border-border">
@@ -1376,7 +1483,6 @@ const getDisplayAddressType = (type?: string) => {
                   </button>
                 </div>
 
-                {/* User Selector - only show if no user is pre-selected */}
                 {!selectedUserForBadges && (
                   <div className="mb-4">
                     <label className="text-sm text-muted-foreground mb-1 block">
@@ -1408,7 +1514,6 @@ const getDisplayAddressType = (type?: string) => {
                   </div>
                 )}
 
-                {/* Show user name if already selected */}
                 {selectedUserForBadges && (
                   <div className="mb-4">
                     <p className="text-sm text-muted-foreground mb-1">User</p>
@@ -1418,13 +1523,11 @@ const getDisplayAddressType = (type?: string) => {
                   </div>
                 )}
 
-                {/* Badges Multi-Select */}
                 {selectedUserForBadges && (
                   <div className="mb-6">
                     <p className="text-sm text-muted-foreground mb-2">Badges</p>
                     <div className="space-y-2">
                       {availableBadges.map((badge) => {
-                        // Get the proper icon for each badge type
                         const getBadgeIcon = (key: string) => {
                           if (key === "dao-member") {
                             return (
@@ -1475,7 +1578,6 @@ const getDisplayAddressType = (type?: string) => {
                   </div>
                 )}
 
-                {/* Avatar Color Override */}
                 {selectedUserForBadges && (
                   <div className="mb-6 border-t border-border pt-4">
                     <p className="text-sm text-muted-foreground mb-3">
@@ -1546,7 +1648,6 @@ const getDisplayAddressType = (type?: string) => {
                                 : "hover:bg-muted/50 border border-transparent"
                             }`}
                           >
-                            {/* Colored Member Icon */}
                             <div
                               className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${option.colorClass}`}
                             >
@@ -1581,7 +1682,6 @@ const getDisplayAddressType = (type?: string) => {
                   </div>
                 )}
 
-                {/* Action Buttons */}
                 <div className="flex justify-end gap-3">
                   <Button
                     variant="outline"
