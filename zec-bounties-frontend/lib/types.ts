@@ -176,6 +176,7 @@ export interface Team {
   members: TeamMember[];
   wallet?: TeamWallet | null;
   logo?: string | null;
+  isPrivate: boolean;
 }
 
 export interface RecoveryData {
@@ -273,4 +274,18 @@ export interface Community {
   description: string | null;
   logo?: string | null;
   memberCount: number;
+}
+
+export interface TeamFavorite {
+  id: string;
+  userId: string;
+  teamId: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    nickname?: string | null;
+    email?: string | null;
+    avatar?: string | null;
+  };
 }

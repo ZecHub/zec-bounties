@@ -16,6 +16,7 @@ import type {
   RecoveryData,
   Balance,
   Community,
+  TeamFavorite,
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
@@ -280,7 +281,7 @@ interface BountyContextType {
   createTeam: (data: { name: string; description?: string }) => Promise<Team>;
   updateTeam: (
     id: string,
-    data: { name?: string; description?: string },
+    data: { name?: string; description?: string; isPrivate?: boolean },
   ) => Promise<Team>;
   deleteTeam: (id: string) => Promise<void>;
   addTeamMembers: (
@@ -316,6 +317,7 @@ interface BountyContextType {
   fetchCommunities: () => Promise<void>;
   fetchTeamApplications: (teamId: string) => Promise<BountyApplication[]>;
   fetchTeamSubmissions: (teamId: string) => Promise<WorkSubmission[]>;
+  fetchTeamCommunity: (teamId: string) => Promise<TeamFavorite[]>;
   uploadTeamLogo: (teamId: string, file: File) => Promise<Team>;
   removeTeamLogo: (teamId: string) => Promise<void>;
   fetchTeamTransactionHashes: (teamId: string) => Promise<void>;
@@ -1762,7 +1764,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const updateTeam = async (
     id: string,
-    data: { name?: string; description?: string },
+    data: { name?: string; description?: string; isPrivate?: boolean },
   ): Promise<Team> => {
     if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${id}`, {
@@ -2409,6 +2411,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           case "team_transactions_fetched":
             setTeamPaymentIDs(msg.payload.transactions);
             break;
+
+          case "team_bounties_privacy_changed":
+            fetchBounties();
+            break;
         }
       };
 
@@ -2576,6 +2582,17 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     }
+  };
+
+  const fetchTeamCommunity = async (
+    teamId: string,
+  ): Promise<TeamFavorite[]> => {
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/community`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.community ?? [];
   };
 
   const createBounty = async (data: BountyFormData & { teamId?: string }) => {
@@ -3184,6 +3201,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchCommunities,
         fetchTeamApplications,
         fetchTeamSubmissions,
+        fetchTeamCommunity,
         favoriteTeamIds,
         favoriteTeamsLoading,
         fetchFavoriteTeams,

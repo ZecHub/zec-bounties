@@ -21,6 +21,7 @@ export function bountyCreatorName(bounty?: DisplayNameBounty | null): string {
 export function bountyCreatorInitial(
   bounty?: DisplayNameBounty | null,
 ): string {
+  console.log(bounty);
   return bountyCreatorName(bounty).charAt(0).toUpperCase() || "?";
 }
 

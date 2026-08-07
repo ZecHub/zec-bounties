@@ -105,6 +105,8 @@ function HomeContent() {
     );
   }, [bounties, searchQuery, activeCategory, activeTeamId]);
 
+  console.log(filteredBounties);
+
   const kanbanGroups = useMemo(
     () =>
       KANBAN_COLUMNS.map((col) => ({

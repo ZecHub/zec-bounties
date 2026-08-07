@@ -10,6 +10,7 @@ import type {
   Bounty,
   BountyApplication,
   WorkSubmission,
+  TeamFavorite,
 } from "@/lib/types";
 import { getUserRole } from "../page";
 import { TeamsNewBountyModal } from "@/components/teams/new-bounty-modal";
@@ -68,11 +69,19 @@ import { format } from "date-fns";
 import { TeamsEditBountyModal } from "@/components/teams/edit-bounty-modal";
 import { RefreshCw } from "lucide-react";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
+import { Switch } from "@/components/ui/switch";
 
-type Tab = "Overview" | "Bounty program" | "Members" | "Treasury" | "Settings";
+type Tab =
+  | "Overview"
+  | "Bounty program"
+  | "Community"
+  | "Members"
+  | "Treasury"
+  | "Settings";
 const TABS: Tab[] = [
   "Overview",
   "Bounty program",
+  "Community",
   "Members",
   "Treasury",
   "Settings",
@@ -287,6 +296,7 @@ export default function TeamConsolePage() {
         {activeTab === "Members" && (
           <MembersTab team={team} canManage={canManage} />
         )}
+        {activeTab === "Community" && <CommunityTab team={team} />}
         {activeTab === "Treasury" && (
           <TreasuryTab
             team={team}
@@ -1470,6 +1480,73 @@ function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
   );
 }
 
+function CommunityTab({ team }: { team: Team }) {
+  const { fetchTeamCommunity } = useBounty();
+  const [community, setCommunity] = useState<TeamFavorite[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchTeamCommunity(team.id)
+      .then(setCommunity)
+      .finally(() => setLoading(false));
+  }, [team.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground">
+          {community.length} {community.length === 1 ? "member" : "members"}
+        </h2>
+      </div>
+
+      {community.length === 0 ? (
+        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground bg-muted/20">
+          No one has joined {team.name}'s community yet. Favoriting this team
+          adds someone here — and lets them see the team's private bounties.
+        </p>
+      ) : (
+        <div className="divide-y rounded-xl border bg-card">
+          {community.map((fav) => (
+            <div
+              key={fav.id}
+              className="flex items-center justify-between gap-4 px-4 py-3"
+            >
+              <div className="flex items-center gap-3">
+                <Avatar className="h-9 w-9 border">
+                  <AvatarImage src={fav.user?.avatar || undefined} />
+                  <AvatarFallback className="text-xs">
+                    {initials(displayName(fav.user))}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="text-sm font-medium">
+                    {displayName(fav.user)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {fav.user?.email}
+                  </div>
+                </div>
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                Joined {format(new Date(fav.createdAt), "MMM d, yyyy")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TreasuryTab({
   team,
   teamBounties,
@@ -1701,6 +1778,7 @@ function SettingsTab({
   const router = useRouter();
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description || "");
+  const [isPrivate, setIsPrivate] = useState(team.isPrivate);
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1733,7 +1811,7 @@ function SettingsTab({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateTeam(team.id, { name, description });
+      await updateTeam(team.id, { name, description, isPrivate });
     } catch (err) {
       console.error(err);
     } finally {
@@ -1836,6 +1914,21 @@ function SettingsTab({
           disabled={!canManage}
           rows={3}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
+        />
+      </div>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div className="pr-4">
+          <Label className="text-sm">Private team</Label>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            When private, only {team.name}'s community (members and favoriters)
+            can see and apply to its bounties. Flipping this updates every
+            existing bounty under this team.
+          </p>
+        </div>
+        <Switch
+          checked={isPrivate}
+          onCheckedChange={setIsPrivate}
+          disabled={!canManage}
         />
       </div>
 
