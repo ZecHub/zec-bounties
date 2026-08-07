@@ -166,6 +166,7 @@ export default function KpisDashboard() {
   );
   const [sortKey, setSortKey] = useState<SortKey>("completed");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
+  const [rankBy, setRankBy] = useState<"completed" | "earned">("completed");
   const [showAllUsers, setShowAllUsers] = useState(false);
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
   const [isRescanning, setIsRescanning] = useState(false);
@@ -420,6 +421,7 @@ export default function KpisDashboard() {
         const params = new URLSearchParams();
         if (showAllUsers) params.set("all", "true");
         params.set("timeRange", timeRange);
+        if (rankBy === "earned") params.set("rankBy", "earned");
 
         const res = await fetch(
           `${backendUrl}/api/kpis/top-contributors?${params.toString()}`,
@@ -455,7 +457,7 @@ export default function KpisDashboard() {
       }
     };
     loadData();
-  }, [isAdmin, showAllUsers, timeRange]);
+  }, [isAdmin, showAllUsers, timeRange, rankBy]);
 
   // Fetch time series data
   useEffect(() => {
@@ -537,12 +539,15 @@ export default function KpisDashboard() {
         valB = b.submitted > 0 ? (b.completed / b.submitted) * 100 : 0;
       }
       const primary = sortDirection === "desc" ? valB - valA : valA - valB;
-      // Deterministic total order: break metric ties with totalEarned,
-      // then submitted, then the unique id. Mirrors the server's byRank
-      // so client-side re-sorts agree with the server and never reshuffle.
+      // Deterministic total order: break metric ties with the full
+      // completed / totalEarned / submitted chain, then the unique id.
+      // Restricted to a tie on either leading metric this collapses to
+      // the server's byRank chain for that view, so client-side
+      // re-sorts agree with the server and never reshuffle.
       if (primary !== 0) return primary;
       return (
-        b.totalEarned - (a.totalEarned || 0) ||
+        b.completed - a.completed ||
+        b.totalEarned - a.totalEarned ||
         b.submitted - a.submitted ||
         a.id.localeCompare(b.id)
       );
@@ -595,6 +600,16 @@ export default function KpisDashboard() {
       setSortKey(key);
       setSortDirection("desc");
     }
+  };
+
+  // Switch the ranking perspective (server-side): most bounties
+  // completed vs most ZEC earned. Also aligns the client sort so the
+  // table shows the same order the server ranked and cut the top 25 by.
+  const switchRankBy = (next: "completed" | "earned") => {
+    if (next === rankBy) return;
+    setRankBy(next);
+    setSortKey(next === "earned" ? "totalEarned" : "completed");
+    setSortDirection("desc");
   };
 
   // Handlers
@@ -675,6 +690,7 @@ export default function KpisDashboard() {
       const params = new URLSearchParams();
       if (showAllUsers) params.set("all", "true");
       params.set("timeRange", timeRange);
+      if (rankBy === "earned") params.set("rankBy", "earned");
 
       const refreshRes = await fetch(
         `${backendUrl}/api/kpis/top-contributors?${params.toString()}`,
@@ -867,11 +883,31 @@ const getDisplayAddressType = (type?: string) => {
           {/* Table */}
           <Card className="bg-card border-border mb-8">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col imd:flex-row imd:items-center justify-between gap-4">
                 <CardTitle>
-                  {showAllUsers ? "All Users" : "Top Contributors (Top 25)"}
+                  {showAllUsers
+                    ? "All Users"
+                    : rankBy === "earned"
+                      ? "Top Earners (Top 25)"
+                      : "Top Contributors (Top 25)"}
                 </CardTitle>
-                <div className="w-[170px] flex justify-end">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+                    <Button
+                      variant={rankBy === "completed" ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => switchRankBy("completed")}
+                    >
+                      Most Completed
+                    </Button>
+                    <Button
+                      variant={rankBy === "earned" ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => switchRankBy("earned")}
+                    >
+                      Top Earners
+                    </Button>
+                  </div>
                   {isAdmin && viewMode === "admin" && (
                     <Button
                       variant={showAllUsers ? "default" : "outline"}
@@ -933,7 +969,7 @@ const getDisplayAddressType = (type?: string) => {
                       {viewMode === "admin" && (
                         <TableHead>Address Type</TableHead>
                       )}
-                      {viewMode === "admin" && (
+                      {(viewMode === "admin" || rankBy === "earned") && (
                         <TableHead
                           className="text-right cursor-pointer"
                           onClick={() => toggleSort("totalEarned")}
@@ -957,7 +993,13 @@ const getDisplayAddressType = (type?: string) => {
                     {sortedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={viewMode === "admin" ? 9 : 6}
+                          colSpan={
+                            viewMode === "admin"
+                              ? 9
+                              : rankBy === "earned"
+                                ? 7
+                                : 6
+                          }
                           className="text-center py-8 text-muted-foreground"
                         >
                           No data available.
@@ -1008,7 +1050,8 @@ const getDisplayAddressType = (type?: string) => {
                               </TableCell>
                             )}
 
-                            {viewMode === "admin" && (
+                            {(viewMode === "admin" ||
+                              rankBy === "earned") && (
                               <TableCell className="text-right font-medium">
                                 {user.totalEarned
                                   ? user.totalEarned.toFixed(4)
