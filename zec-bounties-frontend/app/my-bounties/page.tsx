@@ -457,16 +457,16 @@ export default function MyBountiesPage() {
                                     <div
                                       className={`absolute bottom-0 left-0 right-0 rounded-sm imd:rounded-md transition-all duration-500 ease-out ${
                                         isSelected
-                                          ? "bg-primary"
+                                          ? "bg-emerald-500"
                                           : hasData
-                                            ? "bg-primary/40 group-hover:bg-primary/70"
+                                            ? "bg-emerald-500/50 group-hover:bg-emerald-500/80"
                                             : ""
                                       }`}
                                       style={{ height: `${heightPct}%` }}
                                     />
                                     {isSelected && heightPct > 0 && (
                                       <div
-                                        className="absolute left-0 right-0 h-0.5 bg-primary"
+                                        className="absolute left-0 right-0 h-0.5 bg-emerald-400"
                                         style={{ bottom: `${heightPct}%` }}
                                       />
                                     )}

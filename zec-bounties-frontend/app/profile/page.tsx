@@ -35,6 +35,7 @@ import {
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { cn } from "@/lib/utils";
+import { PrivacySettingsCard } from "@/components/profile/privacy-settings-card";
 
 type SaveState = "idle" | "saving" | "success" | "error";
 
@@ -501,6 +502,8 @@ export default function ProfilePage() {
               </div>
             </CardContent> */}
           </Card>
+
+          <PrivacySettingsCard userId={currentUser?.id} />
 
           {/* ── Mainnet UA address ───────────────────────────────────────────── */}
           <Card>

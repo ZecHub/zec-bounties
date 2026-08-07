@@ -55,6 +55,7 @@ import { confirmedTotal, fmt } from "@/lib/utils";
 import { backendUrl } from "@/lib/configENV";
 import { Navbar } from "@/components/layout/navbar";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChartType =
@@ -980,33 +981,36 @@ const getDisplayAddressType = (type?: string) => {
 
                             {/* Avatar with hover tooltip */}
                             <TableCell>
-                              <UserAvatar
-                                user={user}
-                                getDefaultAvatarClasses={
-                                  getDefaultAvatarClasses
-                                }
-                              />
+                              <Link
+                                href={`/users/${user.nickname || user.id}`}
+                                className="inline-block hover:opacity-80"
+                                title="View profile"
+                              >
+                                <UserAvatar
+                                  user={user}
+                                  getDefaultAvatarClasses={
+                                    getDefaultAvatarClasses
+                                  }
+                                />
+                              </Link>
                             </TableCell>
-                            <TableCell>{user.name}</TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/users/${user.nickname || user.id}`}
+                                className="hover:underline font-medium"
+                              >
+                                {user.name}
+                              </Link>
+                            </TableCell>
                             <TableCell>{user.completed}</TableCell>
                             <TableCell className="text-muted-foreground">
                               {user.submitted}
                             </TableCell>
                             <TableCell>
-				  <div className="flex items-center gap-1.5">
-				    {getBadgeIcons(user.completed, user.badges, user.role)}
-				  </div>
-				</TableCell>
-
-                            {viewMode === "admin" && (
-                              <TableCell>
-                                <span
-                                  className={`px-2.5 py-0.5 text-xs rounded-full ${getAddressTypeBadge(user.addressType)}`}
-                                >
-                                  {getDisplayAddressType(user.addressType)}
-                                </span>
-                              </TableCell>
-                            )}
+                              <div className="flex items-center gap-1.5">
+                                {getBadgeIcons(user.completed, user.badges, user.role)}
+                              </div>
+                            </TableCell>
 
                             {viewMode === "admin" && (
                               <TableCell className="text-right font-medium">
