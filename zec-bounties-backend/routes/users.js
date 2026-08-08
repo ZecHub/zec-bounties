@@ -132,12 +132,12 @@ async function loadStats(userId) {
  */
 router.get("/:idOrNickname/public", async (req, res) => {
   try {
-    const key = req.params.idOrNickname;
+    const key = decodeURIComponent(String(req.params.idOrNickname || "")).trim();
     if (!key) return res.status(400).json({ error: "User id required" });
 
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ id: key }, { nickname: key }],
+        OR: [{ id: key }, { nickname: key }, { name: key }],
       },
       select: {
         id: true,
