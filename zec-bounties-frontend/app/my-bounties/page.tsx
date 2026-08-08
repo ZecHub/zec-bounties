@@ -20,10 +20,9 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { Bounty } from "@/lib/types";
 import type { BountyStatus } from "@/lib/types";
-import { backendUrl } from "@/lib/configENV";
 
 const STATUS_COLUMNS: {
   status: BountyStatus;
@@ -74,38 +73,20 @@ const MONTH_LABELS = [
 
 type ViewMode = "bounties" | "earnings";
 
-function isAssignedToUser(bounty: Bounty, userId: string): boolean {
-  if (bounty.assignee === userId) return true;
-  const arr = (bounty as any).assignees;
-  if (Array.isArray(arr)) {
-    return arr.some((a: any) => a.userId === userId || a.user?.id === userId);
-  }
-  return false;
-}
-
 export default function MyBountiesPage() {
-  const { bounties, currentUser } = useBounty();
+  const { myBounties, myBountiesLoading, fetchMyBounties, currentUser } =
+    useBounty();
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("bounties");
   const [statusFilter, setStatusFilter] = useState<BountyStatus | "ALL">("ALL");
-  const [allUserBounties, setAllUserBounties] = useState<Bounty[]>([]);
-  const [earningsLoading, setEarningsLoading] = useState(false);
-  const [earningsFetched, setEarningsFetched] = useState(false);
   const [selectedMonthIdx, setSelectedMonthIdx] = useState<number | null>(null);
   const [hasSeenEarnings, setHasSeenEarnings] = useState(false);
 
   const router = useRouter();
 
-  const userBounties = useMemo(() => {
-    if (!currentUser) return [];
-    if (currentUser.role === "ADMIN") return bounties;
-    return bounties.filter(
-      (b) =>
-        b.createdBy === currentUser.id || isAssignedToUser(b, currentUser.id),
-    );
-  }, [bounties, currentUser]);
+  const userBounties = myBounties;
 
   const visibleBounties = useMemo(
     () =>
@@ -125,7 +106,7 @@ export default function MyBountiesPage() {
   );
 
   const stats = useMemo(() => {
-    const source = earningsFetched ? allUserBounties : userBounties;
+    const source = userBounties;
     const done = source.filter((b) => b.status === "DONE");
     return {
       totalRewards: done.reduce((sum, b) => sum + b.bountyAmount, 0),
@@ -136,54 +117,13 @@ export default function MyBountiesPage() {
         0,
       ),
     };
-  }, [userBounties, allUserBounties, earningsFetched]);
-
-  const fetchAllForEarnings = useCallback(async () => {
-    if (!currentUser || earningsFetched) return;
-    setEarningsLoading(true);
-    try {
-      const PAGE_SIZE = 50;
-      let page = 1;
-      let collected: Bounty[] = [];
-      let keepGoing = true;
-      while (keepGoing) {
-        const res = await fetch(
-          `${backendUrl}/api/bounties?page=${page}&limit=${PAGE_SIZE}`,
-        );
-        if (!res.ok) break;
-        const data = await res.json();
-        const items: Bounty[] = Array.isArray(data) ? data : (data.data ?? []);
-        const total: number = data.total ?? items.length;
-        collected = [...collected, ...items];
-        keepGoing = items.length === PAGE_SIZE && collected.length < total;
-        page++;
-      }
-      const mine =
-        currentUser.role === "ADMIN"
-          ? collected
-          : collected.filter(
-              (b) =>
-                b.createdBy === currentUser.id ||
-                isAssignedToUser(b, currentUser.id),
-            );
-      setAllUserBounties(mine);
-    } catch (err) {
-      console.error("Failed to fetch all bounties for earnings:", err);
-    } finally {
-      setEarningsLoading(false);
-      setEarningsFetched(true);
-    }
-  }, [currentUser, earningsFetched]);
-
-  useEffect(() => {
-    fetchAllForEarnings();
-  }, [fetchAllForEarnings]);
+  }, [userBounties]);
 
   const monthlyEarnings = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const mapAmount: Record<number, number> = {};
     const mapBounties: Record<number, Bounty[]> = {};
-    const source = earningsFetched ? allUserBounties : userBounties;
+    const source = userBounties;
     source
       .filter((b) => b.status === "DONE")
       .forEach((b) => {
@@ -200,17 +140,17 @@ export default function MyBountiesPage() {
       amount: mapAmount[i] || 0,
       bounties: mapBounties[i] || [],
     }));
-  }, [allUserBounties, userBounties, earningsFetched]);
+  }, [userBounties]);
 
   const maxEarning = Math.max(...monthlyEarnings.map((m) => m.amount), 1);
   const yearTotal = monthlyEarnings.reduce((s, m) => s + m.amount, 0);
 
   const totalEarnedAllTime = useMemo(() => {
-    const source = earningsFetched ? allUserBounties : userBounties;
+    const source = userBounties;
     return source
       .filter((b) => b.status === "DONE")
       .reduce((s, b) => s + b.bountyAmount, 0);
-  }, [allUserBounties, userBounties, earningsFetched]);
+  }, [userBounties]);
 
   const missingUA = !currentUser?.UA_address;
 
@@ -235,20 +175,26 @@ export default function MyBountiesPage() {
   };
 
   return (
-    <ProtectedRoute blockAdmin blockTeam>
+    <ProtectedRoute blockAdmin>
       <main className="min-h-screen bg-background">
         <Navbar />
 
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={setIsDetailModalOpen}
+          onOpenChange={(open) => {
+            setIsDetailModalOpen(open);
+            if (!open) fetchMyBounties();
+          }}
         />
 
         <NewBountyModal
           open={isNewBountyModalOpen}
           onOpenChange={setIsNewBountyModalOpen}
-          onSuccess={() => setIsNewBountyModalOpen(false)}
+          onSuccess={() => {
+            setIsNewBountyModalOpen(false);
+            fetchMyBounties();
+          }}
           onCancel={() => setIsNewBountyModalOpen(false)}
         />
 
@@ -279,10 +225,7 @@ export default function MyBountiesPage() {
                 Icon: TrendingUp,
                 value: (
                   <>
-                    {(earningsFetched
-                      ? totalEarnedAllTime
-                      : stats.totalRewards
-                    ).toLocaleString()}{" "}
+                    {totalEarnedAllTime.toLocaleString()}{" "}
                     <span className="text-xs font-medium">ZEC</span>
                   </>
                 ),
@@ -394,7 +337,12 @@ export default function MyBountiesPage() {
           {/* ── Bounties view ── */}
           {viewMode === "bounties" && (
             <>
-              {userBounties.length === 0 ? (
+              {myBountiesLoading && userBounties.length === 0 ? (
+                <div className="flex items-center justify-center py-14 imd:py-20 gap-3 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="text-sm">Loading your bounties…</span>
+                </div>
+              ) : userBounties.length === 0 ? (
                 <EmptyState />
               ) : visibleBounties.length === 0 ? (
                 <div className="text-center py-14 imd:py-20">
@@ -451,7 +399,7 @@ export default function MyBountiesPage() {
                     {new Date().getFullYear()} — tap a month for details
                   </p>
                 </div>
-                {!earningsLoading && yearTotal > 0 && (
+                {!myBountiesLoading && yearTotal > 0 && (
                   <div className="text-right shrink-0">
                     <p className="text-xs text-muted-foreground">Year total</p>
                     <p className="text-lg sam:text-xl imd:text-2xl font-bold">
@@ -461,7 +409,7 @@ export default function MyBountiesPage() {
                 )}
               </div>
 
-              {earningsLoading ? (
+              {myBountiesLoading ? (
                 <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   <span className="text-sm">Loading earnings…</span>
