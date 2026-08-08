@@ -62,6 +62,7 @@ import { backendUrl } from "@/lib/configENV";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { profileHref } from "@/lib/profileHref";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChainFilter = "all" | "MAIN" | "TEST";
@@ -1146,7 +1147,7 @@ export default function KpisDashboard() {
                             {/* Avatar with hover tooltip */}
                             <TableCell>
                               <Link
-                                href={`/users/${user.nickname || user.id}`}
+                               href={profileHref(user)}
                                 className="inline-block hover:opacity-80"
                                 title="View profile"
                               >
@@ -1160,7 +1161,7 @@ export default function KpisDashboard() {
                             </TableCell>
                             <TableCell>
                               <Link
-                                href={`/users/${user.nickname || user.id}`}
+                                href={profileHref(user)}
                                 className="hover:underline font-medium"
                               >
                                 {user.name}
