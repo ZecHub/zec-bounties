@@ -94,6 +94,7 @@ export default function MyBountiesPage() {
   const [earningsLoading, setEarningsLoading] = useState(false);
   const [earningsFetched, setEarningsFetched] = useState(false);
   const [selectedMonthIdx, setSelectedMonthIdx] = useState<number | null>(null);
+  const [hasSeenEarnings, setHasSeenEarnings] = useState(false);
 
   const router = useRouter();
 
@@ -313,23 +314,33 @@ export default function MyBountiesPage() {
           {/* ── Toolbar ── */}
           <div className="flex flex-col gap-2 sam:gap-3 pb-3 sam:pb-4 border-b mb-4 sam:mb-6">
             {/* Title row + earnings toggle */}
+
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-base sam:text-lg imd:text-xl font-bold">
                 All Bounties
               </h2>
-              <Button
-                variant={viewMode === "earnings" ? "secondary" : "ghost"}
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                title="Monthly earnings"
-                onClick={() =>
-                  setViewMode((v) =>
-                    v === "earnings" ? "bounties" : "earnings",
-                  )
-                }
-              >
-                <BarChart2 className="h-4 w-4" />
-              </Button>
+              <div className="relative shrink-0">
+                {!hasSeenEarnings && viewMode !== "earnings" && (
+                  <>
+                    <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping" />
+                    <span className="absolute inset-0 rounded-full bg-primary/20 animate-pulse" />
+                  </>
+                )}
+                <Button
+                  variant={viewMode === "earnings" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="relative h-8 w-8"
+                  title="Monthly earnings"
+                  onClick={() => {
+                    setHasSeenEarnings(true);
+                    setViewMode((v) =>
+                      v === "earnings" ? "bounties" : "earnings",
+                    );
+                  }}
+                >
+                  <BarChart2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             {/* Status pills — horizontal scroll on phones, wraps on imd+ */}
