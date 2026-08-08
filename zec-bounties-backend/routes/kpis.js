@@ -46,10 +46,23 @@ function byRank(a, b) {
   );
 }
 
+/** Strip wallet addresses for non-admin clients. Rank/badges/counts stay. */
+function redactContributorsForClient(rows, isAdminUser) {
+  if (isAdminUser) return rows;
+  return rows.map((u) => {
+    const { UA_address, z_address, ...rest } = u;
+    return rest;
+  });
+}
+
 // GET /api/kpis/top-contributors
-router.get("/top-contributors", authenticate, isAdmin, async (req, res) => {
+// Any logged-in user can read ranks/badges/counts.
+// Admins also receive UA_address for address-type icons on /admin/kpis.
+router.get("/top-contributors", authenticate, async (req, res) => {
   try {
-    const showAll = req.query.all === "true";
+    const isAdminUser = req.user?.role === "ADMIN";
+    // Non-admins cannot request the full user dump
+    const showAll = req.query.all === "true" && isAdminUser;
     const timeRange = req.query.timeRange || "all";
     const completedAtFilter = getCompletedAtFilter(timeRange);
     const chainFilter = getChainFilter(req.query.chain);
@@ -147,7 +160,7 @@ router.get("/top-contributors", authenticate, isAdmin, async (req, res) => {
       });
 
       const sorted = Array.from(userMap.values()).sort(byRank);
-      return res.json(sorted);
+      return res.json(redactContributorsForClient(sorted, isAdminUser));
     }
 
     const bounties = await prisma.bounty.findMany({
@@ -245,14 +258,14 @@ router.get("/top-contributors", authenticate, isAdmin, async (req, res) => {
 
     const sorted = Array.from(userStats.values()).sort(byRank).slice(0, 25);
 
-    res.json(sorted);
+    res.json(redactContributorsForClient(sorted, isAdminUser));
   } catch (error) {
     console.error("Error in /top-contributors:", error);
     res.status(500).json({ error: "Failed to fetch data" });
   }
 });
 
-// GET /api/kpis/contributors-over-time
+// GET /api/kpis/contributors-over-time (aggregate only — safe for any logged-in user)
 router.get(
   "/contributors-over-time",
   authenticate,
@@ -315,7 +328,7 @@ router.get(
   },
 );
 
-// GET /api/kpis/average-earnings-over-time
+// GET /api/kpis/average-earnings-over-time (aggregates only — any logged-in user)
 router.get(
   "/average-earnings-over-time",
   authenticate,
