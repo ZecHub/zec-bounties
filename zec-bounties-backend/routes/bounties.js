@@ -31,8 +31,18 @@ const sendMailIfEnabled = async (options) => {
 };
 
 // ─── Reusable select shapes (avoids re-typing & keeps payloads small) ─────────
+// PUBLIC-SAFE: never include email, UA_address, z_address, password
 const USER_SELECT = { id: true, name: true, nickname: true, avatar: true };
 
+const USER_SELECT_PUBLIC_ROLE = {
+  id: true,
+  name: true,
+  nickname: true,
+  role: true,
+  avatar: true,
+};
+
+// AUTH-ONLY: email + wallet addresses — use only on authenticate/isAdmin routes
 const USER_SELECT_FULL = {
   id: true,
   name: true,
@@ -43,7 +53,7 @@ const USER_SELECT_FULL = {
   UA_address: true,
 };
 
-// createdByUser / assigneeUser on Bounty (adds role, no address fields)
+// AUTH-ONLY: includes email (not for unauthenticated list/detail)
 const USER_SELECT_WITH_ROLE = {
   id: true,
   name: true,
@@ -53,7 +63,7 @@ const USER_SELECT_WITH_ROLE = {
   avatar: true,
 };
 
-// submitterUser / reviewerUser / applicantUser-with-avatar
+// AUTH-ONLY: submitterUser / reviewerUser / applicantUser-with-avatar
 const USER_SELECT_BASIC = {
   id: true,
   name: true,
@@ -62,7 +72,7 @@ const USER_SELECT_BASIC = {
   avatar: true,
 };
 
-// applicantUser without avatar (a couple of routes only need this much)
+// AUTH-ONLY: applicantUser without avatar
 const USER_SELECT_MINIMAL = {
   id: true,
   name: true,
@@ -227,7 +237,8 @@ router.get("/", async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(parseInt(req.query.limit) || 10, 50);
 
-    const cacheKey = `bounties:${JSON.stringify({ page, limit })}`;
+    // v2 key: bust cache that previously stored email/addresses on nested users
+    const cacheKey = `bounties:v2:${JSON.stringify({ page, limit })}`;
 
     // 1. CHECK CACHE FIRST
     const cached = await getCache(cacheKey);
@@ -237,7 +248,7 @@ router.get("/", async (req, res) => {
     }
     console.log("Cache Miss");
 
-    // 2. DB FALLBACK
+    // 2. DB FALLBACK — public-safe user selects only (no email / wallet addresses)
     const [bounties, total] = await Promise.all([
       prisma.bounty.findMany({
         skip: (page - 1) * limit,
@@ -248,10 +259,10 @@ router.get("/", async (req, res) => {
             include: { user: { select: USER_SELECT } },
           },
           assigneeUser: {
-            select: USER_SELECT_FULL,
+            select: USER_SELECT_PUBLIC_ROLE,
           },
           createdByUser: {
-            select: USER_SELECT_WITH_ROLE,
+            select: USER_SELECT_PUBLIC_ROLE,
           },
         },
       }),
@@ -1008,10 +1019,10 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
   }
 });
 
-// ─── Fetch all users ──────────────────────────────────────────────────────────
-router.get("/users", async (req, res) => {
+// ─── Fetch all users (ADMIN ONLY — contains email + wallet addresses) ─────────
+router.get("/users", authenticate, isAdmin, async (req, res) => {
   try {
-    const cacheKey = "users:all";
+    const cacheKey = "users:all:admin";
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -1595,7 +1606,8 @@ router.get("/stats/totals", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const bountyId = req.params.id;
-    const cacheKey = `bounty:${bountyId}`;
+    // v2 key: bust cache that previously stored email/addresses on nested users
+    const cacheKey = `bounty:v2:${bountyId}`;
 
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
@@ -1604,17 +1616,17 @@ router.get("/:id", async (req, res) => {
       where: { id: bountyId },
       include: {
         assigneeUser: {
-          select: USER_SELECT_FULL,
+          select: USER_SELECT_PUBLIC_ROLE,
         },
         assignees: {
           include: {
             user: {
-              select: USER_SELECT_FULL,
+              select: USER_SELECT,
             },
           },
         },
         createdByUser: {
-          select: USER_SELECT_WITH_ROLE,
+          select: USER_SELECT_PUBLIC_ROLE,
         },
       },
     });
