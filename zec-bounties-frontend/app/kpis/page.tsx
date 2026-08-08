@@ -60,6 +60,7 @@ import { backendUrl } from "@/lib/configENV";
 import { Navbar } from "@/components/layout/navbar";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { profileHref } from "@/lib/profileHref";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChartType =
@@ -1078,31 +1079,29 @@ export default function KpisDashboard() {
                           >
                             <TableCell>#{index + 1}</TableCell>
                             <TableCell>
-                              <Link
-                                href={`/users/${user.nickname || user.id}`}
-                                className="inline-block hover:opacity-80"
-                                title="View profile"
-                              >
-                                <UserAvatar
-                                  user={user}
-                                  getDefaultAvatarClasses={
-                                    getDefaultAvatarClasses
-                                  }
-                                />
-                              </Link>
-                            </TableCell>
+				  <Link
+				    href={profileHref(user)}
+				    className="inline-block hover:opacity-80"
+				    title="View profile"
+				  >
+				    <UserAvatar
+				      user={user}
+				      getDefaultAvatarClasses={getDefaultAvatarClasses}
+				    />
+				  </Link>
+				</TableCell>
                             <TableCell>
-                              <Link
-                                href={`/users/${user.nickname || user.id}`}
-                                className="hover:underline font-medium"
-                              >
-                                {user.name}
-                              </Link>
-                            </TableCell>
-                            <TableCell>{user.completed}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {user.submitted}
-                            </TableCell>
+				  <Link
+				    href={profileHref(user)}
+				    className="hover:underline font-medium"
+				  >
+				    {user.name}
+				  </Link>
+				</TableCell>
+				<TableCell>{user.completed}</TableCell>
+				<TableCell className="text-muted-foreground">
+				  {user.submitted}
+				</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5">
                                 {getBadgeIcons(
