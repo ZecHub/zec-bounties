@@ -343,9 +343,9 @@ export default function PublicUserProfilePage() {
                         </p>
                       )}
 
-                      {v?.showGithub && profile.githubId && (
+                      {v?.showGithub && (profile.githubUsername || profile.nickname) && (
                         <a
-                          href={`https://github.com/${profile.githubId}`}
+                          href={`https://github.com/${profile.githubUsername}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

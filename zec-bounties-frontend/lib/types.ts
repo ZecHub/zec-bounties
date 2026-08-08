@@ -54,6 +54,7 @@ export interface PublicUserProfile {
   role?: UserRole;
   memberSince?: string | Date;
   githubId?: string;
+  githubUsername?: string;
   completed?: number;
   submitted?: number;
   created?: number;
