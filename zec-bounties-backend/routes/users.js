@@ -245,11 +245,24 @@ router.get("/:idOrNickname/public", async (req, res) => {
     }
 
     if (show("showAddressType")) {
-      profile.addressType = coarseAddressType(user);
-      profile.hasUnifiedAddress = hasUA(user.UA_address);
-      profile.hasShieldedAddress = !!user.z_address;
-    }
+	  profile.addressType = coarseAddressType(user);
+	  profile.hasUnifiedAddress = hasUA(user.UA_address);
+	  profile.hasShieldedAddress = !!user.z_address;
 
+	  // Only for client-side icon decode — never render this string in the UI
+	  if (user.UA_address) {
+	    profile.UA_address = user.UA_address;
+	  } else if (user.z_address) {
+	    profile.z_address = user.z_address;
+	  }
+
+	  // Start empty; frontend fills from WASM (or falls back below)
+	  profile.receivers = {
+	    ironwood: false,
+	    sapling: false,
+	    transparent: false,
+	  };
+	}
     if (show("showRecentBounties")) {
       profile.recentCompleted = stats.recentCompleted;
       profile.recentCreated = stats.recentCreated;
