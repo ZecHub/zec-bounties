@@ -1558,7 +1558,7 @@ router.get("/mine", authenticate, async (req, res) => {
   }
 });
 
-router.get("/stats/totals", async (req, res) => {
+router.get("/stats/totals", authenticate, async (req, res) => {
   try {
     const cacheKey = "stats:totals";
 
