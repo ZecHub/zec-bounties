@@ -29,6 +29,11 @@ import {
   Settings,
 } from "lucide-react";
 import { cn, fmt } from "@/lib/utils";
+import {
+  initAddressDecoder,
+  getAddressReceivers,
+  isDecoderReady,
+} from "@/lib/decodeAddress";
 
 function BadgeIcons({
   completed = 0,
@@ -88,52 +93,51 @@ function BadgeIcons({
 }
 
 function AddressTypeIcons({
-  addressType,
-  hasUnified,
-  hasShielded,
+  receivers,
 }: {
-  addressType?: string;
-  hasUnified?: boolean;
-  hasShielded?: boolean;
+  receivers?: {
+    ironwood?: boolean;
+    sapling?: boolean;
+    transparent?: boolean;
+  };
 }) {
-  const n = (addressType || "").toLowerCase();
-  const ironwood =
-    n.includes("ironwood") ||
-    n.includes("orchard") ||
-    n.includes("ua") ||
-    hasUnified;
-  const sapling = n.includes("sapling") || (hasShielded && !hasUnified);
-  const transparent = n.includes("transparent");
-  const none = !ironwood && !sapling && !transparent && n === "none";
-
-  if (none || (!ironwood && !sapling && !transparent && !addressType)) {
+  if (
+    !receivers ||
+    (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
+  ) {
     return (
-      <span title="No address on file" className="inline-flex items-center gap-1 text-red-500">
-        <Ban className="w-4 h-4" />
+      <div className="flex items-center justify-center gap-2 text-red-500">
+        <Ban className="w-6 h-6" />
         <span className="text-sm">None</span>
-      </span>
+      </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-2">
-      {transparent && (
-        <span title="Transparent" className="text-yellow-400">
-          <AlertTriangle className="w-4 h-4" />
-        </span>
-      )}
-      {(sapling || n.includes("sapling")) && (
-        <span title="Sapling" className="text-emerald-400">
-          <Leaf className="w-4 h-4" />
-        </span>
-      )}
-      {ironwood && (
-        <span
-          title="Ironwood"
-          className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border border-zinc-400"
+    <div className="flex items-center justify-center gap-3">
+      {receivers.transparent && (
+        <div
+          title="Transparent"
+          className="flex items-center justify-center w-9 h-9 text-yellow-400"
         >
-          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
-        </span>
+          <AlertTriangle className="w-9 h-9" />
+        </div>
+      )}
+      {receivers.sapling && (
+        <div
+          title="Sapling"
+          className="flex items-center justify-center w-9 h-9 text-emerald-400"
+        >
+          <Leaf className="w-9 h-9" />
+        </div>
+      )}
+      {receivers.ironwood && (
+        <div
+          title="Ironwood"
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-zinc-700 border-2 border-zinc-300"
+        >
+          <TreeDeciduous className="w-9 h-9 text-zinc-200" />
+        </div>
       )}
     </div>
   );
@@ -152,19 +156,29 @@ export default function PublicUserProfilePage() {
   const params = useParams();
   const router = useRouter();
   const { currentUser } = useBounty();
-  const idOrNickname = String(params.id || "");
+  const idOrNickname = String(params?.id ?? "");
 
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [receivers, setReceivers] = useState<{
+    ironwood?: boolean;
+    sapling?: boolean;
+    transparent?: boolean;
+  } | null>(null);
 
+  // Load profile when user id/nickname changes
   useEffect(() => {
     if (!idOrNickname) return;
+
     let cancelled = false;
 
+    setProfile(null);
+    setReceivers(null);
+    setError(null);
+    setLoading(true);
+
     const load = async () => {
-      setLoading(true);
-      setError(null);
       try {
         const token = localStorage.getItem("authToken");
         const headers: HeadersInit = {};
@@ -172,37 +186,89 @@ export default function PublicUserProfilePage() {
 
         const res = await fetch(
           `${backendUrl}/api/users/${encodeURIComponent(idOrNickname)}/public`,
-          { headers },
+          { headers, cache: "no-store" },
         );
+
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error || "Profile not found");
         }
+
         const data = await res.json();
         if (!cancelled) setProfile(data);
       } catch (e: any) {
-        if (!cancelled) setError(e.message || "Failed to load profile");
+        if (!cancelled) {
+          setProfile(null);
+          setError(e.message || "Failed to load profile");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
     load();
+
     return () => {
       cancelled = true;
     };
   }, [idOrNickname]);
 
+  // Decode UA → receivers whenever profile changes (same as KPI dashboard)
+  useEffect(() => {
+    let cancelled = false;
+    setReceivers(null);
+
+    if (!profile?.visibility?.showAddressType) return;
+
+    const addr =
+      (profile as any).UA_address ||
+      (profile as any).z_address ||
+      null;
+
+    if (!addr) {
+      setReceivers({ ironwood: false, sapling: false, transparent: false });
+      return;
+    }
+
+    (async () => {
+      try {
+        await initAddressDecoder();
+        if (cancelled || !isDecoderReady()) return;
+
+        const r = getAddressReceivers(addr) as any;
+        if (cancelled) return;
+
+        setReceivers({
+          ironwood: !!(r.ironwood || r.orchard),
+          sapling: !!r.sapling,
+          transparent: !!r.transparent,
+        });
+      } catch (err) {
+        console.error("Address decode failed:", err);
+        if (!cancelled) {
+          setReceivers({ ironwood: false, sapling: false, transparent: false });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.id, profile?.visibility?.showAddressType]);
+
   const v = profile?.visibility;
   const isOwn =
-    profile?.isOwner ||
-    (currentUser && profile && currentUser.id === profile.id);
+    !!profile?.isOwner ||
+    !!(currentUser && profile && currentUser.id === profile.id);
 
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
         <Navbar />
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+        <div
+          key={idOrNickname}
+          className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-6"
+        >
           <div className="flex items-center justify-between gap-3">
             <Button
               variant="ghost"
@@ -298,7 +364,9 @@ export default function PublicUserProfilePage() {
                           />
                         </div>
                       ) : (
-                        !v?.showBadges && <PrivatePlaceholder label="Badges" />
+                        !v?.showBadges && (
+                          <PrivatePlaceholder label="Badges" />
+                        )
                       )}
                     </div>
                   </div>
@@ -329,7 +397,9 @@ export default function PublicUserProfilePage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Card>
                   <CardContent className="pt-4 pb-4">
-                    <p className="text-xs text-muted-foreground mb-1">Completed</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Completed
+                    </p>
                     {v?.showCompleted ? (
                       <p className="text-2xl font-bold tabular-nums">
                         {profile.completed ?? 0}
@@ -341,7 +411,9 @@ export default function PublicUserProfilePage() {
                 </Card>
                 <Card>
                   <CardContent className="pt-4 pb-4">
-                    <p className="text-xs text-muted-foreground mb-1">Created</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Created
+                    </p>
                     {v?.showCreated ? (
                       <p className="text-2xl font-bold tabular-nums">
                         {profile.created ?? 0}
@@ -353,7 +425,9 @@ export default function PublicUserProfilePage() {
                 </Card>
                 <Card>
                   <CardContent className="pt-4 pb-4">
-                    <p className="text-xs text-muted-foreground mb-1">Earned</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Earned
+                    </p>
                     {v?.showEarnings ? (
                       <p className="text-2xl font-bold tabular-nums">
                         {fmt(profile.totalEarned ?? 0)} ZEC
@@ -365,7 +439,9 @@ export default function PublicUserProfilePage() {
                 </Card>
                 <Card>
                   <CardContent className="pt-4 pb-4">
-                    <p className="text-xs text-muted-foreground mb-1">Completion</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Completion
+                    </p>
                     {v?.showCompletionRate ? (
                       <p className="text-2xl font-bold tabular-nums">
                         {profile.completionRate != null
@@ -386,14 +462,18 @@ export default function PublicUserProfilePage() {
                 <CardContent>
                   {v?.showAddressType ? (
                     <AddressTypeIcons
-                      addressType={profile.addressType}
-                      hasUnified={profile.hasUnifiedAddress}
-                      hasShielded={profile.hasShieldedAddress}
+                      receivers={
+                        receivers ?? {
+                          ironwood: false,
+                          sapling: false,
+                          transparent: false,
+                        }
+                      }
                     />
                   ) : (
                     <PrivatePlaceholder label="Address type" />
                   )}
-                  <p className="text-xs text-muted-foreground mt-2">
+                  <p className="text-xs text-muted-foreground mt-3 text-center">
                     Actual wallet addresses are never shown on public profiles.
                   </p>
                 </CardContent>
@@ -468,7 +548,10 @@ export default function PublicUserProfilePage() {
                   <CardContent className="py-4 text-sm text-muted-foreground">
                     This is how others see your profile. Hidden fields show as
                     private.{" "}
-                    <Link href="/profile" className="text-primary hover:underline">
+                    <Link
+                      href="/profile"
+                      className="text-primary hover:underline"
+                    >
                       Manage visibility
                     </Link>
                     .
