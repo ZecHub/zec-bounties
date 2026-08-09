@@ -315,6 +315,8 @@ interface BountyContextType {
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
 
+const [bountyChain, setBountyChain] = useState<"MAIN" | "TEST" | "ALL">("MAIN");
+
 export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -2232,13 +2234,21 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  // Fetch all bounties (PUBLIC) — MAIN chain only
-const fetchBounties = async (reset = true) => {
+// Fetch bounties — CLIENT: MAIN only; ADMIN: ALL (so admin Test/Main toggle still works)
+const fetchBounties = async (
+  reset = true,
+  chain?: "MAIN" | "TEST" | "ALL",
+) => {
   setBountiesLoading(true);
   try {
     const page = reset ? 1 : bountiesPage;
+
+    // Explicit chain wins; otherwise admin gets ALL, everyone else MAIN
+    const resolvedChain =
+      chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
+
     const res = await fetch(
-      `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&chain=MAIN`,
+      `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&chain=${resolvedChain}`,
       { headers: getAuthHeaders() },
     );
 
