@@ -1166,7 +1166,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     setUsersLoading(true);
     try {
       const res = await fetch(`${backendUrl}/api/bounties/users`, {
-        headers: getPublicHeaders(),
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to fetch users");
@@ -1810,7 +1810,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       await Promise.all([
         fetchBounties(),
-        fetchUsers(),
         fetchCategories(),
         fetchTotalStats(),
       ]);
@@ -2240,7 +2239,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const page = reset ? 1 : bountiesPage;
       const res = await fetch(
         `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}`,
-        { headers: getPublicHeaders() },
+        { headers: getAuthHeaders() },
       );
 
       if (!res.ok) throw new Error("Failed to fetch bounties");
@@ -2300,7 +2299,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const fetchTotalStats = async () => {
     try {
       const res = await fetch(`${backendUrl}/api/bounties/stats/totals`, {
-        headers: getPublicHeaders(),
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -2319,7 +2318,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const fetchBountyById = async (id: string): Promise<Bounty | null> => {
     try {
       const res = await fetch(`${backendUrl}/api/bounties/${id}`, {
-        headers: getPublicHeaders(), // no auth needed — public route
+        headers: getAuthHeaders(),
       });
       if (!res.ok) return null;
       return await res.json();
