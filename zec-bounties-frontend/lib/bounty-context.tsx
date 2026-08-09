@@ -2232,46 +2232,47 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  // Fetch all bounties (PUBLIC)
-  const fetchBounties = async (reset = true) => {
-    setBountiesLoading(true);
-    try {
-      const page = reset ? 1 : bountiesPage;
-      const res = await fetch(
-        `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}`,
-        { headers: getAuthHeaders() },
-      );
+  // Fetch all bounties (PUBLIC) — MAIN chain only
+const fetchBounties = async (reset = true) => {
+  setBountiesLoading(true);
+  try {
+    const page = reset ? 1 : bountiesPage;
+    const res = await fetch(
+      `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&chain=MAIN`,
+      { headers: getAuthHeaders() },
+    );
 
-      if (!res.ok) throw new Error("Failed to fetch bounties");
+    if (!res.ok) throw new Error("Failed to fetch bounties");
 
-      const data = await res.json();
-      const incoming: Bounty[] = Array.isArray(data) ? data : (data.data ?? []);
-      const total: number = data.total ?? incoming.length;
+    const data = await res.json();
+    const incoming: Bounty[] = Array.isArray(data) ? data : (data.data ?? []);
+    const total: number = data.total ?? incoming.length;
 
-      if (reset) {
-        setBounties(incoming);
-        setBountiesPage(2); // next load-more will fetch page 2
-      } else {
-        setBounties((prev) => {
-          const existingIds = new Set(prev.map((b) => b.id));
-          const fresh = incoming.filter((b) => !existingIds.has(b.id));
-          return [...prev, ...fresh];
-        });
-        setBountiesPage((p) => p + 1);
-      }
-
-      // If we got fewer than a full page, there's nothing more to load
-      setHasMoreBounties(
-        incoming.length === BOUNTIES_PER_PAGE &&
-          bounties.length + incoming.length < total,
-      );
-      await fetchTotalStats();
-    } catch (error) {
-      console.error("Failed to fetch bounties:", error);
-    } finally {
-      setBountiesLoading(false);
+    if (reset) {
+      setBounties(incoming);
+      setBountiesPage(2); // next load-more will fetch page 2
+    } else {
+      setBounties((prev) => {
+        const existingIds = new Set(prev.map((b) => b.id));
+        const fresh = incoming.filter((b) => !existingIds.has(b.id));
+        return [...prev, ...fresh];
+      });
+      setBountiesPage((p) => p + 1);
     }
-  };
+
+    // If we got fewer than a full page, there's nothing more to load
+    setHasMoreBounties(
+      incoming.length === BOUNTIES_PER_PAGE &&
+        bounties.length + incoming.length < total,
+    );
+
+    await fetchTotalStats();
+  } catch (error) {
+    console.error("Failed to fetch bounties:", error);
+  } finally {
+    setBountiesLoading(false);
+  }
+};
 
   /** Appends the next page of bounties to the existing list */
   const loadMoreBounties = async () => {
