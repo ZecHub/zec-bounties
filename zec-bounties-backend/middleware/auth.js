@@ -17,4 +17,22 @@ function isAdmin(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, isAdmin };
+const optionalAuthenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+
+    if (!token) return next(); // no token — proceed as anonymous
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (user) req.user = user;
+  } catch (err) {
+    // invalid/expired token — treat as anonymous rather than failing the request
+  }
+  next();
+};
+
+module.exports = { authenticate, isAdmin, optionalAuthenticate };
