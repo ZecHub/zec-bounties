@@ -140,26 +140,29 @@ router.post("/", authenticate, async (req, res) => {
 
     const resolvedAssignee = assignee === "none" ? null : assignee;
     const isClient = req.user.role === "CLIENT";
+	    const resolvedChain = isClient
+	      ? "MAIN"
+	      : chain && ["MAIN", "TEST"].includes(chain)
+		? chain
+		: "MAIN";
 
-    const bounty = await prisma.bounty.create({
-      data: {
-        title,
-        description,
-        bountyAmount: parseFloat(bountyAmount),
-        timeToComplete: new Date(timeToComplete),
-        createdBy: req.user.id,
-        assignee: resolvedAssignee,
-        isApproved,
-        categoryId,
-        ...(chain && { chain }), // NEW — falls back to schema default (TEST) if omitted
-        ...(isClient &&
-          resolvedAssignee && {
-            assignees: {
-              create: {
-                userId: resolvedAssignee,
-              },
-            },
-          }),
+	    const bounty = await prisma.bounty.create({
+	      data: {
+		title,
+		description,
+		bountyAmount: parseFloat(bountyAmount),
+		timeToComplete: new Date(timeToComplete),
+		createdBy: req.user.id,
+		assignee: resolvedAssignee,
+		isApproved,
+		categoryId,
+		chain: resolvedChain,
+		...(isClient &&
+		  resolvedAssignee && {
+		    assignees: {
+		      create: { userId: resolvedAssignee },
+		    },
+		  }),
       },
       include: {
         createdByUser: {
@@ -234,10 +237,30 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 10, 50);
     const isAuthed = Boolean(req.user);
 
-    // Namespace the cache by visibility level — critical: without this,
-    // a request that populates the cache while authed would leak
-    // emails/addresses to the next anonymous request that hits the same key.
-    const cacheKey = `bounties:${isAuthed ? "full" : "public"}:${JSON.stringify({ page, limit })}`;
+    // Default MAIN. Admins may pass ?chain=TEST or ?chain=ALL
+    const chainParam = String(req.query.chain || "MAIN").toUpperCase();
+    let chainFilter = { chain: "MAIN" };
+
+    if (chainParam === "ALL") {
+      if (!req.user || req.user.role !== "ADMIN") {
+        return res.status(403).json({ error: "ALL chains requires admin" });
+      }
+      chainFilter = {};
+    } else if (chainParam === "TEST") {
+      if (!req.user || req.user.role !== "ADMIN") {
+        return res.status(403).json({ error: "TEST chain requires admin" });
+      }
+      chainFilter = { chain: "TEST" };
+    } else if (chainParam !== "MAIN") {
+      return res.status(400).json({ error: "Invalid chain value" });
+    }
+
+    // Namespace cache by auth level + chain — avoids PII leak and stale chain mixes
+    const cacheKey = `bounties:${isAuthed ? "full" : "public"}:${JSON.stringify({
+      page,
+      limit,
+      chain: chainParam === "ALL" ? "ALL" : chainParam === "TEST" ? "TEST" : "MAIN",
+    })}`;
 
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
@@ -251,6 +274,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
 
     const [bounties, total] = await Promise.all([
       prisma.bounty.findMany({
+        where: chainFilter,
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { dateCreated: "desc" },
@@ -266,7 +290,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
           },
         },
       }),
-      prisma.bounty.count(),
+      prisma.bounty.count({ where: chainFilter }),
     ]);
 
     const result = { data: bounties, total, page, limit };

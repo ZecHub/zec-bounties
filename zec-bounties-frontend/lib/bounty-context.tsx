@@ -323,7 +323,10 @@ interface BountyContextType {
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
 
+
+
 export function BountyProvider({ children }: { children: React.ReactNode }) {
+  const [bountyChain, setBountyChain] = useState<"MAIN" | "TEST" | "ALL">("MAIN");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
@@ -2295,54 +2298,55 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  // Fetch all bounties (PUBLIC)
+// Fetch bounties — CLIENT: MAIN only; ADMIN: ALL (so admin Test/Main toggle still works)
+const fetchBounties = async (
+  reset = true,
+  chain?: "MAIN" | "TEST" | "ALL",
+) => {
+  setBountiesLoading(true);
+  try {
+    const page = reset ? 1 : bountiesPage;
 
-  const fetchBounties = async (reset = true) => {
-    const reqId = ++fetchBountiesReqId.current;
-    setBountiesLoading(true);
-    try {
-      const page = reset ? 1 : bountiesPage;
-      const res = await fetch(
-        `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}`,
-        { headers: getAuthHeaders() },
-      );
+    // Explicit chain wins; otherwise admin gets ALL, everyone else MAIN
+    const resolvedChain =
+      chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
 
-      if (!res.ok) throw new Error("Failed to fetch bounties");
+    const res = await fetch(
+      `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&chain=${resolvedChain}`,
+      { headers: getAuthHeaders() },
+    );
 
-      const data = await res.json();
+    if (!res.ok) throw new Error("Failed to fetch bounties");
 
-      // Drop this response if a newer fetchBounties call has since been issued
-      if (reqId !== fetchBountiesReqId.current) return;
+    const data = await res.json();
+    const incoming: Bounty[] = Array.isArray(data) ? data : (data.data ?? []);
+    const total: number = data.total ?? incoming.length;
 
-      const incoming: Bounty[] = Array.isArray(data) ? data : (data.data ?? []);
-      const total: number = data.total ?? incoming.length;
-
-      if (reset) {
-        setBounties(incoming);
-        setBountiesPage(2);
-        setHasMoreBounties(
-          incoming.length === BOUNTIES_PER_PAGE && incoming.length < total,
-        );
-      } else {
-        setBounties((prev) => {
-          const existingIds = new Set(prev.map((b) => b.id));
-          const fresh = incoming.filter((b) => !existingIds.has(b.id));
-          const merged = [...prev, ...fresh];
-          setHasMoreBounties(
-            incoming.length === BOUNTIES_PER_PAGE && merged.length < total,
-          );
-          return merged;
-        });
-        setBountiesPage((p) => p + 1);
-      }
-
-      await fetchTotalStats();
-    } catch (error) {
-      console.error("Failed to fetch bounties:", error);
-    } finally {
-      if (reqId === fetchBountiesReqId.current) setBountiesLoading(false);
+    if (reset) {
+      setBounties(incoming);
+      setBountiesPage(2); // next load-more will fetch page 2
+    } else {
+      setBounties((prev) => {
+        const existingIds = new Set(prev.map((b) => b.id));
+        const fresh = incoming.filter((b) => !existingIds.has(b.id));
+        return [...prev, ...fresh];
+      });
+      setBountiesPage((p) => p + 1);
     }
-  };
+
+    // If we got fewer than a full page, there's nothing more to load
+    setHasMoreBounties(
+      incoming.length === BOUNTIES_PER_PAGE &&
+        bounties.length + incoming.length < total,
+    );
+
+    await fetchTotalStats();
+  } catch (error) {
+    console.error("Failed to fetch bounties:", error);
+  } finally {
+    setBountiesLoading(false);
+  }
+};
 
   /** Appends the next page of bounties to the existing list */
   const loadMoreBounties = async () => {

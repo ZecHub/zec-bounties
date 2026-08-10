@@ -393,6 +393,14 @@ export default function KpisDashboard() {
   // === Time Range Filter ===
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
+
+  const [badgeFilter, setBadgeFilter] = useState<string[]>([]);
+  const [receiverFilter, setReceiverFilter] = useState<
+    ("none" | "transparent" | "sapling" | "ironwood")[]
+  >([]);
+  const [receiverMode, setReceiverMode] = useState<"all" | "any" | "exact">("all");
+
+
   const timeRangeConfig = {
     "30d": {
       label: "Last 30 Days",
@@ -634,6 +642,61 @@ export default function KpisDashboard() {
       return sortDirection === "desc" ? valB - valA : valA - valB;
     });
   }, [topContributors, sortKey, sortDirection]);
+
+
+  const displayedContributors = useMemo(() => {
+    return sortedContributors.filter((u) => {
+      if (badgeFilter.length) {
+        const badges = Array.isArray(u.badges) ? u.badges : [];
+        const hit = badgeFilter.some(
+          (b) =>
+            badges.includes(b) ||
+            (b === "admin" && (u as any).role === "ADMIN"),
+        );
+        if (!hit) return false;
+      }
+
+      if (viewMode === "admin" && receiverFilter.length) {
+        const r = (u as any).receivers || {};
+        const hasAny = !!(r.transparent || r.sapling || r.ironwood);
+
+        const activeKeys = (
+          ["transparent", "sapling", "ironwood"] as const
+        ).filter((k) => !!r[k]);
+
+        if (receiverFilter.includes("none") && receiverFilter.length === 1) {
+          return activeKeys.length === 0;
+        }
+
+        const flags = receiverFilter.filter((f) => f !== "none") as (
+          | "transparent"
+          | "sapling"
+          | "ironwood"
+        )[];
+
+        if (!flags.length) return true;
+
+        if (receiverMode === "exact") {
+          if (flags.length !== activeKeys.length) return false;
+          if (!flags.every((f) => activeKeys.includes(f))) return false;
+        } else if (receiverMode === "all") {
+          if (!flags.every((f) => !!r[f])) return false;
+        } else {
+          // any
+          if (!flags.some((f) => !!r[f])) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    sortedContributors,
+    badgeFilter,
+    receiverFilter,
+    receiverMode,
+    viewMode,
+  ]);
+
 
   const totalBounties = useMemo(
     () => topContributors.reduce((sum, u) => sum + (u.submitted || 0), 0),
@@ -984,6 +1047,133 @@ export default function KpisDashboard() {
                         </button>
                       ))}
                     </div>
+
+                    <div className="border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Badges
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 px-1">
+                        {[
+                          { key: "admin", label: "Admin" },
+                          { key: "dao-member", label: "DAO" },
+                          { key: "node-runner", label: "Node" },
+                          { key: "miner", label: "Miner" },
+                          { key: "researcher", label: "Research" },
+                        ].map((b) => {
+                          const active = badgeFilter.includes(b.key);
+                          return (
+                            <button
+                              key={b.key}
+                              type="button"
+                              onClick={() =>
+                                setBadgeFilter((prev) =>
+                                  prev.includes(b.key)
+                                    ? prev.filter((k) => k !== b.key)
+                                    : [...prev, b.key],
+                                )
+                              }
+                              className={`px-2 py-0.5 rounded text-xs border ${
+                                active
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "hover:bg-muted border-border"
+                              }`}
+                            >
+                              {b.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {viewMode === "admin" && (
+                      <div className="border-t border-border pt-3">
+                        <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                          UA receivers
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 px-1 mb-2">
+                          {(
+                            [
+                              { key: "none", label: "None" },
+                              { key: "transparent", label: "T" },
+                              { key: "sapling", label: "Sapling" },
+                              { key: "ironwood", label: "Ironwood" },
+                            ] as const
+                          ).map((b) => {
+                            const active = receiverFilter.includes(b.key);
+                            return (
+                              <button
+                                key={b.key}
+                                type="button"
+                                onClick={() =>
+                                  setReceiverFilter((prev) =>
+                                    prev.includes(b.key)
+                                      ? prev.filter((k) => k !== b.key)
+                                      : [...prev, b.key],
+                                  )
+                                }
+                                className={`px-2 py-0.5 rounded text-xs border ${
+                                  active
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "hover:bg-muted border-border"
+                                }`}
+                              >
+                                {b.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-1 px-1">
+                          <button
+                            type="button"
+                            onClick={() => setReceiverMode("all")}
+                            className={`px-2 py-0.5 rounded text-xs border ${
+                              receiverMode === "all"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "hover:bg-muted border-border"
+                            }`}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReceiverMode("any")}
+                            className={`px-2 py-0.5 rounded text-xs border ${
+                              receiverMode === "any"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "hover:bg-muted border-border"
+                            }`}
+                          >
+                            Any
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReceiverMode("exact")}
+                            className={`px-2 py-0.5 rounded text-xs border ${
+                              receiverMode === "exact"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "hover:bg-muted border-border"
+                            }`}
+                          >
+                            Exact
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {(badgeFilter.length > 0 || receiverFilter.length > 0) && (
+                      <div className="border-t border-border pt-2 mt-1">
+                        <button
+                          type="button"
+                          className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+                          onClick={() => {
+                            setBadgeFilter([]);
+                            setReceiverFilter([]);
+                          }}
+                        >
+                          Clear filters
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1120,7 +1310,7 @@ export default function KpisDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedContributors.length === 0 ? (
+                    {displayedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={viewMode === "admin" ? 9 : 6}
@@ -1130,7 +1320,7 @@ export default function KpisDashboard() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      sortedContributors.map((user, index) => {
+                      displayedContributors.map((user, index) => {
                         const rate =
                           user.submitted > 0
                             ? Math.round(
