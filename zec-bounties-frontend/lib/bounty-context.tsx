@@ -1,7 +1,14 @@
 "use client";
 
 import type React from "react";
-import { createContext, useContext, useState, useEffect, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type {
   User,
   Bounty,
@@ -217,6 +224,7 @@ interface BountyContextType {
     submissionId: string,
     data: { description: string; deliverableUrl?: string },
   ) => Promise<WorkSubmission>;
+  rejectOtherSubmissions: (submissionId: string) => Promise<void>;
 
   // Fetch methods
   fetchUserApplications: () => Promise<void>;
@@ -369,6 +377,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
+
+  const fetchBountiesReqId = useRef(0);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -1370,6 +1380,32 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const rejectOtherSubmissions = async (submissionId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/submissions/${submissionId}/reject-others`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(
+          errorData.error || "Failed to reject other submissions",
+        );
+      }
+
+      await fetchBounties();
+    } catch (error) {
+      console.error("Failed to reject other submissions:", error);
+      throw error;
+    }
+  };
+
   const acceptApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
@@ -1847,6 +1883,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       fetchUserSubmissions();
       fetchZcashParams();
       fetchMyBounties();
+      fetchUsers();
       if (currentUser.role === "ADMIN") {
         fetchTeams();
         fetchAllSubmissions().then(setAllSubmissions);
@@ -1896,8 +1933,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
         switch (msg.type) {
           case "new_bounties":
-            setBounties((prev) => [msg.payload, ...prev]);
-            fetchBounties();
+            setBounties((prev) =>
+              prev.some((b) => b.id === msg.payload.id)
+                ? prev // already have it (e.g. creator's own optimistic add)
+                : [msg.payload, ...prev],
+            );
+            fetchTotalStats();
             break;
 
           case "bounty_updated":
@@ -2205,6 +2246,28 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               ),
             }));
             break;
+
+          case "submissions_rejected_others":
+            setAllSubmissions((prev) =>
+              prev.map((s) =>
+                s.bountyId === msg.payload.bountyId &&
+                s.id !== msg.payload.keptSubmissionId &&
+                s.status === "pending"
+                  ? { ...s, status: "rejected" }
+                  : s,
+              ),
+            );
+            setBountySubmissions((prev) => ({
+              ...prev,
+              [msg.payload.bountyId]: (prev[msg.payload.bountyId] || []).map(
+                (s) =>
+                  s.id !== msg.payload.keptSubmissionId &&
+                  s.status === "pending"
+                    ? { ...s, status: "rejected" }
+                    : s,
+              ),
+            }));
+            break;
         }
       };
 
@@ -2233,7 +2296,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser?.id]);
 
   // Fetch all bounties (PUBLIC)
+
   const fetchBounties = async (reset = true) => {
+    const reqId = ++fetchBountiesReqId.current;
     setBountiesLoading(true);
     try {
       const page = reset ? 1 : bountiesPage;
@@ -2245,31 +2310,37 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to fetch bounties");
 
       const data = await res.json();
+
+      // Drop this response if a newer fetchBounties call has since been issued
+      if (reqId !== fetchBountiesReqId.current) return;
+
       const incoming: Bounty[] = Array.isArray(data) ? data : (data.data ?? []);
       const total: number = data.total ?? incoming.length;
 
       if (reset) {
         setBounties(incoming);
-        setBountiesPage(2); // next load-more will fetch page 2
+        setBountiesPage(2);
+        setHasMoreBounties(
+          incoming.length === BOUNTIES_PER_PAGE && incoming.length < total,
+        );
       } else {
         setBounties((prev) => {
           const existingIds = new Set(prev.map((b) => b.id));
           const fresh = incoming.filter((b) => !existingIds.has(b.id));
-          return [...prev, ...fresh];
+          const merged = [...prev, ...fresh];
+          setHasMoreBounties(
+            incoming.length === BOUNTIES_PER_PAGE && merged.length < total,
+          );
+          return merged;
         });
         setBountiesPage((p) => p + 1);
       }
 
-      // If we got fewer than a full page, there's nothing more to load
-      setHasMoreBounties(
-        incoming.length === BOUNTIES_PER_PAGE &&
-          bounties.length + incoming.length < total,
-      );
       await fetchTotalStats();
     } catch (error) {
       console.error("Failed to fetch bounties:", error);
     } finally {
-      setBountiesLoading(false);
+      if (reqId === fetchBountiesReqId.current) setBountiesLoading(false);
     }
   };
 
@@ -2297,6 +2368,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchTotalStats = async () => {
+    if (!currentUser || currentUser.role !== "ADMIN") return;
+
     try {
       const res = await fetch(`${backendUrl}/api/bounties/stats/totals`, {
         headers: getAuthHeaders(),
@@ -2356,6 +2429,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to create bounty");
 
       const created = await res.json();
+      console.log(created);
       setBounties((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create bounty:", error);
@@ -2903,6 +2977,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         deleteTeamWallet,
         currentTeam,
         editSubmission,
+        rejectOtherSubmissions,
         fetchMyBounties,
         myBounties,
         myBountiesLoading,
