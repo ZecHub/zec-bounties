@@ -315,9 +315,10 @@ interface BountyContextType {
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
 
-const [bountyChain, setBountyChain] = useState<"MAIN" | "TEST" | "ALL">("MAIN");
+
 
 export function BountyProvider({ children }: { children: React.ReactNode }) {
+  const [bountyChain, setBountyChain] = useState<"MAIN" | "TEST" | "ALL">("MAIN");
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
