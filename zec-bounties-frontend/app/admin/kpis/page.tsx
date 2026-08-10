@@ -62,6 +62,7 @@ import { backendUrl } from "@/lib/configENV";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { profileHref } from "@/lib/profileHref";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChainFilter = "all" | "MAIN" | "TEST";
@@ -212,137 +213,137 @@ export default function KpisDashboard() {
   // Final simplified badge logic
   // Updated: Supports showing multiple badges at once
   const getBadgeIcons = (
-    completed: number,
-    badges?: string[],
-    role?: string,
-  ) => {
-    const icons = [];
+  completed: number,
+  badges?: string[],
+  role?: string,
+) => {
+  const icons = [];
 
-    let badgeClass = "text-muted-foreground";
+  let badgeClass = "text-muted-foreground";
 
-    // Manual avatar color override (same source as getDefaultAvatarClasses)
-    const avatarOverride = badges?.find((b) => b.startsWith("avatar:"));
-    if (avatarOverride) {
-      switch (avatarOverride) {
-        case "avatar:red":
-          badgeClass = "text-red-500";
-          break;
-        case "avatar:blue":
-          badgeClass = "text-blue-500";
-          break;
-        case "avatar:purple":
-          badgeClass = "text-purple-500";
-          break;
-        case "avatar:gold":
-          badgeClass = "text-yellow-500";
-          break;
-        case "avatar:pink":
-          badgeClass = "text-pink-500";
-          break;
-        case "avatar:default":
-        default:
-          break;
-      }
-    }
-
-    // Fall back to completed-bounty tiers when no override (or default)
-    if (!avatarOverride || avatarOverride === "avatar:default") {
-      if (completed >= 60) {
-        badgeClass = "text-pink-500";
-      } else if (completed >= 20) {
-        badgeClass = "text-yellow-500";
-      } else if (completed >= 10) {
-        badgeClass = "text-purple-500";
-      } else if (completed >= 5) {
-        badgeClass = "text-blue-500";
-      } else if (completed >= 1) {
+  // Manual avatar color override (same source as getDefaultAvatarClasses)
+  const avatarOverride = badges?.find((b) => b.startsWith("avatar:"));
+  if (avatarOverride) {
+    switch (avatarOverride) {
+      case "avatar:red":
         badgeClass = "text-red-500";
-      } else {
-        badgeClass = "text-muted-foreground";
-      }
+        break;
+      case "avatar:blue":
+        badgeClass = "text-blue-500";
+        break;
+      case "avatar:purple":
+        badgeClass = "text-purple-500";
+        break;
+      case "avatar:gold":
+        badgeClass = "text-yellow-500";
+        break;
+      case "avatar:pink":
+        badgeClass = "text-pink-500";
+        break;
+      case "avatar:default":
+      default:
+        break;
     }
+  }
 
+  // Fall back to completed-bounty tiers when no override (or default)
+  if (!avatarOverride || avatarOverride === "avatar:default") {
+    if (completed >= 60) {
+      badgeClass = "text-pink-500";
+    } else if (completed >= 20) {
+      badgeClass = "text-yellow-500";
+    } else if (completed >= 10) {
+      badgeClass = "text-purple-500";
+    } else if (completed >= 5) {
+      badgeClass = "text-blue-500";
+    } else if (completed >= 1) {
+      badgeClass = "text-red-500";
+    } else {
+      badgeClass = "text-muted-foreground";
+    }
+  }
+
+  icons.push(
+    <div key="member" title="Member">
+      <Users className={`w-4 h-4 ${badgeClass}`} />
+    </div>,
+  );
+
+  if (role === "ADMIN" || badges?.includes("admin")) {
     icons.push(
-      <div key="member" title="Member">
-        <Users className={`w-4 h-4 ${badgeClass}`} />
+      <div
+        key="admin"
+        title="Admin"
+        className="text-purple-500 dark:text-purple-400"
+      >
+        <Shield className="w-4 h-4" />
       </div>,
     );
+  }
 
-    if (role === "ADMIN" || badges?.includes("admin")) {
-      icons.push(
-        <div
-          key="admin"
-          title="Admin"
-          className="text-purple-500 dark:text-purple-400"
-        >
-          <Shield className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("dao-member")) {
+    icons.push(
+      <div
+        key="dao-member"
+        title="DAO Member"
+        className="text-teal-500 dark:text-teal-400"
+      >
+        <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("dao-member")) {
-      icons.push(
-        <div
-          key="dao-member"
-          title="DAO Member"
-          className="text-teal-500 dark:text-teal-400"
-        >
-          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("node-runner")) {
+    icons.push(
+      <div
+        key="node-runner"
+        title="Node Runner"
+        className="text-blue-500 dark:text-blue-400"
+      >
+        <Server className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("node-runner")) {
-      icons.push(
-        <div
-          key="node-runner"
-          title="Node Runner"
-          className="text-blue-500 dark:text-blue-400"
-        >
-          <Server className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("miner")) {
+    icons.push(
+      <div
+        key="miner"
+        title="Miner"
+        className="text-orange-500 dark:text-orange-400"
+      >
+        <Pickaxe className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("miner")) {
-      icons.push(
-        <div
-          key="miner"
-          title="Miner"
-          className="text-orange-500 dark:text-orange-400"
-        >
-          <Pickaxe className="w-4 h-4" />
-        </div>,
-      );
-    }
+  if (badges?.includes("researcher")) {
+    icons.push(
+      <div
+        key="researcher"
+        title="Researcher"
+        className="text-emerald-500 dark:text-emerald-400"
+      >
+        <BookOpen className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    if (badges?.includes("researcher")) {
-      icons.push(
-        <div
-          key="researcher"
-          title="Researcher"
-          className="text-emerald-500 dark:text-emerald-400"
-        >
-          <BookOpen className="w-4 h-4" />
-        </div>,
-      );
-    }
+  // Member icon is always pushed above; this branch is unreachable in practice
+  if (icons.length === 0) {
+    icons.push(
+      <div
+        key="regular"
+        title="Regular User"
+        className="text-muted-foreground"
+      >
+        <Users className="w-4 h-4" />
+      </div>,
+    );
+  }
 
-    // Member icon is always pushed above; this branch is unreachable in practice
-    if (icons.length === 0) {
-      icons.push(
-        <div
-          key="regular"
-          title="Regular User"
-          className="text-muted-foreground"
-        >
-          <Users className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    return icons;
-  };
+  return icons;
+};
 
   // Dynamic default avatar color based on completed bounties
   const getDefaultAvatarClasses = (
@@ -510,26 +511,26 @@ export default function KpisDashboard() {
         let data = await res.json();
 
         if (isAdmin) {
-          data = data.map((user: any) => {
-            if (user.UA_address) {
-              try {
-                const decoded = getAddressReceivers(user.UA_address);
-                return {
-                  ...user,
-                  addressType: decoded.type,
-                  receivers: {
-                    ironwood: decoded.ironwood,
-                    sapling: decoded.sapling,
-                    transparent: decoded.transparent,
-                  },
-                };
-              } catch {
-                return user;
-              }
-            }
-            return user;
-          });
-        }
+	  data = data.map((user: any) => {
+	    if (user.UA_address) {
+	      try {
+		const decoded = getAddressReceivers(user.UA_address);
+		return {
+		  ...user,
+		  addressType: decoded.type,
+		  receivers: {
+		    ironwood: decoded.ironwood,
+		    sapling: decoded.sapling,
+		    transparent: decoded.transparent,
+		  },
+		};
+	      } catch {
+		return user;
+	      }
+	    }
+	    return user;
+	  });
+	}
         setTopContributors(data);
       } catch (error) {
         console.error(error);
@@ -789,65 +790,65 @@ export default function KpisDashboard() {
   };
 
   const getAddressTypeIcons = (receivers?: {
-    ironwood?: boolean;
-    sapling?: boolean;
-    transparent?: boolean;
-  }) => {
-    if (
-      !receivers ||
-      (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
-    ) {
-      return [
-        <div
-          key="none"
-          title="No Address"
-          className="flex items-center justify-center"
-        >
-          <Ban className="w-5 h-5 text-red-500" />
-        </div>,
-      ];
-    }
+  ironwood?: boolean;
+  sapling?: boolean;
+  transparent?: boolean;
+}) => {
+  if (
+    !receivers ||
+    (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
+  ) {
+    return [
+      <div
+        key="none"
+        title="No Address"
+        className="flex items-center justify-center"
+      >
+        <Ban className="w-5 h-5 text-red-500" />
+      </div>,
+    ];
+  }
 
-    const icons = [];
+  const icons = [];
 
-    if (receivers.transparent) {
-      icons.push(
-        <div
-          key="transparent"
-          title="Transparent"
-          className="flex items-center justify-center"
-        >
-          <AlertTriangle className="w-5 h-5 text-yellow-400" />
-        </div>,
-      );
-    }
+  if (receivers.transparent) {
+    icons.push(
+      <div
+        key="transparent"
+        title="Transparent"
+        className="flex items-center justify-center"
+      >
+        <AlertTriangle className="w-5 h-5 text-yellow-400" />
+      </div>,
+    );
+  }
 
-    if (receivers.sapling) {
-      icons.push(
-        <div
-          key="sapling"
-          title="Sapling"
-          className="flex items-center justify-center"
-        >
-          <Leaf className="w-5 h-5 text-emerald-400" />
-        </div>,
-      );
-    }
+  if (receivers.sapling) {
+    icons.push(
+      <div
+        key="sapling"
+        title="Sapling"
+        className="flex items-center justify-center"
+      >
+        <Leaf className="w-5 h-5 text-emerald-400" />
+      </div>,
+    );
+  }
 
-    if (receivers.ironwood) {
-      icons.push(
-        <div
-          key="ironwood"
-          title="Ironwood"
-          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
-        >
-          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
-        </div>,
-      );
-    }
+  if (receivers.ironwood) {
+    icons.push(
+      <div
+        key="ironwood"
+        title="Ironwood"
+        className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
+      >
+        <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
+      </div>,
+    );
+  }
 
-    return icons;
-  };
+  return icons;
+};
 
   // Address Type Helpers
   const getAddressTypeBadge = (type?: string) => {
@@ -1079,45 +1080,43 @@ export default function KpisDashboard() {
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
                       {/* Badges — public; edit control admin-only */}
-                      <TableHead>
-                        <div className="flex items-center gap-2">
-                          <span>Badges</span>
-                          {isAdmin && viewMode === "admin" && (
-                            <button
-                              onClick={() => {
-                                setSelectedUserForBadges(null);
-                                setSelectedBadges([]);
-                                setIsBadgeModalOpen(true);
-                              }}
-                              className="p-1 hover:bg-muted rounded transition-colors"
-                              title="Manage User Badges"
-                            >
-                              <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                            </button>
-                          )}
-                        </div>
-                      </TableHead>
-                      {viewMode === "admin" && (
-                        <TableHead>Address Type</TableHead>
-                      )}
-                      {viewMode === "admin" && (
-                        <TableHead
-                          className="text-right cursor-pointer"
-                          onClick={() => toggleSort("totalEarned")}
-                        >
-                          Total ZEC Earned{" "}
-                          <ArrowUpDown className="inline w-4 h-4" />
-                        </TableHead>
-                      )}
-                      {viewMode === "admin" && (
-                        <TableHead
-                          className="text-right cursor-pointer"
-                          onClick={() => toggleSort("completionRate")}
-                        >
-                          Completion %{" "}
-                          <ArrowUpDown className="inline w-4 h-4" />
-                        </TableHead>
-                      )}
+			<TableHead>
+			  <div className="flex items-center gap-2">
+			    <span>Badges</span>
+			    {isAdmin && viewMode === "admin" && (
+			      <button
+				onClick={() => {
+				  setSelectedUserForBadges(null);
+				  setSelectedBadges([]);
+				  setIsBadgeModalOpen(true);
+				}}
+				className="p-1 hover:bg-muted rounded transition-colors"
+				title="Manage User Badges"
+			      >
+				<Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+			      </button>
+			    )}
+			  </div>
+			</TableHead>
+			{viewMode === "admin" && (
+			  <TableHead>Address Type</TableHead>
+			)}
+			{viewMode === "admin" && (
+			  <TableHead
+			    className="text-right cursor-pointer"
+			    onClick={() => toggleSort("totalEarned")}
+			  >
+			    Total ZEC Earned <ArrowUpDown className="inline w-4 h-4" />
+			  </TableHead>
+			)}
+			{viewMode === "admin" && (
+			  <TableHead
+			    className="text-right cursor-pointer"
+			    onClick={() => toggleSort("completionRate")}
+			  >
+			    Completion % <ArrowUpDown className="inline w-4 h-4" />
+			  </TableHead>
+			)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1148,7 +1147,7 @@ export default function KpisDashboard() {
                             {/* Avatar with hover tooltip */}
                             <TableCell>
                               <Link
-                                href={`/users/${user.nickname || user.id}`}
+                               href={profileHref(user)}
                                 className="inline-block hover:opacity-80"
                                 title="View profile"
                               >
@@ -1162,7 +1161,7 @@ export default function KpisDashboard() {
                             </TableCell>
                             <TableCell>
                               <Link
-                                href={`/users/${user.nickname || user.id}`}
+                                href={profileHref(user)}
                                 className="hover:underline font-medium"
                               >
                                 {user.name}
@@ -1175,11 +1174,7 @@ export default function KpisDashboard() {
                             {/* Badges — public */}
                             <TableCell>
                               <div className="flex items-center gap-1.5">
-                                {getBadgeIcons(
-                                  user.completed,
-                                  user.badges,
-                                  user.role,
-                                )}
+                                {getBadgeIcons(user.completed, user.badges, user.role)}
                               </div>
                             </TableCell>
                             {viewMode === "admin" && (
@@ -1188,21 +1183,17 @@ export default function KpisDashboard() {
                                   {getAddressTypeIcons(user.receivers)}
                                 </div>
                               </TableCell>
-                            )}
+				)}
 
-                            {viewMode === "admin" && (
-                              <TableCell className="text-right font-medium">
-                                {user.totalEarned
-                                  ? user.totalEarned.toFixed(4)
-                                  : "0.0000"}
-                              </TableCell>
-                            )}
+				{viewMode === "admin" && (
+				  <TableCell className="text-right font-medium">
+				    {user.totalEarned ? user.totalEarned.toFixed(4) : "0.0000"}
+				  </TableCell>
+				)}
 
-                            {viewMode === "admin" && (
-                              <TableCell className="text-right font-medium">
-                                {rate}%
-                              </TableCell>
-                            )}
+				{viewMode === "admin" && (
+				  <TableCell className="text-right font-medium">{rate}%</TableCell>
+				)}
                           </TableRow>
                         );
                       })

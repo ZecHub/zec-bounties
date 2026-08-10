@@ -157,15 +157,10 @@ export function BountyDetailModal({
     if (!userWorkSubmission || !editDescription.trim()) return;
     setIsSavingEdit(true);
     try {
-      const updated = await editSubmission(userWorkSubmission.id, {
+      await editSubmission(userWorkSubmission.id, {
         description: editDescription,
         deliverableUrl: editDeliverableUrl,
       });
-
-      setWorkSubmissions((prev) =>
-        prev.map((s) => (s.id === updated.id ? updated : s)),
-      );
-
       setIsEditing(false);
       toast.success("Submission updated!");
     } catch (error) {
