@@ -15,6 +15,8 @@ import type {
   TeamWallet,
   RecoveryData,
   Balance,
+  Community,
+  TeamFavorite,
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
@@ -87,6 +89,7 @@ interface BountyContextType {
     accountName: string,
   ) => Promise<RecoveryData>;
   nicknameUpdate: (nickname: string) => Promise<boolean | undefined>;
+  selectRole: (role: "HUNTER" | "TEAM") => Promise<boolean>;
 
   // Role switching (isRobin users only)
   switchRole: () => Promise<void>;
@@ -281,7 +284,7 @@ interface BountyContextType {
   createTeam: (data: { name: string; description?: string }) => Promise<Team>;
   updateTeam: (
     id: string,
-    data: { name?: string; description?: string },
+    data: { name?: string; description?: string; isPrivate?: boolean },
   ) => Promise<Team>;
   deleteTeam: (id: string) => Promise<void>;
   addTeamMembers: (
@@ -311,6 +314,28 @@ interface BountyContextType {
   ) => Promise<TeamWallet>;
   deleteTeamWallet: (teamId: string) => Promise<void>;
   currentTeam: Team | null;
+  fetchTeamWalletBalance: (teamId: string) => Promise<any | null>;
+  communities: Community[];
+  communitiesLoading: boolean;
+  fetchCommunities: () => Promise<void>;
+  fetchTeamApplications: (teamId: string) => Promise<BountyApplication[]>;
+  fetchTeamSubmissions: (teamId: string) => Promise<WorkSubmission[]>;
+  fetchTeamCommunity: (teamId: string) => Promise<TeamFavorite[]>;
+  uploadTeamLogo: (teamId: string, file: File) => Promise<Team>;
+  removeTeamLogo: (teamId: string) => Promise<void>;
+  fetchTeamTransactionHashes: (teamId: string) => Promise<void>;
+  teamPaymentIDs: string[] | undefined;
+  teamPaymentChain: string | undefined;
+  teamPaymentServerUrl: string | undefined;
+  rescanTeamWallet: (teamId: string) => Promise<void>;
+  teamRescanLoading: boolean;
+  teamRescanStatus: string | null;
+
+  // Favorites
+  favoriteTeamIds: Set<string>;
+  favoriteTeamsLoading: boolean;
+  fetchFavoriteTeams: () => Promise<void>;
+  toggleFavoriteTeam: (teamId: string) => Promise<void>;
 }
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
@@ -369,6 +394,25 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
+
+  const [communities, setCommunities] = useState<Community[]>([]);
+  const [communitiesLoading, setCommunitiesLoading] = useState(false);
+
+  const [favoriteTeamIds, setFavoriteTeamIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [favoriteTeamsLoading, setFavoriteTeamsLoading] = useState(false);
+  const [teamPaymentIDs, setTeamPaymentIDs] = useState<string[] | undefined>(
+    undefined,
+  );
+  const [teamPaymentChain, setTeamPaymentChain] = useState<string | undefined>(
+    undefined,
+  );
+  const [teamPaymentServerUrl, setTeamPaymentServerUrl] = useState<
+    string | undefined
+  >(undefined);
+  const [teamRescanLoading, setTeamRescanLoading] = useState(false);
+  const [teamRescanStatus, setTeamRescanStatus] = useState<string | null>(null);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -988,6 +1032,23 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
+  const fetchTeamTransactionHashes = async (teamId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/transactions`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch team transactions");
+      const data = await res.json();
+      setTeamPaymentIDs(data.transactions);
+      setTeamPaymentChain(data.chain);
+      setTeamPaymentServerUrl(data.serverUrl);
+    } catch (error) {
+      console.error("Failed to fetch team transaction hashes:", error);
+    }
+  };
+
   const processBatchPayments = async (): Promise<{
     success: boolean;
     batchId?: string;
@@ -1173,7 +1234,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const data = await res.json();
       const nonAdminUsersData = data.filter(
-        (user: User) => user.role === "CLIENT",
+        (user: User) => user.role !== "ADMIN",
       );
       setUsers(data);
       setNonAdminUsers(nonAdminUsersData);
@@ -1313,6 +1374,95 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return [];
   };
 
+  const fetchTeamApplications = async (teamId: string) => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/applications`,
+        {
+          headers: getAuthHeaders(),
+        },
+      );
+      if (!res.ok) throw new Error("Failed to fetch team applications");
+      const data = await res.json();
+      return data.applications ?? [];
+    } catch (error) {
+      console.error("Failed to fetch team applications:", error);
+      return [];
+    }
+  };
+
+  const fetchTeamSubmissions = async (teamId: string) => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(`${backendUrl}/api/teams/${teamId}/submissions`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch team submissions");
+      const data = await res.json();
+      return data.submissions ?? [];
+    } catch (error) {
+      console.error("Failed to fetch team submissions:", error);
+      return [];
+    }
+  };
+
+  const uploadTeamLogo = async (teamId: string, file: File): Promise<Team> => {
+    if (!currentUser) throw new Error("Unauthorized");
+
+    const formData = new FormData();
+    formData.append("logo", file);
+
+    const token = localStorage.getItem("authToken");
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/logo`, {
+      method: "POST",
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to upload logo");
+
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
+    return json.team;
+  };
+
+  const removeTeamLogo = async (teamId: string): Promise<void> => {
+    if (!currentUser) throw new Error("Unauthorized");
+
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/logo`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to remove logo");
+
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
+  };
+
+  const rescanTeamWallet = async (teamId: string): Promise<void> => {
+    if (!currentUser) return;
+    setTeamRescanLoading(true);
+    setTeamRescanStatus(null);
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/rescan`,
+        { method: "POST", headers: getAuthHeaders() },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Rescan failed");
+      setTeamRescanStatus("Rescan started");
+    } catch (error) {
+      console.error("Failed to rescan team wallet:", error);
+      setTeamRescanStatus(
+        error instanceof Error ? error.message : "Rescan failed",
+      );
+    } finally {
+      setTeamRescanLoading(false);
+    }
+  };
+
   const getUserSubmissionForBounty = (
     bountyId: string,
   ): WorkSubmission | null =>
@@ -1386,7 +1536,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         },
       );
 
-      if (!res.ok) throw new Error("Failed to accept application");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to accept application");
+      }
 
       const updatedApplication = await res.json();
       const bountyId = updatedApplication.bountyId;
@@ -1417,7 +1570,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         },
       );
 
-      if (!res.ok) throw new Error("Failed to reject application");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to accept application");
+      }
 
       const updatedApplication = await res.json();
       const bountyId = updatedApplication.bountyId;
@@ -1580,7 +1736,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchTeams = async () => {
-    if (!currentUser || currentUser.role !== "ADMIN") return;
+    if (!currentUser) return;
     setTeamsLoading(true);
     try {
       const res = await fetch(`${backendUrl}/api/teams`, {
@@ -1601,8 +1757,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     name: string;
     description?: string;
   }): Promise<Team> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -1616,10 +1771,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const updateTeam = async (
     id: string,
-    data: { name?: string; description?: string },
+    data: { name?: string; description?: string; isPrivate?: boolean },
   ): Promise<Team> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${id}`, {
       method: "PATCH",
       headers: getAuthHeaders(),
@@ -1632,8 +1786,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteTeam = async (id: string): Promise<void> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${id}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
@@ -1650,8 +1803,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     userIds: string[],
     role = "MEMBER",
   ): Promise<TeamMember[]> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${teamId}/members`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -1680,8 +1832,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     userId: string,
     role: string,
   ): Promise<TeamMember> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(
       `${backendUrl}/api/teams/${teamId}/members/${userId}`,
       {
@@ -1712,8 +1863,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     teamId: string,
     userId: string,
   ): Promise<void> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(
       `${backendUrl}/api/teams/${teamId}/members/${userId}`,
       {
@@ -1738,8 +1888,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     teamId: string,
     data: { accountName: string; chain?: string; serverUrl?: string },
   ): Promise<TeamWallet> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${teamId}/wallet`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -1763,8 +1912,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       birthdayHeight?: number;
     },
   ): Promise<TeamWallet> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${teamId}/wallet/import`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -1779,8 +1927,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteTeamWallet = async (teamId: string): Promise<void> => {
-    if (!currentUser || currentUser.role !== "ADMIN")
-      throw new Error("Unauthorized");
+    if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${teamId}/wallet`, {
       method: "DELETE",
       headers: getAuthHeaders(),
@@ -1802,6 +1949,24 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     activeWallet?.isTeam && activeWallet.teamId
       ? (teams.find((t) => t.id === activeWallet.teamId) ?? null)
       : null;
+
+  const fetchTeamWalletBalance = async (teamId: string) => {
+    if (!currentUser) return null;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/balance`,
+        {
+          headers: getAuthHeaders(),
+        },
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.balance ?? null;
+    } catch (error) {
+      console.error("Failed to fetch team wallet balance:", error);
+      return null;
+    }
+  };
 
   // Initialize auth and fetch PUBLIC data
   useEffect(() => {
@@ -1847,8 +2012,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       fetchUserSubmissions();
       fetchZcashParams();
       fetchMyBounties();
+      fetchTeams();
+      fetchFavoriteTeams();
       if (currentUser.role === "ADMIN") {
-        fetchTeams();
         fetchAllSubmissions().then(setAllSubmissions);
       }
     } else {
@@ -1860,6 +2026,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setZcashParams([]);
       setTeams([]);
       setMyBounties([]);
+      setFavoriteTeamIds(new Set());
       setSyncStatus(null);
       setSyncStatusError(null);
     }
@@ -2110,6 +2277,34 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             setTeams((prev) =>
               prev.map((t) => (t.id === msg.payload.id ? msg.payload : t)),
             );
+
+            // Bounties embed a lightweight { id, name, logo } snapshot of
+            // their team — keep it in sync so cards/modals update live
+            // without needing a bounty refetch.
+            setBounties((prev) =>
+              prev.map((b) =>
+                b.teamId === msg.payload.id
+                  ? {
+                      ...b,
+                      team: {
+                        id: msg.payload.id,
+                        name: msg.payload.name,
+                        logo: msg.payload.logo,
+                      },
+                    }
+                  : b,
+              ),
+            );
+
+            // Same snapshot lives in the public communities list (Explore
+            // page / favorites sidebar)
+            setCommunities((prev) =>
+              prev.map((c) =>
+                c.id === msg.payload.id
+                  ? { ...c, name: msg.payload.name, logo: msg.payload.logo }
+                  : c,
+              ),
+            );
             break;
 
           case "team_deleted":
@@ -2205,6 +2400,29 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               ),
             }));
             break;
+
+          case "team_favorited":
+            setFavoriteTeamIds((prev) => new Set(prev).add(msg.payload.teamId));
+            break;
+
+          case "team_unfavorited":
+            setFavoriteTeamIds((prev) => {
+              const next = new Set(prev);
+              next.delete(msg.payload.teamId);
+              return next;
+            });
+            break;
+            fetchBounties();
+            fetchUsers();
+            break;
+
+          case "team_transactions_fetched":
+            setTeamPaymentIDs(msg.payload.transactions);
+            break;
+
+          case "team_bounties_privacy_changed":
+            fetchBounties();
+            break;
         }
       };
 
@@ -2233,14 +2451,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser?.id]);
 
   // Fetch all bounties (PUBLIC)
-  const fetchBounties = async (reset = true) => {
+  const fetchBounties = async (reset = true, teamId?: string) => {
     setBountiesLoading(true);
     try {
       const page = reset ? 1 : bountiesPage;
-      const res = await fetch(
-        `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}`,
-        { headers: getAuthHeaders() },
-      );
+      const url = teamId
+        ? `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&teamId=${teamId}`
+        : `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}`;
+      const res = await fetch(url, { headers: getPublicHeaders() });
 
       if (!res.ok) throw new Error("Failed to fetch bounties");
 
@@ -2328,7 +2546,81 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const createBounty = async (data: BountyFormData) => {
+  const fetchCommunities = async (): Promise<void> => {
+    setCommunitiesLoading(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/teams/public`, {
+        headers: getPublicHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch communities");
+      const data: Community[] = await res.json();
+      setCommunities(data);
+    } catch (error) {
+      console.error("Failed to fetch communities:", error);
+      setCommunities([]);
+    } finally {
+      setCommunitiesLoading(false);
+    }
+  };
+
+  const fetchFavoriteTeams = async (): Promise<void> => {
+    if (!currentUser) return;
+    setFavoriteTeamsLoading(true);
+    try {
+      const res = await fetch(`${backendUrl}/api/teams/favorites`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch favorite teams");
+      const data = await res.json();
+      setFavoriteTeamIds(new Set(data.favorites ?? []));
+    } catch (error) {
+      console.error("Failed to fetch favorite teams:", error);
+    } finally {
+      setFavoriteTeamsLoading(false);
+    }
+  };
+
+  const toggleFavoriteTeam = async (teamId: string): Promise<void> => {
+    if (!currentUser) return;
+
+    const wasFavorited = favoriteTeamIds.has(teamId);
+
+    // Optimistic update
+    setFavoriteTeamIds((prev) => {
+      const next = new Set(prev);
+      wasFavorited ? next.delete(teamId) : next.add(teamId);
+      return next;
+    });
+
+    try {
+      const res = await fetch(`${backendUrl}/api/teams/${teamId}/favorite`, {
+        method: wasFavorited ? "DELETE" : "POST",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to update favorite");
+    } catch (error) {
+      console.error("Failed to toggle favorite team:", error);
+      // Roll back on failure
+      setFavoriteTeamIds((prev) => {
+        const next = new Set(prev);
+        wasFavorited ? next.add(teamId) : next.delete(teamId);
+        return next;
+      });
+    }
+  };
+
+  const fetchTeamCommunity = async (
+    teamId: string,
+  ): Promise<TeamFavorite[]> => {
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/community`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.community ?? [];
+  };
+
+  const createBounty = async (data: BountyFormData & { teamId?: string }) => {
     if (!currentUser) return;
 
     try {
@@ -2342,14 +2634,16 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           timeToComplete: data.timeToComplete,
           assignee:
             data.assignee === "none"
-              ? currentUser.role === "ADMIN"
+              ? currentUser.role === "ADMIN" || data.teamId
                 ? null
                 : currentUser.id
               : data.assignee,
           createdBy: currentUser.id,
-          isApproved: currentUser.role === "ADMIN" ? true : false,
+          isApproved:
+            currentUser.role === "ADMIN" || !!data.teamId ? true : false,
           categoryId: data.category,
           chain: data.chain,
+          teamId: data.teamId ?? null,
         }),
       });
 
@@ -2672,6 +2966,28 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const selectRole = async (role: "HUNTER" | "TEAM") => {
+    if (!currentUser) return false;
+    try {
+      const res = await fetch(`${backendUrl}/auth/select-role`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update role");
+      }
+      const data = await res.json();
+      setCurrentUser(data.user);
+      localStorage.setItem("currentUser", JSON.stringify(data.user));
+      return true;
+    } catch (error) {
+      console.error("Failed to select role:", error);
+      return false;
+    }
+  };
+
   const uaAddressUpdate = async (UA_address: string) => {
     if (!currentUser) return;
     try {
@@ -2798,6 +3114,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         requestRecoveryOtp,
         verifyRecoveryOtp,
         nicknameUpdate,
+        selectRole,
         categories,
         categoriesLoading,
         fetchCategories,
@@ -2906,6 +3223,26 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchMyBounties,
         myBounties,
         myBountiesLoading,
+        fetchTeamWalletBalance,
+        communities,
+        communitiesLoading,
+        fetchCommunities,
+        fetchTeamApplications,
+        fetchTeamSubmissions,
+        fetchTeamCommunity,
+        favoriteTeamIds,
+        favoriteTeamsLoading,
+        fetchFavoriteTeams,
+        toggleFavoriteTeam,
+        removeTeamLogo,
+        uploadTeamLogo,
+        fetchTeamTransactionHashes,
+        teamPaymentChain,
+        teamPaymentIDs,
+        teamPaymentServerUrl,
+        rescanTeamWallet,
+        teamRescanLoading,
+        teamRescanStatus,
       }}
     >
       {children}
