@@ -1,7 +1,14 @@
 "use client";
 
 import type React from "react";
-import { createContext, useContext, useState, useEffect, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type {
   User,
   Bounty,
@@ -217,6 +224,7 @@ interface BountyContextType {
     submissionId: string,
     data: { description: string; deliverableUrl?: string },
   ) => Promise<WorkSubmission>;
+  rejectOtherSubmissions: (submissionId: string) => Promise<void>;
 
   // Fetch methods
   fetchUserApplications: () => Promise<void>;
@@ -372,6 +380,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
+
+  const fetchBountiesReqId = useRef(0);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -1373,6 +1383,32 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const rejectOtherSubmissions = async (submissionId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/submissions/${submissionId}/reject-others`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(
+          errorData.error || "Failed to reject other submissions",
+        );
+      }
+
+      await fetchBounties();
+    } catch (error) {
+      console.error("Failed to reject other submissions:", error);
+      throw error;
+    }
+  };
+
   const acceptApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
@@ -1850,6 +1886,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       fetchUserSubmissions();
       fetchZcashParams();
       fetchMyBounties();
+      fetchUsers();
       if (currentUser.role === "ADMIN") {
         fetchTeams();
         fetchAllSubmissions().then(setAllSubmissions);
@@ -1899,8 +1936,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
         switch (msg.type) {
           case "new_bounties":
-            setBounties((prev) => [msg.payload, ...prev]);
-            fetchBounties();
+            setBounties((prev) =>
+              prev.some((b) => b.id === msg.payload.id)
+                ? prev // already have it (e.g. creator's own optimistic add)
+                : [msg.payload, ...prev],
+            );
+            fetchTotalStats();
             break;
 
           case "bounty_updated":
@@ -2208,6 +2249,28 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               ),
             }));
             break;
+
+          case "submissions_rejected_others":
+            setAllSubmissions((prev) =>
+              prev.map((s) =>
+                s.bountyId === msg.payload.bountyId &&
+                s.id !== msg.payload.keptSubmissionId &&
+                s.status === "pending"
+                  ? { ...s, status: "rejected" }
+                  : s,
+              ),
+            );
+            setBountySubmissions((prev) => ({
+              ...prev,
+              [msg.payload.bountyId]: (prev[msg.payload.bountyId] || []).map(
+                (s) =>
+                  s.id !== msg.payload.keptSubmissionId &&
+                  s.status === "pending"
+                    ? { ...s, status: "rejected" }
+                    : s,
+              ),
+            }));
+            break;
         }
       };
 
@@ -2309,6 +2372,8 @@ const fetchBounties = async (
   };
 
   const fetchTotalStats = async () => {
+    if (!currentUser || currentUser.role !== "ADMIN") return;
+
     try {
       const res = await fetch(`${backendUrl}/api/bounties/stats/totals`, {
         headers: getAuthHeaders(),
@@ -2368,6 +2433,7 @@ const fetchBounties = async (
       if (!res.ok) throw new Error("Failed to create bounty");
 
       const created = await res.json();
+      console.log(created);
       setBounties((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create bounty:", error);
@@ -2915,6 +2981,7 @@ const fetchBounties = async (
         deleteTeamWallet,
         currentTeam,
         editSubmission,
+        rejectOtherSubmissions,
         fetchMyBounties,
         myBounties,
         myBountiesLoading,
