@@ -195,6 +195,7 @@ export default function KpisDashboard() {
     [],
   );
 
+  const [avatarColorFilter, setAvatarColorFilter] = useState<string[]>([]);
   const [isBadgeModalOpen, setIsBadgeModalOpen] = useState(false);
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<any>(null);
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
@@ -645,57 +646,68 @@ export default function KpisDashboard() {
 
 
   const displayedContributors = useMemo(() => {
-    return sortedContributors.filter((u) => {
-      if (badgeFilter.length) {
-        const badges = Array.isArray(u.badges) ? u.badges : [];
-        const hit = badgeFilter.some(
-          (b) =>
-            badges.includes(b) ||
-            (b === "admin" && (u as any).role === "ADMIN"),
-        );
-        if (!hit) return false;
+  return sortedContributors.filter((u) => {
+    // Badge filter
+    if (badgeFilter.length) {
+      const badges = Array.isArray(u.badges) ? u.badges : [];
+      const hit = badgeFilter.some(
+        (b) =>
+          badges.includes(b) ||
+          (b === "admin" && (u as any).role === "ADMIN"),
+      );
+      if (!hit) return false;
+    }
+
+    // Avatar color filter
+    if (avatarColorFilter.length > 0) {
+      const userAvatar =
+        (Array.isArray(u.badges)
+          ? u.badges.find((b: string) => b.startsWith("avatar:"))
+          : null) ?? "avatar:default";
+
+      if (!avatarColorFilter.includes(userAvatar)) return false;
+    }
+
+    // Receiver filter (admin only)
+    if (viewMode === "admin" && receiverFilter.length) {
+      const r = (u as any).receivers || {};
+      const activeKeys = (
+        ["transparent", "sapling", "ironwood"] as const
+      ).filter((k) => !!r[k]);
+
+      if (receiverFilter.includes("none") && receiverFilter.length === 1) {
+        return activeKeys.length === 0;
       }
 
-      if (viewMode === "admin" && receiverFilter.length) {
-        const r = (u as any).receivers || {};
-        const hasAny = !!(r.transparent || r.sapling || r.ironwood);
+      const flags = receiverFilter.filter((f) => f !== "none") as (
+        | "transparent"
+        | "sapling"
+        | "ironwood"
+      )[];
 
-        const activeKeys = (
-          ["transparent", "sapling", "ironwood"] as const
-        ).filter((k) => !!r[k]);
+      if (!flags.length) return true;
 
-        if (receiverFilter.includes("none") && receiverFilter.length === 1) {
-          return activeKeys.length === 0;
-        }
-
-        const flags = receiverFilter.filter((f) => f !== "none") as (
-          | "transparent"
-          | "sapling"
-          | "ironwood"
-        )[];
-
-        if (!flags.length) return true;
-
-        if (receiverMode === "exact") {
-          if (flags.length !== activeKeys.length) return false;
-          if (!flags.every((f) => activeKeys.includes(f))) return false;
-        } else if (receiverMode === "all") {
-          if (!flags.every((f) => !!r[f])) return false;
-        } else {
-          // any
-          if (!flags.some((f) => !!r[f])) return false;
-        }
+      if (receiverMode === "exact") {
+        if (flags.length !== activeKeys.length) return false;
+        if (!flags.every((f) => activeKeys.includes(f))) return false;
+      } else if (receiverMode === "all") {
+        if (!flags.every((f) => !!r[f])) return false;
+      } else {
+        // any
+        if (!flags.some((f) => !!r[f])) return false;
       }
+    }
 
-      return true;
-    });
-  }, [
-    sortedContributors,
-    badgeFilter,
-    receiverFilter,
-    receiverMode,
-    viewMode,
-  ]);
+    return true;
+  });
+}, [
+  sortedContributors,
+  badgeFilter,
+  avatarColorFilter,
+  receiverFilter,
+  receiverMode,
+  viewMode,
+]);
 
 
   const totalBounties = useMemo(
@@ -995,192 +1007,231 @@ export default function KpisDashboard() {
               )}
 
               {/* Combined Filters Popover */}
-              <div className="relative" ref={filtersRef}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFiltersOpen(!filtersOpen)}
-                  className="gap-2 text-muted-foreground font-normal"
+<div className="relative" ref={filtersRef}>
+  <Button
+    variant="outline"
+    size="sm"
+    onClick={() => setFiltersOpen(!filtersOpen)}
+    className="gap-2 text-muted-foreground font-normal"
+  >
+    <SlidersHorizontal className="w-3.5 h-3.5" />
+    {currentTimeConfig.label} · {chainLabel}
+  </Button>
+  {filtersOpen && (
+    <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
+      {/* Time Range */}
+      <div className="mb-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">
+          Time Range
+        </p>
+        {(["30d", "90d", "all"] as const).map((opt) => (
+          <button
+            key={opt}
+            onClick={() => setTimeRange(opt)}
+            className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+          >
+            {timeRangeConfig[opt].label}
+            {timeRange === opt && <Check className="w-3.5 h-3.5" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Chain */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">Chain</p>
+        {(
+          [
+            { key: "MAIN", label: "Mainnet" },
+            { key: "TEST", label: "Testnet" },
+            { key: "all", label: "Both" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setChainFilter(opt.key as ChainFilter)}
+            className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+          >
+            {opt.label}
+            {chainFilter === opt.key && <Check className="w-3.5 h-3.5" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Badges */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">Badges</p>
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {[
+            { key: "admin", label: "Admin" },
+            { key: "dao-member", label: "DAO" },
+            { key: "node-runner", label: "Node" },
+            { key: "miner", label: "Miner" },
+            { key: "researcher", label: "Research" },
+          ].map((b) => {
+            const active = badgeFilter.includes(b.key);
+            return (
+              <button
+                key={b.key}
+                type="button"
+                onClick={() =>
+                  setBadgeFilter((prev) =>
+                    prev.includes(b.key)
+                      ? prev.filter((k) => k !== b.key)
+                      : [...prev, b.key],
+                  )
+                }
+                className={`px-2 py-0.5 rounded text-xs border ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "hover:bg-muted border-border"
+                }`}
+              >
+                {b.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Avatar Color */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">
+          Badge Color
+        </p>
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {[
+            { key: "avatar:default", label: "Default", color: "bg-muted" },
+            { key: "avatar:red", label: "Red", color: "bg-red-500" },
+            { key: "avatar:blue", label: "Blue", color: "bg-blue-500" },
+            { key: "avatar:purple", label: "Purple", color: "bg-purple-500" },
+            { key: "avatar:gold", label: "Gold", color: "bg-yellow-500" },
+            { key: "avatar:pink", label: "Pink", color: "bg-pink-500" },
+          ].map((c) => {
+            const active = avatarColorFilter.includes(c.key);
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() =>
+                  setAvatarColorFilter((prev) =>
+                    prev.includes(c.key)
+                      ? prev.filter((k) => k !== c.key)
+                      : [...prev, c.key],
+                  )
+                }
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "hover:bg-muted border-border"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${c.color}`} />
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* UA receivers (admin only) */}
+      {viewMode === "admin" && (
+        <div className="border-t border-border pt-3">
+          <p className="text-xs text-muted-foreground mb-1.5 px-1">
+            UA receivers
+          </p>
+          <div className="flex flex-wrap gap-1.5 px-1 mb-2">
+            {(
+              [
+                { key: "none", label: "None" },
+                { key: "transparent", label: "T" },
+                { key: "sapling", label: "Sapling" },
+                { key: "ironwood", label: "Ironwood" },
+              ] as const
+            ).map((b) => {
+              const active = receiverFilter.includes(b.key);
+              return (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() =>
+                    setReceiverFilter((prev) =>
+                      prev.includes(b.key)
+                        ? prev.filter((k) => k !== b.key)
+                        : [...prev, b.key],
+                    )
+                  }
+                  className={`px-2 py-0.5 rounded text-xs border ${
+                    active
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "hover:bg-muted border-border"
+                  }`}
                 >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  {currentTimeConfig.label} · {chainLabel}
-                </Button>
-
-                {filtersOpen && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
-                    <div className="mb-3">
-                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                        Time Range
-                      </p>
-                      {(["30d", "90d", "all"] as const).map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => setTimeRange(opt)}
-                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
-                        >
-                          {timeRangeConfig[opt].label}
-                          {timeRange === opt && (
-                            <Check className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="border-t border-border pt-3">
-                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                        Chain
-                      </p>
-                      {(
-                        [
-                          { key: "MAIN", label: "Mainnet" },
-                          { key: "TEST", label: "Testnet" },
-                          { key: "all", label: "Both" },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setChainFilter(opt.key as ChainFilter)}
-                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
-                        >
-                          {opt.label}
-                          {chainFilter === opt.key && (
-                            <Check className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="border-t border-border pt-3">
-                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                        Badges
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 px-1">
-                        {[
-                          { key: "admin", label: "Admin" },
-                          { key: "dao-member", label: "DAO" },
-                          { key: "node-runner", label: "Node" },
-                          { key: "miner", label: "Miner" },
-                          { key: "researcher", label: "Research" },
-                        ].map((b) => {
-                          const active = badgeFilter.includes(b.key);
-                          return (
-                            <button
-                              key={b.key}
-                              type="button"
-                              onClick={() =>
-                                setBadgeFilter((prev) =>
-                                  prev.includes(b.key)
-                                    ? prev.filter((k) => k !== b.key)
-                                    : [...prev, b.key],
-                                )
-                              }
-                              className={`px-2 py-0.5 rounded text-xs border ${
-                                active
-                                  ? "bg-primary text-primary-foreground border-primary"
-                                  : "hover:bg-muted border-border"
-                              }`}
-                            >
-                              {b.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {viewMode === "admin" && (
-                      <div className="border-t border-border pt-3">
-                        <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                          UA receivers
-                        </p>
-                        <div className="flex flex-wrap gap-1.5 px-1 mb-2">
-                          {(
-                            [
-                              { key: "none", label: "None" },
-                              { key: "transparent", label: "T" },
-                              { key: "sapling", label: "Sapling" },
-                              { key: "ironwood", label: "Ironwood" },
-                            ] as const
-                          ).map((b) => {
-                            const active = receiverFilter.includes(b.key);
-                            return (
-                              <button
-                                key={b.key}
-                                type="button"
-                                onClick={() =>
-                                  setReceiverFilter((prev) =>
-                                    prev.includes(b.key)
-                                      ? prev.filter((k) => k !== b.key)
-                                      : [...prev, b.key],
-                                  )
-                                }
-                                className={`px-2 py-0.5 rounded text-xs border ${
-                                  active
-                                    ? "bg-primary text-primary-foreground border-primary"
-                                    : "hover:bg-muted border-border"
-                                }`}
-                              >
-                                {b.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <div className="flex gap-1 px-1">
-                          <button
-                            type="button"
-                            onClick={() => setReceiverMode("all")}
-                            className={`px-2 py-0.5 rounded text-xs border ${
-                              receiverMode === "all"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "hover:bg-muted border-border"
-                            }`}
-                          >
-                            All
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setReceiverMode("any")}
-                            className={`px-2 py-0.5 rounded text-xs border ${
-                              receiverMode === "any"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "hover:bg-muted border-border"
-                            }`}
-                          >
-                            Any
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setReceiverMode("exact")}
-                            className={`px-2 py-0.5 rounded text-xs border ${
-                              receiverMode === "exact"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "hover:bg-muted border-border"
-                            }`}
-                          >
-                            Exact
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {(badgeFilter.length > 0 || receiverFilter.length > 0) && (
-                      <div className="border-t border-border pt-2 mt-1">
-                        <button
-                          type="button"
-                          className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1"
-                          onClick={() => {
-                            setBadgeFilter([]);
-                            setReceiverFilter([]);
-                          }}
-                        >
-                          Clear filters
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+                  {b.label}
+                </button>
+              );
+            })}
           </div>
+          <div className="flex gap-1 px-1">
+            <button
+              type="button"
+              onClick={() => setReceiverMode("all")}
+              className={`px-2 py-0.5 rounded text-xs border ${
+                receiverMode === "all"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted border-border"
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setReceiverMode("any")}
+              className={`px-2 py-0.5 rounded text-xs border ${
+                receiverMode === "any"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted border-border"
+              }`}
+            >
+              Any
+            </button>
+            <button
+              type="button"
+              onClick={() => setReceiverMode("exact")}
+              className={`px-2 py-0.5 rounded text-xs border ${
+                receiverMode === "exact"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted border-border"
+              }`}
+            >
+              Exact
+            </button>
+          </div>
+        </div>
+      )}
 
+      {/* Clear */}
+      {(badgeFilter.length > 0 ||
+        receiverFilter.length > 0 ||
+        avatarColorFilter.length > 0) && (
+        <div className="border-t border-border pt-2 mt-1">
+          <button
+            type="button"
+            className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+            onClick={() => {
+              setBadgeFilter([]);
+              setReceiverFilter([]);
+              setAvatarColorFilter([]);
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+    </div>
+  )}
+</div>
+</div>
+</div>
           {/* Top Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
             {[
