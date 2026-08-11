@@ -93,30 +93,48 @@ const ASSIGNEE_INCLUDE = {
   },
 };
 
-// helper — call after any write that touches a specific bounty
+// Invalidates now, then invalidates again shortly after — this closes the
+// race window where a concurrent GET reads stale DB data and writes it to
+// cache *after* our invalidation already ran, silently re-poisoning it.
+const invalidateWithRetry = async (keys, delayMs = 500) => {
+  const wipe = () =>
+    Promise.all(
+      keys.map((k) =>
+        k.includes("*") ? deleteCacheByPattern(k) : delCache(k),
+      ),
+    );
+
+  await wipe();
+  setTimeout(() => {
+    wipe().catch((err) =>
+      console.error("Delayed cache invalidation failed:", err),
+    );
+  }, delayMs);
+};
+
 const invalidateBounty = async (bountyId) => {
-  await Promise.all([
-    delCache(`bounty:public:${bountyId}`),
-    delCache(`bounty:full:${bountyId}`),
-    delCache(`assignees:${bountyId}`),
-    delCache("stats:totals"),
-    deleteCacheByPattern("bounties:*"),
+  await invalidateWithRetry([
+    `bounty:public:${bountyId}`,
+    `bounty:full:${bountyId}`,
+    `assignees:${bountyId}`,
+    "stats:totals",
+    "bounties:*",
   ]);
 };
 
 const invalidateApplications = async (applicantId, bountyId) => {
-  await Promise.all([
-    delCache(`applications:user:${applicantId}`),
-    delCache("applications:all"),
-    ...(bountyId ? [delCache(`applications:bounty:${bountyId}`)] : []),
+  await invalidateWithRetry([
+    `applications:user:${applicantId}`,
+    "applications:all",
+    ...(bountyId ? [`applications:bounty:${bountyId}`] : []),
   ]);
 };
 
 const invalidateSubmissions = async (bountyId, submittedBy) => {
-  await Promise.all([
-    delCache(`submissions:${bountyId}`),
-    delCache("submissions:all"),
-    ...(submittedBy ? [delCache(`submissions:user:${submittedBy}`)] : []),
+  await invalidateWithRetry([
+    `submissions:${bountyId}`,
+    "submissions:all",
+    ...(submittedBy ? [`submissions:user:${submittedBy}`] : []),
   ]);
 };
 
@@ -140,29 +158,26 @@ router.post("/", authenticate, async (req, res) => {
 
     const resolvedAssignee = assignee === "none" ? null : assignee;
     const isClient = req.user.role === "CLIENT";
-	    const resolvedChain = isClient
-	      ? "MAIN"
-	      : chain && ["MAIN", "TEST"].includes(chain)
-		? chain
-		: "MAIN";
 
-	    const bounty = await prisma.bounty.create({
-	      data: {
-		title,
-		description,
-		bountyAmount: parseFloat(bountyAmount),
-		timeToComplete: new Date(timeToComplete),
-		createdBy: req.user.id,
-		assignee: resolvedAssignee,
-		isApproved,
-		categoryId,
-		chain: resolvedChain,
-		...(isClient &&
-		  resolvedAssignee && {
-		    assignees: {
-		      create: { userId: resolvedAssignee },
-		    },
-		  }),
+    const bounty = await prisma.bounty.create({
+      data: {
+        title,
+        description,
+        bountyAmount: parseFloat(bountyAmount),
+        timeToComplete: new Date(timeToComplete),
+        createdBy: req.user.id,
+        assignee: resolvedAssignee,
+        isApproved,
+        categoryId,
+        ...(chain && { chain }), // NEW — falls back to schema default (TEST) if omitted
+        ...(isClient &&
+          resolvedAssignee && {
+            assignees: {
+              create: {
+                userId: resolvedAssignee,
+              },
+            },
+          }),
       },
       include: {
         createdByUser: {
@@ -256,11 +271,18 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     }
 
     // Namespace cache by auth level + chain — avoids PII leak and stale chain mixes
-    const cacheKey = `bounties:${isAuthed ? "full" : "public"}:${JSON.stringify({
-      page,
-      limit,
-      chain: chainParam === "ALL" ? "ALL" : chainParam === "TEST" ? "TEST" : "MAIN",
-    })}`;
+    const cacheKey = `bounties:${isAuthed ? "full" : "public"}:${JSON.stringify(
+      {
+        page,
+        limit,
+        chain:
+          chainParam === "ALL"
+            ? "ALL"
+            : chainParam === "TEST"
+              ? "TEST"
+              : "MAIN",
+      },
+    )}`;
 
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
@@ -290,7 +312,10 @@ router.get("/", optionalAuthenticate, async (req, res) => {
           },
         },
       }),
-      prisma.bounty.count({ where: chainFilter }),
+
+      prisma.bounty.count({
+        where: chainFilter,
+      }),
     ]);
 
     const result = { data: bounties, total, page, limit };
@@ -872,13 +897,13 @@ router.patch(
         });
       }
 
-      // ── Determine new bounty status BEFORE the transaction ──────────────────
-      let newBountyStatus = submission.bounty.status; // default: no change
+      let newBountyStatus = submission.bounty.status;
 
       if (status === "approved") {
-        newBountyStatus = "DONE";
+        if (submission.bounty.status !== "DONE") {
+          newBountyStatus = "DONE";
+        }
       } else if (["rejected", "needs_revision"].includes(status)) {
-        // Only revert if no other approved submission exists
         const approvedExists = await prisma.workSubmission.findFirst({
           where: {
             bountyId: submission.bounty.id,
@@ -890,7 +915,6 @@ router.patch(
         if (!approvedExists) newBountyStatus = "IN_PROGRESS";
       }
 
-      // Run all DB writes atomically
       const [updatedSubmission, updatedBounty] = await prisma.$transaction(
         async (tx) => {
           const updSub = await tx.workSubmission.update({
@@ -902,53 +926,29 @@ router.patch(
               reviewedAt: new Date(),
             },
             include: {
-              submitterUser: {
-                select: USER_SELECT_BASIC,
-              },
-              reviewerUser: {
-                select: USER_SELECT_BASIC,
-              },
+              submitterUser: { select: USER_SELECT_BASIC },
+              reviewerUser: { select: USER_SELECT_BASIC },
             },
           });
 
-          if (status === "approved") {
-            // Reject all other pending submissions in one query
-            await tx.workSubmission.updateMany({
-              where: {
-                bountyId: submission.bounty.id,
-                id: { not: submissionId },
-                status: "pending",
-              },
-              data: { status: "rejected" },
-            });
-
-            // Remove all assignees except the winner
-            await tx.bountyAssignee.deleteMany({
-              where: {
-                bountyId: submission.bounty.id,
-                userId: { not: submission.submittedBy },
-              },
-            });
-          }
+          // Approving no longer auto-rejects siblings or strips assignees.
+          // That's the separate, explicit "reject others" action.
 
           const updBounty = await tx.bounty.update({
             where: { id: submission.bounty.id },
             data: {
               status: newBountyStatus,
-              ...(status === "approved" && {
-                assignee: submission.submittedBy,
-                completedAt: new Date(),
-              }),
+              ...(status === "approved" &&
+                submission.bounty.status !== "DONE" && {
+                  assignee: submission.submittedBy,
+                  completedAt: new Date(),
+                }),
               ...(status !== "approved" &&
                 submission.bounty.status === "DONE" && { completedAt: null }),
             },
             include: {
-              createdByUser: {
-                select: USER_SELECT_WITH_ROLE,
-              },
-              assigneeUser: {
-                select: USER_SELECT_WITH_ROLE,
-              },
+              createdByUser: { select: USER_SELECT_WITH_ROLE },
+              assigneeUser: { select: USER_SELECT_WITH_ROLE },
             },
           });
 
