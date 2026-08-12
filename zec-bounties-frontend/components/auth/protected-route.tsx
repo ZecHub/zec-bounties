@@ -36,10 +36,10 @@ export function ProtectedRoute({
     }
 
     // Admin trying to access non-admin page
-    // if (blockAdmin && currentUser.role === "ADMIN") {
-    //   router.push("/admin");
-    //   return;
-    // }
+    if (blockAdmin && currentUser.role === "ADMIN") {
+      router.push("/admin");
+      return;
+    }
   }, [currentUser, requireAdmin, blockAdmin, router, isLoading]);
 
   // Show loading while context is initializing
