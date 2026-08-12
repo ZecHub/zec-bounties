@@ -1,7 +1,14 @@
 "use client";
 
 import type React from "react";
-import { createContext, useContext, useState, useEffect, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type {
   User,
   Bounty,
@@ -220,6 +227,7 @@ interface BountyContextType {
     submissionId: string,
     data: { description: string; deliverableUrl?: string },
   ) => Promise<WorkSubmission>;
+  rejectOtherSubmissions: (submissionId: string) => Promise<void>;
 
   // Fetch methods
   fetchUserApplications: () => Promise<void>;
@@ -341,6 +349,9 @@ interface BountyContextType {
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
 
 export function BountyProvider({ children }: { children: React.ReactNode }) {
+  const [bountyChain, setBountyChain] = useState<"MAIN" | "TEST" | "ALL">(
+    "MAIN",
+  );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
@@ -395,6 +406,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
 
+  const fetchBountiesReqId = useRef(0);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [communitiesLoading, setCommunitiesLoading] = useState(false);
 
@@ -1520,6 +1532,32 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const rejectOtherSubmissions = async (submissionId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/submissions/${submissionId}/reject-others`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(
+          errorData.error || "Failed to reject other submissions",
+        );
+      }
+
+      await fetchBounties();
+    } catch (error) {
+      console.error("Failed to reject other submissions:", error);
+      throw error;
+    }
+  };
+
   const acceptApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
@@ -2004,6 +2042,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
   }, []);
 
+  useEffect(() => {
+    if (currentUser?.role === "ADMIN") {
+      fetchTotalStats();
+    }
+  }, [currentUser?.id, currentUser?.role]);
+
   // Fetch user-specific data when currentUser changes
   useEffect(() => {
     if (currentUser) {
@@ -2012,6 +2056,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       fetchUserSubmissions();
       fetchZcashParams();
       fetchMyBounties();
+      fetchUsers();
       fetchTeams();
       fetchFavoriteTeams();
       if (currentUser.role === "ADMIN") {
@@ -2063,8 +2108,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
         switch (msg.type) {
           case "new_bounties":
-            setBounties((prev) => [msg.payload, ...prev]);
-            fetchBounties();
+            setBounties((prev) =>
+              prev.some((b) => b.id === msg.payload.id)
+                ? prev // already have it (e.g. creator's own optimistic add)
+                : [msg.payload, ...prev],
+            );
+            fetchTotalStats();
             break;
 
           case "bounty_updated":
@@ -2401,6 +2450,26 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             }));
             break;
 
+          case "submissions_rejected_others":
+            setAllSubmissions((prev) =>
+              prev.map((s) =>
+                s.bountyId === msg.payload.bountyId &&
+                s.id !== msg.payload.keptSubmissionId &&
+                s.status === "pending"
+                  ? { ...s, status: "rejected" }
+                  : s,
+              ),
+            );
+            setBountySubmissions((prev) => ({
+              ...prev,
+              [msg.payload.bountyId]: (prev[msg.payload.bountyId] || []).map(
+                (s) =>
+                  s.id !== msg.payload.keptSubmissionId &&
+                  s.status === "pending"
+                    ? { ...s, status: "rejected" }
+                    : s,
+              ),
+            }));
           case "team_favorited":
             setFavoriteTeamIds((prev) => new Set(prev).add(msg.payload.teamId));
             break;
@@ -2450,6 +2519,23 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
+  // Fetch bounties — CLIENT: MAIN only; ADMIN: ALL (so admin Test/Main toggle still works)
+  const fetchBounties = async (
+    reset = true,
+    chain?: "MAIN" | "TEST" | "ALL",
+  ) => {
+    setBountiesLoading(true);
+    try {
+      const page = reset ? 1 : bountiesPage;
+
+      // Explicit chain wins; otherwise admin gets ALL, everyone else MAIN
+      const resolvedChain =
+        chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
+
+      const res = await fetch(
+        `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&chain=${resolvedChain}`,
+        { headers: getAuthHeaders() },
+      );
   // Fetch all bounties (PUBLIC)
   const fetchBounties = async (reset = true, teamId?: string) => {
     setBountiesLoading(true);
@@ -2483,7 +2569,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         incoming.length === BOUNTIES_PER_PAGE &&
           bounties.length + incoming.length < total,
       );
-      await fetchTotalStats();
     } catch (error) {
       console.error("Failed to fetch bounties:", error);
     } finally {
@@ -2515,6 +2600,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchTotalStats = async () => {
+    if (!currentUser || currentUser.role !== "ADMIN") return;
+
     try {
       const res = await fetch(`${backendUrl}/api/bounties/stats/totals`, {
         headers: getAuthHeaders(),
@@ -2650,6 +2737,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to create bounty");
 
       const created = await res.json();
+      console.log(created);
       setBounties((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create bounty:", error);
@@ -3220,6 +3308,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         deleteTeamWallet,
         currentTeam,
         editSubmission,
+        rejectOtherSubmissions,
         fetchMyBounties,
         myBounties,
         myBountiesLoading,

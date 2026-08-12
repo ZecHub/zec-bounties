@@ -178,21 +178,43 @@ function parseTopContributorsResponse(data: any): {
 function enrichWithReceivers(list: any[], isAdmin: boolean) {
   if (!isAdmin) return list;
   return list.map((user: any) => {
-    if (!user.UA_address) return user;
-    try {
-      const decoded = getAddressReceivers(user.UA_address);
+    if (user.UA_address) {
+      try {
+        const decoded = getAddressReceivers(user.UA_address);
+        return {
+          ...user,
+          addressType: decoded.type,
+          receivers: {
+            ironwood: !!(decoded as any).ironwood,
+            sapling: !!(decoded as any).sapling,
+            transparent: !!(decoded as any).transparent,
+          },
+        };
+      } catch {
+        return user;
+      }
+    }
+    // Lone z-address => Sapling-only (UA and z are mutually exclusive)
+    if (user.z_address) {
       return {
         ...user,
-        addressType: decoded.type,
+        addressType: "Sapling",
         receivers: {
-          ironwood: !!(decoded as any).ironwood,
-          sapling: !!(decoded as any).sapling,
-          transparent: !!(decoded as any).transparent,
+          ironwood: false,
+          sapling: true,
+          transparent: false,
         },
       };
-    } catch {
-      return user;
     }
+    return {
+      ...user,
+      addressType: user.addressType || "None",
+      receivers: user.receivers || {
+        ironwood: false,
+        sapling: false,
+        transparent: false,
+      },
+    };
   });
 }
 
@@ -391,6 +413,14 @@ export default function KpisDashboard() {
 
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
+
+  const [badgeFilter, setBadgeFilter] = useState<string[]>([]);
+  const [receiverFilter, setReceiverFilter] = useState<
+    ("none" | "transparent" | "sapling" | "ironwood")[]
+  >([]);
+  const [receiverMode, setReceiverMode] = useState<"all" | "any">("all");
+
+
   const timeRangeConfig = {
     "30d": {
       label: "Last 30 Days",
@@ -585,6 +615,53 @@ export default function KpisDashboard() {
       );
     });
   }, [topContributors, sortKey, sortDirection]);
+
+
+  const displayedContributors = useMemo(() => {
+    return sortedContributors.filter((u) => {
+      if (badgeFilter.length) {
+        const badges = Array.isArray(u.badges) ? u.badges : [];
+        const hit = badgeFilter.some(
+          (b) =>
+            badges.includes(b) ||
+            (b === "admin" && (u as any).role === "ADMIN"),
+        );
+        if (!hit) return false;
+      }
+
+      // UA receiver filter — admin view only
+      if (viewMode === "admin" && receiverFilter.length) {
+        const r = (u as any).receivers || {};
+        const hasAny = !!(r.transparent || r.sapling || r.ironwood);
+
+        if (receiverFilter.includes("none")) {
+          if (receiverFilter.length === 1) return !hasAny;
+          return !hasAny;
+        }
+
+        const flags = receiverFilter.filter((f) => f !== "none") as (
+          | "transparent"
+          | "sapling"
+          | "ironwood"
+        )[];
+
+        if (receiverMode === "all") {
+          if (!flags.every((f) => !!r[f])) return false;
+        } else {
+          if (!flags.some((f) => !!r[f])) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    sortedContributors,
+    badgeFilter,
+    receiverFilter,
+    receiverMode,
+    viewMode,
+  ]);
+
 
   // Prefer server summary; fall back for old API shape
   const totalBounties =
@@ -921,6 +998,110 @@ export default function KpisDashboard() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Badge filter — all logged-in users */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Badges</span>
+                {[
+                  { key: "admin", label: "Admin" },
+                  { key: "dao-member", label: "DAO" },
+                  { key: "node-runner", label: "Node" },
+                  { key: "miner", label: "Miner" },
+                  { key: "researcher", label: "Research" },
+                ].map((b) => {
+                  const active = badgeFilter.includes(b.key);
+                  return (
+                    <Button
+                      key={b.key}
+                      type="button"
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      className="h-7 text-xs"
+                      onClick={() =>
+                        setBadgeFilter((prev) =>
+                          prev.includes(b.key)
+                            ? prev.filter((k) => k !== b.key)
+                            : [...prev, b.key],
+                        )
+                      }
+                    >
+                      {b.label}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              {/* UA receivers — admin only */}
+              {isAdmin && viewMode === "admin" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">UA</span>
+                  {(
+                    [
+                      { key: "none", label: "None" },
+                      { key: "transparent", label: "Transparent" },
+                      { key: "sapling", label: "Sapling" },
+                      { key: "ironwood", label: "Ironwood" },
+                    ] as const
+                  ).map((b) => {
+                    const active = receiverFilter.includes(b.key);
+                    return (
+                      <Button
+                        key={b.key}
+                        type="button"
+                        size="sm"
+                        variant={active ? "default" : "outline"}
+                        className="h-7 text-xs"
+                        onClick={() =>
+                          setReceiverFilter((prev) =>
+                            prev.includes(b.key)
+                              ? prev.filter((k) => k !== b.key)
+                              : [...prev, b.key],
+                          )
+                        }
+                      >
+                        {b.label}
+                      </Button>
+                    );
+                  })}
+                  <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={receiverMode === "all" ? "default" : "ghost"}
+                      className="h-7 text-xs"
+                      onClick={() => setReceiverMode("all")}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={receiverMode === "any" ? "default" : "ghost"}
+                      className="h-7 text-xs"
+                      onClick={() => setReceiverMode("any")}
+                    >
+                      Any
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {(badgeFilter.length > 0 ||
+                (viewMode === "admin" && receiverFilter.length > 0)) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={() => {
+                    setBadgeFilter([]);
+                    setReceiverFilter([]);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )}
+
             </div>
           </div>
 
@@ -1055,7 +1236,7 @@ export default function KpisDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedContributors.length === 0 ? (
+                    {displayedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={viewMode === "admin" ? 9 : 6}
@@ -1065,7 +1246,7 @@ export default function KpisDashboard() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      sortedContributors.map((user, index) => {
+                      displayedContributors.map((user, index) => {
                         const rate =
                           user.submitted > 0
                             ? Math.round(

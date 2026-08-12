@@ -195,6 +195,7 @@ export default function KpisDashboard() {
     [],
   );
 
+  const [avatarColorFilter, setAvatarColorFilter] = useState<string[]>([]);
   const [isBadgeModalOpen, setIsBadgeModalOpen] = useState(false);
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<any>(null);
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
@@ -202,7 +203,7 @@ export default function KpisDashboard() {
   const [chainFilter, setChainFilter] = useState<ChainFilter>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
-
+  const [userFilter, setUserFilter] = useState("");
   const availableBadges = [
     { key: "dao-member", label: "DAO Member" },
     { key: "node-runner", label: "Node Runner" },
@@ -393,6 +394,14 @@ export default function KpisDashboard() {
   // === Time Range Filter ===
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
+
+  const [badgeFilter, setBadgeFilter] = useState<string[]>([]);
+  const [receiverFilter, setReceiverFilter] = useState<
+    ("none" | "transparent" | "sapling" | "ironwood")[]
+  >([]);
+  const [receiverMode, setReceiverMode] = useState<"all" | "any" | "exact">("all");
+
+
   const timeRangeConfig = {
     "30d": {
       label: "Last 30 Days",
@@ -519,16 +528,36 @@ export default function KpisDashboard() {
 		  ...user,
 		  addressType: decoded.type,
 		  receivers: {
-		    ironwood: decoded.ironwood,
-		    sapling: decoded.sapling,
-		    transparent: decoded.transparent,
+		    ironwood: !!decoded.ironwood,
+		    sapling: !!decoded.sapling,
+		    transparent: !!decoded.transparent,
 		  },
 		};
 	      } catch {
 		return user;
 	      }
 	    }
-	    return user;
+	    // Lone z-address is treated as Sapling-only (app disallows UA + z together)
+	    if (user.z_address) {
+	      return {
+		...user,
+		addressType: "Sapling",
+		receivers: {
+		  ironwood: false,
+		  sapling: true,
+		  transparent: false,
+		},
+	      };
+	    }
+	    return {
+	      ...user,
+	      addressType: user.addressType || "None",
+	      receivers: user.receivers || {
+		ironwood: false,
+		sapling: false,
+		transparent: false,
+	      },
+	    };
 	  });
 	}
         setTopContributors(data);
@@ -635,6 +664,91 @@ export default function KpisDashboard() {
     });
   }, [topContributors, sortKey, sortDirection]);
 
+
+
+  /** Same rules as the member Users icon color in getBadgeIcons */
+  const effectiveAvatarColorKey = (
+    completed: number = 0,
+    badges?: string[],
+  ) => {
+    const list = Array.isArray(badges) ? badges : [];
+    const override = list.find((b) => b.startsWith("avatar:"));
+    if (override && override !== "avatar:default") {
+      return override;
+    }
+    if (completed >= 60) return "avatar:pink";
+    if (completed >= 20) return "avatar:gold";
+    if (completed >= 10) return "avatar:purple";
+    if (completed >= 5) return "avatar:blue";
+    if (completed >= 1) return "avatar:red";
+    return "avatar:default";
+  };
+
+
+  const displayedContributors = useMemo(() => {
+  return sortedContributors.filter((u) => {
+    // Badge filter
+    if (badgeFilter.length) {
+      const badges = Array.isArray(u.badges) ? u.badges : [];
+      const hit = badgeFilter.some(
+        (b) =>
+          badges.includes(b) ||
+          (b === "admin" && (u as any).role === "ADMIN"),
+      );
+      if (!hit) return false;
+    }
+
+    // Avatar color filter — match visible member icon color
+    if (avatarColorFilter.length > 0) {
+      const userAvatar = effectiveAvatarColorKey(
+        u.completed || 0,
+        Array.isArray(u.badges) ? u.badges : [],
+      );
+      if (!avatarColorFilter.includes(userAvatar)) return false;
+    }
+
+    // Receiver filter (admin only)
+    if (viewMode === "admin" && receiverFilter.length) {
+      const r = (u as any).receivers || {};
+      const activeKeys = (
+        ["transparent", "sapling", "ironwood"] as const
+      ).filter((k) => !!r[k]);
+
+      if (receiverFilter.includes("none") && receiverFilter.length === 1) {
+        return activeKeys.length === 0;
+      }
+
+      const flags = receiverFilter.filter((f) => f !== "none") as (
+        | "transparent"
+        | "sapling"
+        | "ironwood"
+      )[];
+
+      if (!flags.length) return true;
+
+      if (receiverMode === "exact") {
+        if (flags.length !== activeKeys.length) return false;
+        if (!flags.every((f) => activeKeys.includes(f))) return false;
+      } else if (receiverMode === "all") {
+        if (!flags.every((f) => !!r[f])) return false;
+      } else {
+        // any
+        if (!flags.some((f) => !!r[f])) return false;
+      }
+    }
+
+    return true;
+  });
+}, [
+  sortedContributors,
+  badgeFilter,
+  avatarColorFilter,
+  receiverFilter,
+  receiverMode,
+  viewMode,
+]);
+
+
   const totalBounties = useMemo(
     () => topContributors.reduce((sum, u) => sum + (u.submitted || 0), 0),
     [topContributors],
@@ -728,6 +842,7 @@ export default function KpisDashboard() {
   };
 
   const closeBadgeModal = () => {
+    setUserFilter("");
     setIsBadgeModalOpen(false);
     setSelectedUserForBadges(null);
     setSelectedBadges([]);
@@ -931,65 +1046,231 @@ export default function KpisDashboard() {
               )}
 
               {/* Combined Filters Popover */}
-              <div className="relative" ref={filtersRef}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFiltersOpen(!filtersOpen)}
-                  className="gap-2 text-muted-foreground font-normal"
+<div className="relative" ref={filtersRef}>
+  <Button
+    variant="outline"
+    size="sm"
+    onClick={() => setFiltersOpen(!filtersOpen)}
+    className="gap-2 text-muted-foreground font-normal"
+  >
+    <SlidersHorizontal className="w-3.5 h-3.5" />
+    {currentTimeConfig.label} · {chainLabel}
+  </Button>
+  {filtersOpen && (
+    <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
+      {/* Time Range */}
+      <div className="mb-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">
+          Time Range
+        </p>
+        {(["30d", "90d", "all"] as const).map((opt) => (
+          <button
+            key={opt}
+            onClick={() => setTimeRange(opt)}
+            className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+          >
+            {timeRangeConfig[opt].label}
+            {timeRange === opt && <Check className="w-3.5 h-3.5" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Chain */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">Chain</p>
+        {(
+          [
+            { key: "MAIN", label: "Mainnet" },
+            { key: "TEST", label: "Testnet" },
+            { key: "all", label: "Both" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setChainFilter(opt.key as ChainFilter)}
+            className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+          >
+            {opt.label}
+            {chainFilter === opt.key && <Check className="w-3.5 h-3.5" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Badges */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">Badges</p>
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {[
+            { key: "admin", label: "Admin" },
+            { key: "dao-member", label: "DAO" },
+            { key: "node-runner", label: "Node" },
+            { key: "miner", label: "Miner" },
+            { key: "researcher", label: "Research" },
+          ].map((b) => {
+            const active = badgeFilter.includes(b.key);
+            return (
+              <button
+                key={b.key}
+                type="button"
+                onClick={() =>
+                  setBadgeFilter((prev) =>
+                    prev.includes(b.key)
+                      ? prev.filter((k) => k !== b.key)
+                      : [...prev, b.key],
+                  )
+                }
+                className={`px-2 py-0.5 rounded text-xs border ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "hover:bg-muted border-border"
+                }`}
+              >
+                {b.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Avatar Color */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground mb-1.5 px-1">
+          Badge Color
+        </p>
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {[
+            { key: "avatar:default", label: "Default", color: "bg-muted" },
+            { key: "avatar:red", label: "Red", color: "bg-red-500" },
+            { key: "avatar:blue", label: "Blue", color: "bg-blue-500" },
+            { key: "avatar:purple", label: "Purple", color: "bg-purple-500" },
+            { key: "avatar:gold", label: "Gold", color: "bg-yellow-500" },
+            { key: "avatar:pink", label: "Pink", color: "bg-pink-500" },
+          ].map((c) => {
+            const active = avatarColorFilter.includes(c.key);
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() =>
+                  setAvatarColorFilter((prev) =>
+                    prev.includes(c.key)
+                      ? prev.filter((k) => k !== c.key)
+                      : [...prev, c.key],
+                  )
+                }
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "hover:bg-muted border-border"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${c.color}`} />
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* UA receivers (admin only) */}
+      {viewMode === "admin" && (
+        <div className="border-t border-border pt-3">
+          <p className="text-xs text-muted-foreground mb-1.5 px-1">
+            UA receivers
+          </p>
+          <div className="flex flex-wrap gap-1.5 px-1 mb-2">
+            {(
+              [
+                { key: "none", label: "None" },
+                { key: "transparent", label: "T" },
+                { key: "sapling", label: "Sapling" },
+                { key: "ironwood", label: "Ironwood" },
+              ] as const
+            ).map((b) => {
+              const active = receiverFilter.includes(b.key);
+              return (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() =>
+                    setReceiverFilter((prev) =>
+                      prev.includes(b.key)
+                        ? prev.filter((k) => k !== b.key)
+                        : [...prev, b.key],
+                    )
+                  }
+                  className={`px-2 py-0.5 rounded text-xs border ${
+                    active
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "hover:bg-muted border-border"
+                  }`}
                 >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  {currentTimeConfig.label} · {chainLabel}
-                </Button>
-
-                {filtersOpen && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
-                    <div className="mb-3">
-                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                        Time Range
-                      </p>
-                      {(["30d", "90d", "all"] as const).map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => setTimeRange(opt)}
-                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
-                        >
-                          {timeRangeConfig[opt].label}
-                          {timeRange === opt && (
-                            <Check className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="border-t border-border pt-3">
-                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                        Chain
-                      </p>
-                      {(
-                        [
-                          { key: "MAIN", label: "Mainnet" },
-                          { key: "TEST", label: "Testnet" },
-                          { key: "all", label: "Both" },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setChainFilter(opt.key as ChainFilter)}
-                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
-                        >
-                          {opt.label}
-                          {chainFilter === opt.key && (
-                            <Check className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+                  {b.label}
+                </button>
+              );
+            })}
           </div>
+          <div className="flex gap-1 px-1">
+            <button
+              type="button"
+              onClick={() => setReceiverMode("all")}
+              className={`px-2 py-0.5 rounded text-xs border ${
+                receiverMode === "all"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted border-border"
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setReceiverMode("any")}
+              className={`px-2 py-0.5 rounded text-xs border ${
+                receiverMode === "any"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted border-border"
+              }`}
+            >
+              Any
+            </button>
+            <button
+              type="button"
+              onClick={() => setReceiverMode("exact")}
+              className={`px-2 py-0.5 rounded text-xs border ${
+                receiverMode === "exact"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "hover:bg-muted border-border"
+              }`}
+            >
+              Exact
+            </button>
+          </div>
+        </div>
+      )}
 
+      {/* Clear */}
+      {(badgeFilter.length > 0 ||
+        receiverFilter.length > 0 ||
+        avatarColorFilter.length > 0) && (
+        <div className="border-t border-border pt-2 mt-1">
+          <button
+            type="button"
+            className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+            onClick={() => {
+              setBadgeFilter([]);
+              setReceiverFilter([]);
+              setAvatarColorFilter([]);
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+    </div>
+  )}
+</div>
+</div>
+</div>
           {/* Top Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
             {[
@@ -1120,7 +1401,7 @@ export default function KpisDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedContributors.length === 0 ? (
+                    {displayedContributors.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={viewMode === "admin" ? 9 : 6}
@@ -1130,7 +1411,7 @@ export default function KpisDashboard() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      sortedContributors.map((user, index) => {
+                      displayedContributors.map((user, index) => {
                         const rate =
                           user.submitted > 0
                             ? Math.round(
@@ -1532,242 +1813,256 @@ export default function KpisDashboard() {
           )}
 
           {/* === Badge Management Modal === */}
-          {isBadgeModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-              <div className="w-full max-w-md rounded-xl bg-popover text-popover-foreground p-6 shadow-xl border border-border">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold">Manage User Badges</h2>
+{isBadgeModalOpen && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="w-full max-w-md rounded-xl bg-popover text-popover-foreground p-6 shadow-xl border border-border">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Manage User Badges</h2>
+        <button
+          onClick={closeBadgeModal}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* User Selector - only show if no user is pre-selected */}
+      {!selectedUserForBadges && (
+        <div className="mb-4">
+          <label className="text-sm text-muted-foreground mb-1 block">
+            Select User
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Type to filter users..."
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              autoFocus
+            />
+            <div className="mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+              {topContributors
+                .filter((u) =>
+                  u.name
+                    .toLowerCase()
+                    .includes(userFilter.toLowerCase().trim()),
+                )
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((user) => (
                   <button
-                    onClick={closeBadgeModal}
-                    className="text-muted-foreground hover:text-foreground"
+                    key={user.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedUserForBadges(user);
+                      setSelectedBadges(user.badges || []);
+                      setUserFilter("");
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                   >
-                    ✕
+                    {user.name}
                   </button>
+                ))}
+              {topContributors.filter((u) =>
+                u.name
+                  .toLowerCase()
+                  .includes(userFilter.toLowerCase().trim()),
+              ).length === 0 && (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  No users found
                 </div>
-
-                {/* User Selector - only show if no user is pre-selected */}
-                {!selectedUserForBadges && (
-                  <div className="mb-4">
-                    <label className="text-sm text-muted-foreground mb-1 block">
-                      Select User
-                    </label>
-                    <Select
-                      value=""
-                      onValueChange={(userId) => {
-                        const user = topContributors.find(
-                          (u) => u.id === userId,
-                        );
-                        if (user) {
-                          setSelectedUserForBadges(user);
-                          setSelectedBadges(user.badges || []);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Choose a user..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {topContributors.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Show user name if already selected */}
-                {selectedUserForBadges && (
-                  <div className="mb-4">
-                    <p className="text-sm text-muted-foreground mb-1">User</p>
-                    <div className="font-medium">
-                      {selectedUserForBadges.name}
-                    </div>
-                  </div>
-                )}
-
-                {/* Badges Multi-Select */}
-                {selectedUserForBadges && (
-                  <div className="mb-6">
-                    <p className="text-sm text-muted-foreground mb-2">Badges</p>
-                    <div className="space-y-2">
-                      {availableBadges.map((badge) => {
-                        // Get the proper icon for each badge type
-                        const getBadgeIcon = (key: string) => {
-                          if (key === "dao-member") {
-                            return (
-                              <img
-                                src="/ZecHubBlue.png"
-                                alt="ZecHub"
-                                className="w-4 h-4"
-                              />
-                            );
-                          }
-                          if (key === "node-runner") {
-                            return (
-                              <Server className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                            );
-                          }
-                          if (key === "miner") {
-                            return (
-                              <Pickaxe className="w-4 h-4 text-orange-500 dark:text-orange-400" />
-                            );
-                          }
-                          if (key === "researcher") {
-                            return (
-                              <BookOpen className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                            );
-                          }
-                          return null;
-                        };
-
-                        return (
-                          <label
-                            key={badge.key}
-                            className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedBadges.includes(badge.key)}
-                              onChange={() => toggleBadge(badge.key)}
-                              className="h-4 w-4 accent-primary"
-                            />
-                            <div className="flex items-center gap-2">
-                              {getBadgeIcon(badge.key)}
-                              <span>{badge.label}</span>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Avatar Color Override */}
-                {selectedUserForBadges && (
-                  <div className="mb-6 border-t border-border pt-4">
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Avatar Color Override
-                    </p>
-                    <div className="space-y-1">
-                      {[
-                        {
-                          value: "avatar:default",
-                          label: "Default (based on completed bounties)",
-                          minCompleted: 0,
-                          colorClass: "bg-muted text-muted-foreground",
-                        },
-                        {
-                          value: "avatar:red",
-                          label: "Red",
-                          minCompleted: 1,
-                          colorClass: "bg-red-500 text-white",
-                        },
-                        {
-                          value: "avatar:blue",
-                          label: "Blue",
-                          minCompleted: 5,
-                          colorClass: "bg-blue-500 text-white",
-                        },
-                        {
-                          value: "avatar:purple",
-                          label: "Purple",
-                          minCompleted: 10,
-                          colorClass: "bg-purple-500 text-white",
-                        },
-                        {
-                          value: "avatar:gold",
-                          label: "Gold",
-                          minCompleted: 20,
-                          colorClass: "bg-yellow-500 text-black",
-                        },
-                        {
-                          value: "avatar:pink",
-                          label: "Pink",
-                          minCompleted: 60,
-                          colorClass: "bg-pink-500 text-white",
-                        },
-                      ].map((option) => {
-                        const isSelected =
-                          selectedBadges.includes(option.value) ||
-                          (option.value === "avatar:default" &&
-                            !selectedBadges.some((b) =>
-                              b.startsWith("avatar:"),
-                            ));
-
-                        return (
-                          <button
-                            key={option.value}
-                            onClick={() => {
-                              const filtered = selectedBadges.filter(
-                                (b) => !b.startsWith("avatar:"),
-                              );
-                              if (option.value !== "avatar:default") {
-                                setSelectedBadges([...filtered, option.value]);
-                              } else {
-                                setSelectedBadges(filtered);
-                              }
-                            }}
-                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                              isSelected
-                                ? "bg-muted border border-primary"
-                                : "hover:bg-muted/50 border border-transparent"
-                            }`}
-                          >
-                            {/* Colored Member Icon */}
-                            <div
-                              className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${option.colorClass}`}
-                            >
-                              <Users className="w-3.5 h-3.5" />
-                            </div>
-
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium">
-                                {option.label}
-                              </div>
-                              {option.minCompleted > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  Requires {option.minCompleted}+ completed
-                                  bounties
-                                </div>
-                              )}
-                            </div>
-
-                            {isSelected && (
-                              <div className="text-primary text-sm flex-shrink-0">
-                                ✓
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <p className="text-xs text-muted-foreground mt-2">
-                      This overrides the automatic avatar color.
-                    </p>
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={closeBadgeModal}
-                    disabled={isSavingBadges}
-                  >
-                    Cancel
-                  </Button>
-                  {selectedUserForBadges && (
-                    <Button onClick={saveUserBadges} disabled={isSavingBadges}>
-                      {isSavingBadges ? "Saving..." : "Save Changes"}
-                    </Button>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Show user name if already selected */}
+      {selectedUserForBadges && (
+        <div className="mb-4">
+          <p className="text-sm text-muted-foreground mb-1">User</p>
+          <div className="font-medium">
+            {selectedUserForBadges.name}
+          </div>
+        </div>
+      )}
+
+      {/* Badges Multi-Select */}
+      {selectedUserForBadges && (
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground mb-2">Badges</p>
+          <div className="space-y-2">
+            {availableBadges.map((badge) => {
+              // Get the proper icon for each badge type
+              const getBadgeIcon = (key: string) => {
+                if (key === "dao-member") {
+                  return (
+                    <img
+                      src="/ZecHubBlue.png"
+                      alt="ZecHub"
+                      className="w-4 h-4"
+                    />
+                  );
+                }
+                if (key === "node-runner") {
+                  return (
+                    <Server className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                  );
+                }
+                if (key === "miner") {
+                  return (
+                    <Pickaxe className="w-4 h-4 text-orange-500 dark:text-orange-400" />
+                  );
+                }
+                if (key === "researcher") {
+                  return (
+                    <BookOpen className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                  );
+                }
+                return null;
+              };
+              return (
+                <label
+                  key={badge.key}
+                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedBadges.includes(badge.key)}
+                    onChange={() => toggleBadge(badge.key)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <div className="flex items-center gap-2">
+                    {getBadgeIcon(badge.key)}
+                    <span>{badge.label}</span>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Avatar Color Override */}
+      {selectedUserForBadges && (
+        <div className="mb-6 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground mb-3">
+            Avatar Color Override
+          </p>
+          <div className="space-y-1">
+            {[
+              {
+                value: "avatar:default",
+                label: "Default (based on completed bounties)",
+                minCompleted: 0,
+                colorClass: "bg-muted text-muted-foreground",
+              },
+              {
+                value: "avatar:red",
+                label: "Red",
+                minCompleted: 1,
+                colorClass: "bg-red-500 text-white",
+              },
+              {
+                value: "avatar:blue",
+                label: "Blue",
+                minCompleted: 5,
+                colorClass: "bg-blue-500 text-white",
+              },
+              {
+                value: "avatar:purple",
+                label: "Purple",
+                minCompleted: 10,
+                colorClass: "bg-purple-500 text-white",
+              },
+              {
+                value: "avatar:gold",
+                label: "Gold",
+                minCompleted: 20,
+                colorClass: "bg-yellow-500 text-black",
+              },
+              {
+                value: "avatar:pink",
+                label: "Pink",
+                minCompleted: 60,
+                colorClass: "bg-pink-500 text-white",
+              },
+            ].map((option) => {
+              const isSelected =
+                selectedBadges.includes(option.value) ||
+                (option.value === "avatar:default" &&
+                  !selectedBadges.some((b) =>
+                    b.startsWith("avatar:"),
+                  ));
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    const filtered = selectedBadges.filter(
+                      (b) => !b.startsWith("avatar:"),
+                    );
+                    if (option.value !== "avatar:default") {
+                      setSelectedBadges([...filtered, option.value]);
+                    } else {
+                      setSelectedBadges(filtered);
+                    }
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                    isSelected
+                      ? "bg-muted border border-primary"
+                      : "hover:bg-muted/50 border border-transparent"
+                  }`}
+                >
+                  {/* Colored Member Icon */}
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${option.colorClass}`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">
+                      {option.label}
+                    </div>
+                    {option.minCompleted > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        Requires {option.minCompleted}+ completed
+                        bounties
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <div className="text-primary text-sm flex-shrink-0">
+                      ✓
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            This overrides the automatic avatar color.
+          </p>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex justify-end gap-3">
+        <Button
+          variant="outline"
+          onClick={closeBadgeModal}
+          disabled={isSavingBadges}
+        >
+          Cancel
+        </Button>
+        {selectedUserForBadges && (
+          <Button onClick={saveUserBadges} disabled={isSavingBadges}>
+            {isSavingBadges ? "Saving..." : "Save Changes"}
+          </Button>
+        )}
+      </div>
+    </div>
+  </div>
+)}
         </div>
       </main>
     </ProtectedRoute>

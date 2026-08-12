@@ -54,6 +54,12 @@ const STATUS_COLUMNS: {
     color: "border-t-green-500",
     dotColor: "bg-green-500",
   },
+  {
+    status: "CANCELLED",
+    label: "Cancelled",
+    color: "border-t-red-500",
+    dotColor: "bg-red-500",
+  },
 ];
 
 const MONTH_LABELS = [

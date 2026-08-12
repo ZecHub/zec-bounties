@@ -233,6 +233,7 @@ export default function AdminDashboard() {
     fetchBountyApplications,
     fetchWorkSubmissions,
     reviewWorkSubmission,
+    rejectOtherSubmissions,
     paymentIDs,
     paymentChain,
     paymentServerUrl,
@@ -377,6 +378,19 @@ export default function AdminDashboard() {
     setIsUpdating(true);
     try {
       approveBounty(bountyId, approved);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRejectOthers = async (submissionId: string) => {
+    setIsUpdating(true);
+    try {
+      await rejectOtherSubmissions(submissionId);
+      await Promise.all([loadWorkSubmissions(), fetchAllSubmissions()]);
+    } catch (error) {
+      console.error("Failed to reject other submissions:", error);
+      toast.error("Failed to reject other submissions");
     } finally {
       setIsUpdating(false);
     }
@@ -1630,11 +1644,37 @@ export default function AdminDashboard() {
                     )}
 
                     {submission.status === "approved" && (
-                      <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-900/20">
-                        <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-600 dark:text-green-400" />
-                        <p className="text-xs text-green-700 dark:text-green-300">
-                          Approved — bounty marked as Done
-                        </p>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-900/20">
+                          <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-600 dark:text-green-400" />
+                          <p className="text-xs text-green-700 dark:text-green-300">
+                            Approved
+                          </p>
+                        </div>
+
+                        {workSubmissions.some(
+                          (s) =>
+                            s.id !== submission.id && s.status === "pending",
+                        ) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  "Reject all other pending submissions for this bounty? This can't be undone.",
+                                )
+                              ) {
+                                handleRejectOthers(submission.id);
+                              }
+                            }}
+                            disabled={isUpdating}
+                            className="w-full gap-1.5 text-xs text-destructive hover:bg-destructive/10"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Reject remaining pending submissions
+                          </Button>
+                        )}
                       </div>
                     )}
 
