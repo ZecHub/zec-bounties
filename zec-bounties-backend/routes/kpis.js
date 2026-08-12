@@ -87,10 +87,26 @@ router.get("/top-contributors", authenticate, async (req, res) => {
         const hasUA = !!u.UA_address;
         const hasZ = !!u.z_address;
 
+        // App allows UA or z-address, not both. Lone z-address => Sapling-only.
         let addressType = "None";
-        if (hasUA && hasZ) addressType = "UA + z";
-        else if (hasUA) addressType = "UA only";
-        else if (hasZ) addressType = "Sapling";
+        let receivers = {
+          transparent: false,
+          sapling: false,
+          ironwood: false,
+        };
+        if (hasUA && hasZ) {
+          // Should not happen; prefer UA for type, client may refine via WASM
+          addressType = "UA only";
+        } else if (hasUA) {
+          addressType = "UA only"; // refined on admin client via WASM
+        } else if (hasZ) {
+          addressType = "Sapling";
+          receivers = {
+            transparent: false,
+            sapling: true,
+            ironwood: false,
+          };
+        }
 
         const userBadges = Array.isArray(u.badges) ? [...u.badges] : [];
 
@@ -110,7 +126,9 @@ router.get("/top-contributors", authenticate, async (req, res) => {
           nickname: u.nickname || null,
           avatar: u.avatar || null,
           UA_address: u.UA_address || null,
+          z_address: u.z_address || null,
           addressType,
+          receivers,
           badges: userBadges,
           completed: 0,
           cancelled: 0,
@@ -200,9 +218,23 @@ router.get("/top-contributors", authenticate, async (req, res) => {
         const hasZ = !!bounty.assigneeUser.z_address;
 
         let addressType = "None";
-        if (hasUA && hasZ) addressType = "UA + z";
-        else if (hasUA) addressType = "UA only";
-        else if (hasZ) addressType = "Sapling";
+        let receivers = {
+          transparent: false,
+          sapling: false,
+          ironwood: false,
+        };
+        if (hasUA && hasZ) {
+          addressType = "UA only";
+        } else if (hasUA) {
+          addressType = "UA only";
+        } else if (hasZ) {
+          addressType = "Sapling";
+          receivers = {
+            transparent: false,
+            sapling: true,
+            ironwood: false,
+          };
+        }
 
         const userBadges = Array.isArray(bounty.assigneeUser.badges)
           ? [...bounty.assigneeUser.badges]
@@ -224,7 +256,9 @@ router.get("/top-contributors", authenticate, async (req, res) => {
           nickname: bounty.assigneeUser.nickname || null,
           avatar: bounty.assigneeUser.avatar || null,
           UA_address: bounty.assigneeUser.UA_address || null,
+          z_address: bounty.assigneeUser.z_address || null,
           addressType,
+          receivers,
           badges: userBadges,
           completed: 0,
           submitted: 0,
