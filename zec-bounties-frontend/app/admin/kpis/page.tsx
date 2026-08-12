@@ -645,6 +645,26 @@ export default function KpisDashboard() {
   }, [topContributors, sortKey, sortDirection]);
 
 
+
+  /** Same rules as the member Users icon color in getBadgeIcons */
+  const effectiveAvatarColorKey = (
+    completed: number = 0,
+    badges?: string[],
+  ) => {
+    const list = Array.isArray(badges) ? badges : [];
+    const override = list.find((b) => b.startsWith("avatar:"));
+    if (override && override !== "avatar:default") {
+      return override;
+    }
+    if (completed >= 60) return "avatar:pink";
+    if (completed >= 20) return "avatar:gold";
+    if (completed >= 10) return "avatar:purple";
+    if (completed >= 5) return "avatar:blue";
+    if (completed >= 1) return "avatar:red";
+    return "avatar:default";
+  };
+
+
   const displayedContributors = useMemo(() => {
   return sortedContributors.filter((u) => {
     // Badge filter
@@ -658,13 +678,12 @@ export default function KpisDashboard() {
       if (!hit) return false;
     }
 
-    // Avatar color filter
+    // Avatar color filter — match visible member icon color
     if (avatarColorFilter.length > 0) {
-      const userAvatar =
-        (Array.isArray(u.badges)
-          ? u.badges.find((b: string) => b.startsWith("avatar:"))
-          : null) ?? "avatar:default";
-
+      const userAvatar = effectiveAvatarColorKey(
+        u.completed || 0,
+        Array.isArray(u.badges) ? u.badges : [],
+      );
       if (!avatarColorFilter.includes(userAvatar)) return false;
     }
 
