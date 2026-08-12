@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { DUMMY_BOUNTIES } from "@/lib/data";
 import { BountyCard } from "@/components/bounty-card";
@@ -35,7 +36,13 @@ export default function MarketplacePage() {
     currentUser,
     categories,
     createCategory,
+    fetchBountyById,
   } = useBounty();
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [activeCategory, setActiveCategory] = useState("All");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -48,6 +55,18 @@ export default function MarketplacePage() {
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categoryError, setCategoryError] = useState("");
+
+  // Open a bounty and reflect it in the URL
+  const openBounty = (bounty: Bounty) => {
+    setSelectedBounty(bounty);
+    setIsDetailModalOpen(true);
+    router.push(`${pathname}?bounty=${bounty.id}`, { scroll: false });
+  };
+
+  const closeBounty = () => {
+    setIsDetailModalOpen(false);
+    router.push(pathname, { scroll: false }); // strips the query param
+  };
 
   const handleAddCategory = async () => {
     if (newCategoryName.trim() === "") return;
@@ -121,6 +140,29 @@ export default function MarketplacePage() {
       .length;
   };
 
+  // On load / when the URL param changes, open the matching bounty
+  useEffect(() => {
+    const bountyId = searchParams.get("bounty");
+    if (!bountyId) return;
+
+    // Prefer the copy already in the list (avoids a flash of stale data)
+    const inMemory = bounties.find((b) => b.id === bountyId);
+    if (inMemory) {
+      setSelectedBounty(inMemory);
+      setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Fall back to a direct fetch — handles deep links before bounties load,
+    // or bounties the current filtered list doesn't include
+    fetchBountyById(bountyId).then((bounty) => {
+      if (bounty) {
+        setSelectedBounty(bounty);
+        setIsDetailModalOpen(true);
+      }
+    });
+  }, [searchParams, bounties, fetchBountyById]);
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <AdminNavbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
@@ -151,7 +193,9 @@ export default function MarketplacePage() {
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={setIsDetailModalOpen}
+          onOpenChange={(open) =>
+            open ? setIsDetailModalOpen(true) : closeBounty()
+          }
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -294,10 +338,7 @@ export default function MarketplacePage() {
                     key={bounty.id}
                     bounty={bounty}
                     viewMode={viewMode}
-                    onClick={() => {
-                      setSelectedBounty(bounty);
-                      setIsDetailModalOpen(true);
-                    }}
+                    onClick={() => openBounty(bounty)}
                   />
                 ))}
               </div>

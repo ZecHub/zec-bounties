@@ -2437,7 +2437,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to create bounty");
 
       const created = await res.json();
-      console.log(created);
       setBounties((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create bounty:", error);

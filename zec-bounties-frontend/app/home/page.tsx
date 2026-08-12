@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { BountyCard } from "@/components/bounty-card";
 import { Button } from "@/components/ui/button";
@@ -65,8 +65,13 @@ function HomeContent() {
     bountiesLoading,
     loadMoreBounties,
     hasMoreBounties,
+    fetchBountyById,
   } = useBounty();
+
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [activeCategory, setActiveCategory] = useState("All");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -108,6 +113,18 @@ function HomeContent() {
   );
 
   const missingUA = !currentUser?.UA_address;
+
+  // Open a bounty and reflect it in the URL
+  const openBounty = (bounty: Bounty) => {
+    setSelectedBounty(bounty);
+    setIsDetailModalOpen(true);
+    router.push(`${pathname}?bounty=${bounty.id}`, { scroll: false });
+  };
+
+  const closeBounty = () => {
+    setIsDetailModalOpen(false);
+    router.push(pathname, { scroll: false }); // strips the query param
+  };
 
   const getCategoryCount = (name: string) =>
     name === "All"
@@ -159,6 +176,29 @@ function HomeContent() {
     return () => observer.disconnect();
   }, [canLoadMore, isLoadingMore, bountiesLoading, handleLoadMore]);
 
+  // On load / when the URL param changes, open the matching bounty
+  useEffect(() => {
+    const bountyId = searchParams.get("bounty");
+    if (!bountyId) return;
+
+    // Prefer the copy already in the list (avoids a flash of stale data)
+    const inMemory = bounties.find((b) => b.id === bountyId);
+    if (inMemory) {
+      setSelectedBounty(inMemory);
+      setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Fall back to a direct fetch — handles deep links before bounties load,
+    // or bounties the current filtered list doesn't include
+    fetchBountyById(bountyId).then((bounty) => {
+      if (bounty) {
+        setSelectedBounty(bounty);
+        setIsDetailModalOpen(true);
+      }
+    });
+  }, [searchParams, bounties, fetchBountyById]);
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
@@ -196,7 +236,9 @@ function HomeContent() {
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={setIsDetailModalOpen}
+          onOpenChange={(open) =>
+            open ? setIsDetailModalOpen(true) : closeBounty()
+          }
         />
 
         <div className="imd:flex imd:flex-row gap-8 min-w-0 grid grid-cols-1">
@@ -323,10 +365,7 @@ function HomeContent() {
                                 key={bounty.id}
                                 bounty={bounty}
                                 viewMode="kanban"
-                                onClick={() => {
-                                  setSelectedBounty(bounty);
-                                  setIsDetailModalOpen(true);
-                                }}
+                                onClick={() => openBounty(bounty)}
                               />
                             ))
                           )}
@@ -361,10 +400,7 @@ function HomeContent() {
                             key={bounty.id}
                             bounty={bounty}
                             viewMode="list"
-                            onClick={() => {
-                              setSelectedBounty(bounty);
-                              setIsDetailModalOpen(true);
-                            }}
+                            onClick={() => openBounty(bounty)}
                           />
                         ))}
                       </div>
