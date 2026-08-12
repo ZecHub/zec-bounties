@@ -40,6 +40,11 @@ import {
   format,
 } from "date-fns";
 import { toast } from "sonner";
+import {
+  bountyCreatorName,
+  bountyCreatorInitial,
+  bountyCreatorAvatarSrc,
+} from "@/lib/displayName";
 
 function isNewBounty(dateCreated: Date | string): boolean {
   const created = new Date(dateCreated);
@@ -254,15 +259,13 @@ export function BountyCard({
                 <Avatar className="h-5 w-5 border shrink-0">
                   <AvatarImage
                     src={
-                      bounty.createdByUser?.avatar || "/placeholder-user.jpg"
+                      bountyCreatorAvatarSrc(bounty) || "/placeholder-user.jpg"
                     }
                   />
                   <AvatarFallback className="text-[9px]">?</AvatarFallback>
                 </Avatar>
                 <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
-                  {bounty.createdByUser?.nickname ||
-                    bounty.createdByUser?.name ||
-                    "Unknown"}
+                  {bountyCreatorName(bounty)}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -405,9 +408,9 @@ export function BountyCard({
             {/* Avatar — always visible */}
             <Avatar className="h-8 w-8 imd:h-10 imd:w-10 border shrink-0">
               <AvatarImage
-                src={bounty.createdByUser?.avatar || "/placeholder-user.jpg"}
+                src={bountyCreatorAvatarSrc(bounty) || "/placeholder-user.jpg"}
               />
-              <AvatarFallback>{"None"}</AvatarFallback>
+              <AvatarFallback>{bountyCreatorInitial(bounty)}</AvatarFallback>
             </Avatar>
 
             {/* Name + title + description (description only on <imd) */}
@@ -425,7 +428,7 @@ export function BountyCard({
                 )}
               </h3>
               <p className="text-xs text-muted-foreground truncate">
-                {bounty.createdByUser?.nickname || bounty.createdByUser?.name}
+                {bountyCreatorName(bounty)}
               </p>
               {/* Description shown only below imd */}
               <p className="imd:hidden text-xs text-muted-foreground line-clamp-1 mt-0.5 opacity-80">
@@ -633,13 +636,13 @@ export function BountyCard({
           <div className="flex gap-3 items-center">
             <Avatar className="h-10 w-10 border">
               <AvatarImage
-                src={bounty.createdByUser?.avatar || "/placeholder-user.jpg"}
+                src={bountyCreatorAvatarSrc(bounty) || "/placeholder-user.jpg"}
               />
-              <AvatarFallback>{"None"}</AvatarFallback>
+              <AvatarFallback>{bountyCreatorInitial(bounty)}</AvatarFallback>
             </Avatar>
             <div>
               <p className="text-xs text-muted-foreground font-medium">
-                {bounty.createdByUser?.nickname || bounty.createdByUser?.name}
+                {bountyCreatorName(bounty)}
               </p>
               <h3 className="font-semibold line-clamp-1 leading-tight group-hover:text-primary transition-colors">
                 {bounty.title}

@@ -1292,6 +1292,15 @@ export default function KpisDashboard() {
                                 )}
                               </div>
                             </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {getBadgeIcons(
+                                  user.completed,
+                                  user.badges,
+                                  user.role,
+                                )}
+                              </div>
+                            </TableCell>
 
                             {viewMode === "admin" && (
                               <TableCell>
