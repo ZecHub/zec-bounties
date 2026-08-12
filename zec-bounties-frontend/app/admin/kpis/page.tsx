@@ -528,16 +528,36 @@ export default function KpisDashboard() {
 		  ...user,
 		  addressType: decoded.type,
 		  receivers: {
-		    ironwood: decoded.ironwood,
-		    sapling: decoded.sapling,
-		    transparent: decoded.transparent,
+		    ironwood: !!decoded.ironwood,
+		    sapling: !!decoded.sapling,
+		    transparent: !!decoded.transparent,
 		  },
 		};
 	      } catch {
 		return user;
 	      }
 	    }
-	    return user;
+	    // Lone z-address is treated as Sapling-only (app disallows UA + z together)
+	    if (user.z_address) {
+	      return {
+		...user,
+		addressType: "Sapling",
+		receivers: {
+		  ironwood: false,
+		  sapling: true,
+		  transparent: false,
+		},
+	      };
+	    }
+	    return {
+	      ...user,
+	      addressType: user.addressType || "None",
+	      receivers: user.receivers || {
+		ironwood: false,
+		sapling: false,
+		transparent: false,
+	      },
+	    };
 	  });
 	}
         setTopContributors(data);
