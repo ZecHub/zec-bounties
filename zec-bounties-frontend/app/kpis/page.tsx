@@ -178,21 +178,43 @@ function parseTopContributorsResponse(data: any): {
 function enrichWithReceivers(list: any[], isAdmin: boolean) {
   if (!isAdmin) return list;
   return list.map((user: any) => {
-    if (!user.UA_address) return user;
-    try {
-      const decoded = getAddressReceivers(user.UA_address);
+    if (user.UA_address) {
+      try {
+        const decoded = getAddressReceivers(user.UA_address);
+        return {
+          ...user,
+          addressType: decoded.type,
+          receivers: {
+            ironwood: !!(decoded as any).ironwood,
+            sapling: !!(decoded as any).sapling,
+            transparent: !!(decoded as any).transparent,
+          },
+        };
+      } catch {
+        return user;
+      }
+    }
+    // Lone z-address => Sapling-only (UA and z are mutually exclusive)
+    if (user.z_address) {
       return {
         ...user,
-        addressType: decoded.type,
+        addressType: "Sapling",
         receivers: {
-          ironwood: !!(decoded as any).ironwood,
-          sapling: !!(decoded as any).sapling,
-          transparent: !!(decoded as any).transparent,
+          ironwood: false,
+          sapling: true,
+          transparent: false,
         },
       };
-    } catch {
-      return user;
     }
+    return {
+      ...user,
+      addressType: user.addressType || "None",
+      receivers: user.receivers || {
+        ironwood: false,
+        sapling: false,
+        transparent: false,
+      },
+    };
   });
 }
 
