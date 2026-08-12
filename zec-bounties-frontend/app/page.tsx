@@ -68,6 +68,13 @@ export default function RootPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   // Redirect logged-in users straight to /home
   useEffect(() => {
     if (!isLoading && currentUser && currentUser.role === "CLIENT")
@@ -76,12 +83,28 @@ export default function RootPage() {
       router.replace("/admin");
   }, [currentUser, isLoading, router]);
 
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // On load / when the URL param changes, open the matching bounty
+  useEffect(() => {
+    const bountyId = searchParams.get("bounty");
+    if (!bountyId) return;
+
+    // Prefer the copy already in the list (avoids a flash of stale data)
+    const inMemory = bounties.find((b) => b.id === bountyId);
+    if (inMemory) {
+      setSelectedBounty(inMemory);
+      setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Fall back to a direct fetch — handles deep links before bounties load,
+    // or bounties the current filtered list doesn't include
+    fetchBountyById(bountyId).then((bounty) => {
+      if (bounty) {
+        setSelectedBounty(bounty);
+        setIsDetailModalOpen(true);
+      }
+    });
+  }, [searchParams, bounties, fetchBountyById]);
 
   const displayCategories = ["All", ...categories.map((c) => c.name)];
 
@@ -150,29 +173,6 @@ export default function RootPage() {
 
   // Logged-in users are being redirected, render nothing
   if (currentUser) return null;
-
-  // On load / when the URL param changes, open the matching bounty
-  useEffect(() => {
-    const bountyId = searchParams.get("bounty");
-    if (!bountyId) return;
-
-    // Prefer the copy already in the list (avoids a flash of stale data)
-    const inMemory = bounties.find((b) => b.id === bountyId);
-    if (inMemory) {
-      setSelectedBounty(inMemory);
-      setIsDetailModalOpen(true);
-      return;
-    }
-
-    // Fall back to a direct fetch — handles deep links before bounties load,
-    // or bounties the current filtered list doesn't include
-    fetchBountyById(bountyId).then((bounty) => {
-      if (bounty) {
-        setSelectedBounty(bounty);
-        setIsDetailModalOpen(true);
-      }
-    });
-  }, [searchParams, bounties, fetchBountyById]);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
