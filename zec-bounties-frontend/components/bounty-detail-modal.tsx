@@ -22,6 +22,8 @@ import {
   Send,
   AlertTriangle,
   ExternalLink,
+  Share2,
+  Check,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -63,6 +65,7 @@ export function BountyDetailModal({
   const [editDeliverableUrl, setEditDeliverableUrl] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -163,6 +166,33 @@ export function BountyDetailModal({
       toast.error("Failed to update submission");
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/bounty/${bounty.id}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: bounty.title,
+          text: `Check out this bounty: ${bounty.title}`,
+          url,
+        });
+        return;
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        // fall through to clipboard on other errors
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy link");
     }
   };
 
@@ -337,9 +367,24 @@ export function BountyDetailModal({
               </Badge>
             )}
           </div>
-          <DialogTitle className="text-lg font-semibold leading-snug">
-            {bounty.title}
-          </DialogTitle>
+          <div className="flex items-start justify-between gap-2">
+            <DialogTitle className="text-lg font-semibold leading-snug flex-1">
+              {bounty.title}
+            </DialogTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={handleShare}
+              title="Share this bounty"
+            >
+              {linkCopied ? (
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <Share2 className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
           <DialogDescription className="flex items-center gap-3 mt-1">
             <span className="flex items-center gap-1 text-xs">
               <Clock className="h-3 w-3" />
