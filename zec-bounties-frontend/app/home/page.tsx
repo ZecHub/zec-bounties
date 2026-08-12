@@ -428,7 +428,7 @@ function HomeContent() {
 export default function HomePage() {
   useRoleGuard("CLIENT");
   return (
-    <ProtectedRoute>
+    <ProtectedRoute blockAdmin>
       <HomeContent />
     </ProtectedRoute>
   );
