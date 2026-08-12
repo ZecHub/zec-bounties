@@ -170,7 +170,7 @@ export function BountyDetailModal({
   };
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/bounties/${bounty.id}`;
+    const url = `${window.location.origin}/bounty/${bounty.id}`;
 
     if (navigator.share) {
       try {
