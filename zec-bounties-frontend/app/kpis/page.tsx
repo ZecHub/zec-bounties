@@ -413,13 +413,11 @@ export default function KpisDashboard() {
 
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
-
   const [badgeFilter, setBadgeFilter] = useState<string[]>([]);
   const [receiverFilter, setReceiverFilter] = useState<
     ("none" | "transparent" | "sapling" | "ironwood")[]
   >([]);
   const [receiverMode, setReceiverMode] = useState<"all" | "any">("all");
-
 
   const timeRangeConfig = {
     "30d": {
@@ -616,7 +614,6 @@ export default function KpisDashboard() {
     });
   }, [topContributors, sortKey, sortDirection]);
 
-
   const displayedContributors = useMemo(() => {
     return sortedContributors.filter((u) => {
       if (badgeFilter.length) {
@@ -654,14 +651,7 @@ export default function KpisDashboard() {
 
       return true;
     });
-  }, [
-    sortedContributors,
-    badgeFilter,
-    receiverFilter,
-    receiverMode,
-    viewMode,
-  ]);
-
+  }, [sortedContributors, badgeFilter, receiverFilter, receiverMode, viewMode]);
 
   // Prefer server summary; fall back for old API shape
   const totalBounties =
@@ -932,9 +922,7 @@ export default function KpisDashboard() {
       n.includes("sapling") ||
       n.includes("transparent")
     ) {
-      return type
-        .replace(/orchard/gi, "Ironwood")
-        .replace(/\s*\+\s*/g, " + ");
+      return type.replace(/orchard/gi, "Ironwood").replace(/\s*\+\s*/g, " + ");
     }
 
     if (n === "full" || n === "ua + z") return "Ironwood + Sapling";
@@ -1101,7 +1089,6 @@ export default function KpisDashboard() {
                   Clear filters
                 </Button>
               )}
-
             </div>
           </div>
 
@@ -1260,29 +1247,31 @@ export default function KpisDashboard() {
                           >
                             <TableCell>#{index + 1}</TableCell>
                             <TableCell>
-				  <Link
-				    href={profileHref(user)}
-				    className="inline-block hover:opacity-80"
-				    title="View profile"
-				  >
-				    <UserAvatar
-				      user={user}
-				      getDefaultAvatarClasses={getDefaultAvatarClasses}
-				    />
-				  </Link>
-				</TableCell>
+                              <Link
+                                href={profileHref(user)}
+                                className="inline-block hover:opacity-80"
+                                title="View profile"
+                              >
+                                <UserAvatar
+                                  user={user}
+                                  getDefaultAvatarClasses={
+                                    getDefaultAvatarClasses
+                                  }
+                                />
+                              </Link>
+                            </TableCell>
                             <TableCell>
-				  <Link
-				    href={profileHref(user)}
-				    className="hover:underline font-medium"
-				  >
-				    {user.name}
-				  </Link>
-				</TableCell>
-				<TableCell>{user.completed}</TableCell>
-				<TableCell className="text-muted-foreground">
-				  {user.submitted}
-				</TableCell>
+                              <Link
+                                href={profileHref(user)}
+                                className="hover:underline font-medium"
+                              >
+                                {user.name}
+                              </Link>
+                            </TableCell>
+                            <TableCell>{user.completed}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {user.submitted}
+                            </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5">
                                 {getBadgeIcons(
@@ -1296,9 +1285,7 @@ export default function KpisDashboard() {
                             {viewMode === "admin" && (
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  {getAddressTypeIcons(
-                                    (user as any).receivers,
-                                  )}
+                                  {getAddressTypeIcons((user as any).receivers)}
                                 </div>
                               </TableCell>
                             )}

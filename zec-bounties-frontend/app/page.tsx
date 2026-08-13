@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
 import { BountyCard } from "@/components/bounty-card";
@@ -61,8 +61,19 @@ export default function RootPage() {
     isLoading,
     loadMoreBounties,
     hasMoreBounties,
+    fetchBountyById,
   } = useBounty();
+
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Redirect logged-in users straight to /home
   useEffect(() => {
@@ -72,12 +83,28 @@ export default function RootPage() {
       router.replace("/admin");
   }, [currentUser, isLoading, router]);
 
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // On load / when the URL param changes, open the matching bounty
+  useEffect(() => {
+    const bountyId = searchParams.get("bounty");
+    if (!bountyId) return;
+
+    // Prefer the copy already in the list (avoids a flash of stale data)
+    const inMemory = bounties.find((b) => b.id === bountyId);
+    if (inMemory) {
+      setSelectedBounty(inMemory);
+      setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Fall back to a direct fetch — handles deep links before bounties load,
+    // or bounties the current filtered list doesn't include
+    fetchBountyById(bountyId).then((bounty) => {
+      if (bounty) {
+        setSelectedBounty(bounty);
+        setIsDetailModalOpen(true);
+      }
+    });
+  }, [searchParams, bounties, fetchBountyById]);
 
   const displayCategories = ["All", ...categories.map((c) => c.name)];
 
@@ -108,6 +135,18 @@ export default function RootPage() {
       })),
     [filteredBounties],
   );
+
+  // Open a bounty and reflect it in the URL
+  const openBounty = (bounty: Bounty) => {
+    setSelectedBounty(bounty);
+    setIsDetailModalOpen(true);
+    router.push(`${pathname}?bounty=${bounty.id}`, { scroll: false });
+  };
+
+  const closeBounty = () => {
+    setIsDetailModalOpen(false);
+    router.push(pathname, { scroll: false }); // strips the query param
+  };
 
   const getCategoryCount = (name: string) =>
     name === "All"
@@ -164,7 +203,9 @@ export default function RootPage() {
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={setIsDetailModalOpen}
+          onOpenChange={(open) =>
+            open ? setIsDetailModalOpen(true) : closeBounty()
+          }
         />
 
         <div className="imd:flex imd:flex-row gap-8 min-w-0 grid grid-cols-1">
@@ -288,10 +329,7 @@ export default function RootPage() {
                                 key={bounty.id}
                                 bounty={bounty}
                                 viewMode="kanban"
-                                onClick={() => {
-                                  setSelectedBounty(bounty);
-                                  setIsDetailModalOpen(true);
-                                }}
+                                onClick={() => openBounty(bounty)}
                               />
                             ))
                           )}
@@ -326,10 +364,7 @@ export default function RootPage() {
                             key={bounty.id}
                             bounty={bounty}
                             viewMode="list"
-                            onClick={() => {
-                              setSelectedBounty(bounty);
-                              setIsDetailModalOpen(true);
-                            }}
+                            onClick={() => openBounty(bounty)}
                           />
                         ))}
                       </div>

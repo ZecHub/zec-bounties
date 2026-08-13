@@ -149,6 +149,7 @@ interface BountyContextType {
   totalBountyCount: number;
   totalActiveCount: number;
   statusCounts: Record<string, number>;
+  unpaidDoneCount: number;
   fetchBountyById: (id: string) => Promise<Bounty | null>;
   fetchTransactionHashes: () => Promise<void>;
   applyToBounty: (bountyId: string, message: string) => Promise<void>;
@@ -360,6 +361,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [totalBountyCount, setTotalBountyCount] = useState(0);
   const [totalActiveCount, setTotalActiveCount] = useState(0);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const [unpaidDoneCount, setUnpaidDoneCount] = useState(0);
   const [zcashParams, setZcashParams] = useState<ZcashParams[]>([]);
   const [zcashParamsLoading, setZcashParamsLoading] = useState(false);
 
@@ -2391,6 +2393,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           (data.statusCounts?.IN_REVIEW ?? 0),
       );
       setStatusCounts(data.statusCounts ?? {});
+      setUnpaidDoneCount(data.unpaidDoneCount ?? 0);
     } catch (error) {
       console.error("Failed to fetch bounty stats:", error);
     }
@@ -2437,7 +2440,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to create bounty");
 
       const created = await res.json();
-      console.log(created);
       setBounties((prev) => [created, ...prev]);
     } catch (error) {
       console.error("Failed to create bounty:", error);
@@ -2913,6 +2915,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         totalBountyCount,
         totalActiveCount,
         statusCounts,
+        unpaidDoneCount,
         fetchBountyById,
         applyToBounty,
         editBounty,
