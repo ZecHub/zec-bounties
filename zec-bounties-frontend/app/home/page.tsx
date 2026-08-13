@@ -2,13 +2,14 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { BountyCard } from "@/components/bounty-card";
 import { Button } from "@/components/ui/button";
 import {
   LayoutGrid,
   List,
+  Grid3X3,
   Plus,
   Filter,
   ArrowRight,
@@ -22,6 +23,7 @@ import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
+import { formatStatus } from "@/lib/utils";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 
@@ -57,6 +59,33 @@ const KANBAN_COLUMNS: {
   },
 ];
 
+// Windows 98-style defrag map colors (inspired by classic Disk Defragmenter)
+const DEFRAG_STATUS_COLORS: Record<BountyStatus, string> = {
+  TO_DO: "bg-cyan-400", // free / pending
+  IN_PROGRESS: "bg-blue-800", // allocated / in use
+  IN_REVIEW: "bg-red-500", // fragmented / needs attention
+  DONE: "bg-blue-500", // contiguous / completed
+  CANCELLED: "bg-zinc-700",
+};
+
+const DEFRAG_LEGEND: { status: BountyStatus; label: string; color: string }[] =
+  [
+    { status: "TO_DO", label: "Todo", color: "bg-cyan-400" },
+    { status: "IN_PROGRESS", label: "In Progress", color: "bg-blue-800" },
+    { status: "IN_REVIEW", label: "In Review", color: "bg-red-500" },
+    { status: "DONE", label: "Done", color: "bg-blue-500" },
+    { status: "CANCELLED", label: "Cancelled", color: "bg-zinc-700" },
+  ];
+
+// Order for defrag map so same-status blocks form contiguous runs (classic look)
+const STATUS_ORDER: BountyStatus[] = [
+  "TO_DO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "DONE",
+  "CANCELLED",
+];
+
 function HomeContent() {
   const {
     bounties,
@@ -65,10 +94,15 @@ function HomeContent() {
     bountiesLoading,
     loadMoreBounties,
     hasMoreBounties,
+    fetchBountyById,
   } = useBounty();
+
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [activeCategory, setActiveCategory] = useState("All");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
@@ -107,7 +141,30 @@ function HomeContent() {
     [filteredBounties],
   );
 
+  const defragBounties = useMemo(() => {
+    return [...filteredBounties].sort((a, b) => {
+      const ai = STATUS_ORDER.indexOf(a.status);
+      const bi = STATUS_ORDER.indexOf(b.status);
+      if (ai !== bi) return ai - bi;
+      return (
+        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+      );
+    });
+  }, [filteredBounties]);
+
   const missingUA = !currentUser?.UA_address;
+
+  // Open a bounty and reflect it in the URL
+  const openBounty = (bounty: Bounty) => {
+    setSelectedBounty(bounty);
+    setIsDetailModalOpen(true);
+    router.push(`${pathname}?bounty=${bounty.id}`, { scroll: false });
+  };
+
+  const closeBounty = () => {
+    setIsDetailModalOpen(false);
+    router.push(pathname, { scroll: false }); // strips the query param
+  };
 
   const getCategoryCount = (name: string) =>
     name === "All"
@@ -159,6 +216,29 @@ function HomeContent() {
     return () => observer.disconnect();
   }, [canLoadMore, isLoadingMore, bountiesLoading, handleLoadMore]);
 
+  // On load / when the URL param changes, open the matching bounty
+  useEffect(() => {
+    const bountyId = searchParams.get("bounty");
+    if (!bountyId) return;
+
+    // Prefer the copy already in the list (avoids a flash of stale data)
+    const inMemory = bounties.find((b) => b.id === bountyId);
+    if (inMemory) {
+      setSelectedBounty(inMemory);
+      setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Fall back to a direct fetch — handles deep links before bounties load,
+    // or bounties the current filtered list doesn't include
+    fetchBountyById(bountyId).then((bounty) => {
+      if (bounty) {
+        setSelectedBounty(bounty);
+        setIsDetailModalOpen(true);
+      }
+    });
+  }, [searchParams, bounties, fetchBountyById]);
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
@@ -196,7 +276,9 @@ function HomeContent() {
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={setIsDetailModalOpen}
+          onOpenChange={(open) =>
+            open ? setIsDetailModalOpen(true) : closeBounty()
+          }
         />
 
         <div className="imd:flex imd:flex-row gap-8 min-w-0 grid grid-cols-1">
@@ -246,6 +328,15 @@ function HomeContent() {
                   onClick={() => setViewMode("list")}
                 >
                   <List className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === "defrag" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setViewMode("defrag")}
+                  title="Defrag map view"
+                >
+                  <Grid3X3 className="h-4 w-4" />
                 </Button>
                 {canLoadMore && (
                   <div className="relative group">
@@ -323,16 +414,81 @@ function HomeContent() {
                                 key={bounty.id}
                                 bounty={bounty}
                                 viewMode="kanban"
-                                onClick={() => {
-                                  setSelectedBounty(bounty);
-                                  setIsDetailModalOpen(true);
-                                }}
+                                onClick={() => openBounty(bounty)}
                               />
                             ))
                           )}
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )
+            ) : viewMode === "defrag" ? (
+              filteredBounties.length === 0 ? (
+                <div className="text-center py-20 border rounded-xl bg-muted/20">
+                  <p className="text-muted-foreground">
+                    No bounties found
+                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
+                    {searchQuery ? " matching your search" : ""}.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                    {DEFRAG_LEGEND.map((item) => (
+                      <div key={item.status} className="flex items-center gap-1.5">
+                        <span
+                          className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                    <span className="ml-auto text-[11px] opacity-70">
+                      {filteredBounties.length} bounties · click a block to open
+                    </span>
+                  </div>
+                  <div
+                    className="rounded border border-border bg-black p-1.5 overflow-hidden"
+                    style={{
+                      // Classic dense map look
+                      imageRendering: "pixelated",
+                    }}
+                  >
+                    <div
+                      className="grid gap-px"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, 14px)",
+                        justifyContent: "start",
+                      }}
+                    >
+                      {defragBounties.map((bounty) => {
+                        const color =
+                          DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
+                        return (
+                          <button
+                            key={bounty.id}
+                            type="button"
+                            title={`${bounty.title} — ${formatStatus(bounty.status)}`}
+                            onClick={() => openBounty(bounty)}
+                            className={`
+                              relative h-[14px] w-[14px]
+                              border border-black/90 ${color}
+                              hover:z-10 hover:scale-[1.8] hover:border-white
+                              focus:outline-none focus:ring-1 focus:ring-white
+                              transition-transform duration-75
+                              cursor-pointer
+                            `}
+                          >
+                            {/* center "data" pixel for Done / In Progress (classic map look) */}
+                            {(bounty.status === "DONE" ||
+                              bounty.status === "IN_PROGRESS") && (
+                              <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )
@@ -361,10 +517,7 @@ function HomeContent() {
                             key={bounty.id}
                             bounty={bounty}
                             viewMode="list"
-                            onClick={() => {
-                              setSelectedBounty(bounty);
-                              setIsDetailModalOpen(true);
-                            }}
+                            onClick={() => openBounty(bounty)}
                           />
                         ))}
                       </div>
