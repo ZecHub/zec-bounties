@@ -242,6 +242,7 @@ export default function AdminDashboard() {
     fetchAllSubmissions,
     totalActiveCount,
     statusCounts,
+    unpaidDoneCount,
     categories,
   } = useBounty();
 
@@ -494,7 +495,7 @@ export default function AdminDashboard() {
       id: "payments",
       label: "Payments Due",
       icon: CreditCard,
-      badge: completedBounties.length > 0 ? completedBounties.length : null,
+      badge: unpaidDoneCount > 0 ? unpaidDoneCount : null,
     },
     {
       id: "txids",
@@ -644,10 +645,10 @@ export default function AdminDashboard() {
                 />
                 <StatCard
                   label="Needs Action"
-                  value={pendingReviewCount + completedBounties.length}
+                  value={pendingReviewCount + unpaidDoneCount}
                   icon={AlertTriangle}
                   emphasis
-                  hint={`${pendingReviewCount} to review · ${completedBounties.length} to pay`}
+                  hint={`${pendingReviewCount} to review · ${unpaidDoneCount} to pay`}
                   onClick={() => setActiveTab("payments")}
                 />
               </div>
@@ -1232,9 +1233,9 @@ export default function AdminDashboard() {
                 <div>
                   <h2 className="text-base font-semibold">Payments Due</h2>
                   <p className="text-xs text-muted-foreground">
-                    {completedBounties.length} completed{" "}
-                    {completedBounties.length === 1 ? "bounty" : "bounties"}{" "}
-                    awaiting payout
+                    {unpaidDoneCount} completed{" "}
+                    {unpaidDoneCount === 1 ? "bounty" : "bounties"} awaiting
+                    payout
                   </p>
                 </div>
                 <Button

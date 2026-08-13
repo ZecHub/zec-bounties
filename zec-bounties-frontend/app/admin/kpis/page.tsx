@@ -69,6 +69,7 @@ type ChainFilter = "all" | "MAIN" | "TEST";
 type ChartType =
   | "contributors"
   | "earned"
+  | "topEarners"
   | "bountyTypes"
   | "addressTypes"
   | "avgEarnings";
@@ -774,13 +775,30 @@ export default function KpisDashboard() {
     return earners.length > 0 ? totalZecPaid / earners.length : 0;
   }, [topContributors, totalZecPaid]);
 
-  const earnedOverTime = useMemo(() => {
-    if (!topContributors.length) return [];
+  // Real calendar series from API (respects chain + timeRange via average-earnings fetch)
+  const zecEarnedOverTime = useMemo(() => {
     let cumulative = 0;
-    return topContributors.slice(0, 12).map((user) => {
-      cumulative += user.totalEarned || 0;
-      return { month: user.name, total: cumulative };
+    return (averageEarningsOverTime || []).map((row: any) => {
+      const paid = Number(row.totalPaid) || 0;
+      cumulative += paid;
+      return {
+        month: row.month,
+        totalPaid: paid,
+        cumulative: Number(cumulative.toFixed(4)),
+      };
     });
+  }, [averageEarningsOverTime]);
+
+  // Per-member totals — matches table column (same topContributors / chain)
+  const topEarnersChart = useMemo(() => {
+    return [...topContributors]
+      .filter((u) => (u.totalEarned || 0) > 0)
+      .sort((a, b) => (b.totalEarned || 0) - (a.totalEarned || 0))
+      .slice(0, 12)
+      .map((u) => ({
+        name: u.name || "Unknown",
+        totalEarned: Number(u.totalEarned || 0),
+      }));
   }, [topContributors]);
 
   const addressTypeDistribution = useMemo(() => {
@@ -1500,6 +1518,7 @@ export default function KpisDashboard() {
                   >
                     <option value="contributors">Contributors Over Time</option>
                     <option value="earned">Total ZEC Earned Over Time</option>
+                    <option value="topEarners">Top Earners</option>
                     <option value="bountyTypes">Bounty Types Over Time</option>
                     <option value="addressTypes">
                       Address Type Distribution
@@ -1543,12 +1562,27 @@ export default function KpisDashboard() {
                 )}
                 {selectedChart === "earned" && (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={earnedOverTime}>
+                    <BarChart data={zecEarnedOverTime}>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         stroke="var(--border)"
                       />
-                      <XAxis dataKey="month" stroke="var(--muted-foreground)" />
+                      <XAxis
+                        dataKey="month"
+                        stroke="var(--muted-foreground)"
+                        tickFormatter={(value) => {
+                          const [year, month] = String(value).split("-");
+                          if (!year || !month) return value;
+                          const date = new Date(
+                            parseInt(year, 10),
+                            parseInt(month, 10) - 1,
+                          );
+                          return date.toLocaleString("default", {
+                            month: "short",
+                            year: "2-digit",
+                          });
+                        }}
+                      />
                       <YAxis stroke="var(--muted-foreground)" />
                       <Tooltip
                         cursor={{ fill: "var(--muted)", opacity: 0.4 }}
@@ -1561,7 +1595,51 @@ export default function KpisDashboard() {
                       />
                       <Legend />
                       <Bar
-                        dataKey="total"
+                        dataKey="totalPaid"
+                        name="ZEC paid this month"
+                        fill="var(--chart-2)"
+                        radius={[4, 4, 0, 0]}
+                        activeBar={false}
+                      />
+                      <Bar
+                        dataKey="cumulative"
+                        name="Cumulative ZEC paid"
+                        fill="var(--chart-1)"
+                        radius={[4, 4, 0, 0]}
+                        activeBar={false}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+                {selectedChart === "topEarners" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topEarnersChart}>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--border)"
+                      />
+                      <XAxis
+                        dataKey="name"
+                        stroke="var(--muted-foreground)"
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={70}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis stroke="var(--muted-foreground)" />
+                      <Tooltip
+                        cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                        contentStyle={{
+                          backgroundColor: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "6px",
+                          color: "var(--popover-foreground)",
+                        }}
+                      />
+                      <Legend />
+                      <Bar
+                        dataKey="totalEarned"
                         name="Total ZEC Earned"
                         fill="var(--chart-2)"
                         radius={[4, 4, 0, 0]}
