@@ -16,7 +16,15 @@ import { AlertTriangle, CheckCircle2, Coins, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function AuthorizePaymentPanel() {
-  const { bounties, authorizeDuePayment, zcashParams } = useBounty();
+  const {
+    bounties,
+    authorizeDuePayment,
+    zcashParams,
+    unpaidDoneCount,
+    hasMoreBounties,
+    loadMoreBounties,
+    bountiesLoading,
+  } = useBounty();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
@@ -50,6 +58,16 @@ export function AuthorizePaymentPanel() {
       b.chain !== activeChain,
   );
 
+  // unpaidDoneCount is only tracked server-side for MAIN chain today, so we can
+  // only detect "there's more than what's loaded" when paying from a mainnet wallet.
+  // Note this also doesn't filter on isApproved, so it can slightly overcount
+  // vs. eligibleBounties if some DONE/unpaid bounties aren't yet approved.
+  const totalUnpaidOnChain = activeChain === "MAIN" ? unpaidDoneCount : null;
+  const hasUnloadedEligible =
+    totalUnpaidOnChain !== null &&
+    totalUnpaidOnChain > eligibleBounties.length &&
+    hasMoreBounties;
+
   const toggleOne = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -69,37 +87,6 @@ export function AuthorizePaymentPanel() {
   const totalSelected = bounties
     .filter((b) => selectedIds.has(b.id))
     .reduce((sum, b) => sum + b.bountyAmount, 0);
-
-  const handleAuthorize = async () => {
-    if (selectedIds.size === 0) return;
-
-    setIsProcessing(true);
-    try {
-      const result = await authorizeDuePayment(Array.from(selectedIds));
-
-      toast.success("Payment authorized", {
-        description:
-          `${result.paidCount} bounty payment(s) sent` +
-          (result.skipped.length > 0
-            ? `. ${result.skipped.length} skipped (missing z_address).`
-            : "."),
-      });
-
-      setSelectedIds(new Set());
-    } catch (error: any) {
-      // error.message will be "Payment failed: <CLI details>" from the context
-      const [title, ...rest] = error.message?.split(": ") ?? [];
-      const description =
-        rest.join(": ") || error.message || "Failed to authorize payment";
-
-      toast.error(title || "Payment failed", {
-        description,
-        duration: 8000, // keep it visible longer for technical errors
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
@@ -125,6 +112,30 @@ export function AuthorizePaymentPanel() {
   };
 
   if (eligibleBounties.length === 0) {
+    if (hasUnloadedEligible) {
+      return (
+        <div className="text-center py-8 text-muted-foreground space-y-3">
+          <Coins className="w-8 h-8 mx-auto mb-2 opacity-40" />
+          <p className="text-sm">
+            {totalUnpaidOnChain} bount
+            {totalUnpaidOnChain === 1 ? "y is" : "ies are"} ready for payment,
+            but not loaded into this view yet.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={loadMoreBounties}
+            disabled={bountiesLoading}
+            className="gap-2"
+          >
+            {bountiesLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : null}
+            {bountiesLoading ? "Loading…" : "Load more bounties"}
+          </Button>
+        </div>
+      );
+    }
     return (
       <div className="text-center py-8 text-muted-foreground">
         <Coins className="w-8 h-8 mx-auto mb-2 opacity-40" />
@@ -157,7 +168,7 @@ export function AuthorizePaymentPanel() {
           <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
           <span className="text-yellow-800 dark:text-yellow-200">
             <span className="font-medium">
-              {blockedBounties.length} bounty
+              {blockedBounties.length} bount
               {blockedBounties.length > 1 ? "ies" : "y"} hidden
             </span>{" "}
             — your default wallet is on{" "}
@@ -171,6 +182,29 @@ export function AuthorizePaymentPanel() {
             </span>
             . Switch your default wallet to pay them.
           </span>
+        </div>
+      )}
+
+      {/* Pagination warning — some eligible bounties loaded, but more exist */}
+      {hasUnloadedEligible && (
+        <div className="flex items-start gap-2.5 text-sm p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <span className="text-blue-800 dark:text-blue-200 flex-1">
+            Showing {eligibleBounties.length} of {totalUnpaidOnChain} unpaid
+            bounties. "Select all" only selects what's currently loaded.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={loadMoreBounties}
+            disabled={bountiesLoading}
+            className="shrink-0 gap-1.5"
+          >
+            {bountiesLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : null}
+            Load more
+          </Button>
         </div>
       )}
 
@@ -282,7 +316,6 @@ export function AuthorizePaymentPanel() {
                   .
                 </p>
 
-                {/* Summary of selected bounties */}
                 <div className="rounded-lg border bg-muted/40 divide-y max-h-48 overflow-y-auto">
                   {bounties
                     .filter((b) => selectedIds.has(b.id))
