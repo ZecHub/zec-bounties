@@ -2521,32 +2521,33 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   }, [currentUser?.id]);
 
-  // Fetch bounties — CLIENT: MAIN only; ADMIN: ALL (so admin Test/Main toggle still works)
+  // Fetch bounties. Backend uses optionalAuthenticate — sending the auth
+  // token (when present) is required so logged-in users get their team's
+  // private bounties back via the visibility filter. Never use
+  // getPublicHeaders() here.
   const fetchBounties = async (
     reset = true,
-    chain?: "MAIN" | "TEST" | "ALL",
+    opts?: { chain?: "MAIN" | "TEST" | "ALL"; teamId?: string },
   ) => {
     setBountiesLoading(true);
     try {
       const page = reset ? 1 : bountiesPage;
 
-      // Explicit chain wins; otherwise admin gets ALL, everyone else MAIN
+      // Explicit chain wins; otherwise admins default to ALL so the
+      // Test/Main toggle still works, everyone else is pinned to MAIN.
       const resolvedChain =
-        chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
+        opts?.chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
 
-      const res = await fetch(
-        `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&chain=${resolvedChain}`,
-        { headers: getAuthHeaders() },
-      );
-  // Fetch all bounties (PUBLIC)
-  const fetchBounties = async (reset = true, teamId?: string) => {
-    setBountiesLoading(true);
-    try {
-      const page = reset ? 1 : bountiesPage;
-      const url = teamId
-        ? `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}&teamId=${teamId}`
-        : `${backendUrl}/api/bounties?page=${page}&limit=${BOUNTIES_PER_PAGE}`;
-      const res = await fetch(url, { headers: getPublicHeaders() });
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(BOUNTIES_PER_PAGE),
+        chain: resolvedChain,
+      });
+      if (opts?.teamId) params.set("teamId", opts.teamId);
+
+      const res = await fetch(`${backendUrl}/api/bounties?${params}`, {
+        headers: getAuthHeaders(),
+      });
 
       if (!res.ok) throw new Error("Failed to fetch bounties");
 
@@ -2556,7 +2557,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       if (reset) {
         setBounties(incoming);
-        setBountiesPage(2); // next load-more will fetch page 2
+        setBountiesPage(2);
       } else {
         setBounties((prev) => {
           const existingIds = new Set(prev.map((b) => b.id));
@@ -2566,7 +2567,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         setBountiesPage((p) => p + 1);
       }
 
-      // If we got fewer than a full page, there's nothing more to load
       setHasMoreBounties(
         incoming.length === BOUNTIES_PER_PAGE &&
           bounties.length + incoming.length < total,

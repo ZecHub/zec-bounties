@@ -70,6 +70,7 @@ import { TeamsEditBountyModal } from "@/components/teams/edit-bounty-modal";
 import { RefreshCw } from "lucide-react";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { Switch } from "@/components/ui/switch";
+import { BountyCard } from "@/components/bounty-card";
 
 type Tab =
   | "Overview"
@@ -427,7 +428,7 @@ function OverviewTab({
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 imd:grid-cols-4">
         <StatCard label="Members" value={String(team.members.length)} />
         <StatCard label="Active bounties" value={String(active)} />
         <StatCard label="Paid out" value={formatZec(totalPaid)} />
@@ -1038,38 +1039,17 @@ function BountyProgramTab({
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 imd:grid-cols-3">
-            {teamBounties.map((bounty) => {
-              const meta = statusMeta(bounty.status);
-              return (
-                <button
-                  type="button"
-                  key={bounty.id}
-                  onClick={() => {
-                    setSelectedBounty(bounty);
-                    setIsDetailModalOpen(true);
-                  }}
-                  className="flex h-full flex-col justify-between gap-4 rounded-xl border bg-card p-4 text-left transition hover:border-primary/40 hover:shadow-md"
-                >
-                  <div>
-                    <div className="text-sm font-medium">{bounty.title}</div>
-                    <div className="mt-1.5 text-xs text-muted-foreground">
-                      {bounty.categoryId ?? "uncategorized"}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">
-                      {formatZec(bounty.bountyAmount)}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={`shrink-0 text-[11px] ${meta.className}`}
-                    >
-                      {meta.label}
-                    </Badge>
-                  </div>
-                </button>
-              );
-            })}
+            {teamBounties.map((bounty) => (
+              <BountyCard
+                key={bounty.id}
+                bounty={bounty}
+                viewMode="grid"
+                onClick={() => {
+                  setSelectedBounty(bounty);
+                  setIsDetailModalOpen(true);
+                }}
+              />
+            ))}
           </div>
         )}
       </div>

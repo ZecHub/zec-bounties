@@ -110,8 +110,6 @@ function HomeContent() {
     );
   }, [bounties, searchQuery, activeCategory, activeTeamId]);
 
-  console.log(filteredBounties);
-
   const kanbanGroups = useMemo(
     () =>
       KANBAN_COLUMNS.map((col) => ({
@@ -422,69 +420,28 @@ function HomeContent() {
                           </Badge>
                           <div className="flex-1 border-t border-border/50 ml-1" />
                         </div>
-                        <div className="flex flex-col gap-3">
-                          {col.bounties.length === 0 ? (
-                            <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
-                              <p className="text-xs text-muted-foreground">
-                                No bounties
-                              </p>
-                            </div>
-                          ) : (
-                            col.bounties.map((bounty) => (
-                              <BountyCard
-                                key={bounty.id}
-                                bounty={bounty}
-                                viewMode="kanban"
-                                onClick={() => openBounty(bounty)}
-                              />
-                            ))
-                          )}
+                        <div className="flex flex-col gap-2">
+                          {col.bounties.map((bounty) => (
+                            <BountyCard
+                              key={bounty.id}
+                              bounty={bounty}
+                              viewMode="list"
+                              onClick={() => openBounty(bounty)}
+                            />
+                          ))}
                         </div>
                       </div>
                     ))}
                 </div>
-              )
-            ) : filteredBounties.length > 0 ? (
-              <div className="space-y-8">
-                {kanbanGroups
-                  .filter((col) => col.bounties.length > 0)
-                  .map((col) => (
-                    <div key={col.status} className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                        />
-                        <h3 className="text-sm font-semibold">{col.label}</h3>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] h-5 px-1.5"
-                        >
-                          {col.bounties.length}
-                        </Badge>
-                        <div className="flex-1 border-t border-border/50 ml-1" />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {col.bounties.map((bounty) => (
-                          <BountyCard
-                            key={bounty.id}
-                            bounty={bounty}
-                            viewMode="list"
-                            onClick={() => openBounty(bounty)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : (
-              <div className="text-center py-20 border rounded-xl bg-muted/20">
-                <p className="text-muted-foreground">
-                  No bounties found
-                  {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                  {searchQuery ? " matching your search" : ""}.
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-20 border rounded-xl bg-muted/20">
+                  <p className="text-muted-foreground">
+                    No bounties found
+                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
+                    {searchQuery ? " matching your search" : ""}.
+                  </p>
+                </div>
+              )}
 
               {canLoadMore && <div ref={sentinelRef} className="h-4" />}
             </div>

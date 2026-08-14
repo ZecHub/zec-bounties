@@ -112,7 +112,10 @@ export default function TeamsPage() {
             <h1 className="text-4xl font-extrabold tracking-tight">
               Your teams
             </h1>
-            <p className="max-w-md text-muted-foreground text-lg">
+            <p className="max-w-md text-muted-foreground text-lg imd:hidden">
+              Manage bounty programs.
+            </p>
+            <p className="max-w-md text-muted-foreground text-lg hidden imd:block">
               Manage bounty programs, members, and shared wallets for every
               community you belong to.
             </p>
@@ -126,7 +129,7 @@ export default function TeamsPage() {
         </div>
 
         {teams.length > 0 && (
-          <div className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mb-10 grid grid-cols-2 gap-3 imd:grid-cols-4">
             <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <Building2 className="h-4 w-4" />

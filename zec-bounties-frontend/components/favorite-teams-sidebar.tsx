@@ -67,7 +67,7 @@ export function FavoriteTeamsSidebar({
           </Link>
         </div>
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-4">
           <button
             type="button"
             onClick={() => onSelectTeam(null)}
