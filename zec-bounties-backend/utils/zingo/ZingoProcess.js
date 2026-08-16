@@ -565,13 +565,16 @@ class ZingoProcess {
           stdoutBuf += chunk.toString();
           const clean = stdoutBuf.replace(/\u001b\[[0-9;]*m/g, "");
 
-          // zingolib answers with one flat block: {"txids":[...]} on success,
-          // {"error":...} on failure. Progress and log lines can precede it,
-          // and a progress block can carry error:null, so scan every buffered
-          // block and let a txids block win no matter where it sits. Only a
-          // real (non-null) error with no txids present is a failure; settling
-          // on the first parsable block would turn a good send into a FAILED
-          // one and reopen a bounty that actually paid.
+          // Contract (zingolib ironwood, quicksend): stdout carries exactly one
+          // terminal block — {"txids":[...]} on success or {"error":...} on
+          // failure — and all progress goes to stderr. So a truthy error is
+          // terminal: no txids can follow it. Re-check this if zingo is bumped.
+          //
+          // We still scan every buffered block and let a txids block win no
+          // matter where it sits, treating only a non-null error with no txids
+          // as failure. That's defense in depth against version drift: settling
+          // on the first parsable block would let a stray error:null turn a
+          // good send into a FAILED one and reopen a bounty that actually paid.
           let failure = null;
           for (const block of extractJsonBlocks(clean)) {
             let parsed;

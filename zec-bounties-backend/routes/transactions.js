@@ -177,21 +177,18 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     // Replay guard. A live prior attempt (anything not cleanly failed) means
     // this request already ran, possibly still in flight, so refuse it. A
     // batch that only produced FAILED rows released its bounties cleanly, so
-    // the same key may retry: clear the stale rows first, both to allow it and
-    // to avoid tripping the [bountyId, batchKey] unique constraint on re-claim.
-    const priorAttempt = await prisma.transaction.findMany({
-      where: { batchKey },
+    // the same key may retry; those stale rows are cleared inside the claim
+    // transaction below (scoped to FAILED) so a concurrent same-key retry can
+    // never delete the winner's fresh PENDING rows.
+    const live = await prisma.transaction.findMany({
+      where: { batchKey, status: { not: "FAILED" } },
     });
-    if (priorAttempt.length > 0) {
-      const live = priorAttempt.filter((r) => r.status !== "FAILED");
-      if (live.length > 0) {
-        return res.status(409).json({
-          error: "This payment request was already submitted",
-          details: `Found ${live.length} recorded transaction(s) for this request (${[...new Set(live.map((r) => r.status))].join(", ")}). Check the Transactions tab before paying again.`,
-          records: live.map(serializeTxRecord),
-        });
-      }
-      await prisma.transaction.deleteMany({ where: { batchKey } });
+    if (live.length > 0) {
+      return res.status(409).json({
+        error: "This payment request was already submitted",
+        details: `Found ${live.length} recorded transaction(s) for this request (${[...new Set(live.map((r) => r.status))].join(", ")}). Check the Transactions tab before paying again.`,
+        records: live.map(serializeTxRecord),
+      });
     }
 
     // Resolve the acting admin's default wallet
@@ -329,6 +326,15 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
 
     try {
       await prisma.$transaction(async (tx) => {
+        // Clear any cleanly-failed prior attempt under this key so the retry
+        // can re-create rows without hitting the [bountyId, batchKey] unique
+        // constraint. Scoped to FAILED and atomic with the claim, so a losing
+        // concurrent request rolls this back and never touches the winner's
+        // PENDING rows.
+        await tx.transaction.deleteMany({
+          where: { batchKey, status: "FAILED" },
+        });
+
         const result = await tx.bounty.updateMany({
           where: {
             id: { in: payableIds },
