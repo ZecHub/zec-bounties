@@ -19,19 +19,34 @@ function extractJson(text) {
   return null; // incomplete JSON
 }
 
-// All complete top-level {...} blocks in the text, nesting-safe. The old
-// non-greedy regex here stopped at the first "}", which sheared any nested
-// object and made the parse fail silently.
+// All complete top-level {...} blocks in the text, nesting-safe and
+// string-aware. The old non-greedy regex stopped at the first "}", which
+// sheared nested objects; a plain brace counter would also miscount on a
+// brace that appears inside a JSON string (a bounty title rides into the
+// memo), so skip anything between unescaped quotes.
 function extractJsonBlocks(text) {
   const blocks = [];
   let depth = 0;
   let start = -1;
+  let inString = false;
+  let escaped = false;
 
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === "{") {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
       if (depth === 0) start = i;
       depth++;
-    } else if (text[i] === "}" && depth > 0) {
+    } else if (ch === "}" && depth > 0) {
       depth--;
       if (depth === 0) {
         blocks.push(text.slice(start, i + 1));
@@ -550,10 +565,14 @@ class ZingoProcess {
           stdoutBuf += chunk.toString();
           const clean = stdoutBuf.replace(/\u001b\[[0-9;]*m/g, "");
 
-          // zingolib answers with one flat block — {"txids":[...]} on success,
-          // {"error":...} on failure. Sync progress and log lines can precede
-          // it, so keep reading until a block actually carries the outcome
-          // instead of grabbing the first "{...}" we see.
+          // zingolib answers with one flat block: {"txids":[...]} on success,
+          // {"error":...} on failure. Progress and log lines can precede it,
+          // and a progress block can carry error:null, so scan every buffered
+          // block and let a txids block win no matter where it sits. Only a
+          // real (non-null) error with no txids present is a failure; settling
+          // on the first parsable block would turn a good send into a FAILED
+          // one and reopen a bounty that actually paid.
+          let failure = null;
           for (const block of extractJsonBlocks(clean)) {
             let parsed;
             try {
@@ -569,16 +588,16 @@ class ZingoProcess {
                 timedOut: false,
               });
             }
-            if (parsed.error !== undefined) {
-              return settle({
-                txids: [],
-                error:
-                  typeof parsed.error === "string"
-                    ? parsed.error
-                    : JSON.stringify(parsed.error),
-                timedOut: false,
-              });
+            if (parsed.error != null && failure === null) {
+              failure =
+                typeof parsed.error === "string"
+                  ? parsed.error
+                  : JSON.stringify(parsed.error);
             }
+          }
+
+          if (failure !== null) {
+            return settle({ txids: [], error: failure, timedOut: false });
           }
         };
 
@@ -589,7 +608,16 @@ class ZingoProcess {
         };
 
         timer = setTimeout(() => {
+          // Outcome unknown, and this process's stdout can no longer be
+          // trusted: a late txids block from THIS send would otherwise bleed
+          // into the next send on the shared REPL and resolve it with the
+          // wrong txid. Record UNKNOWN (never FAILED — the send may have
+          // broadcast, and killing the process does not un-send it), then
+          // destroy it. getZingo drops the pool entry on exit, so the next
+          // send spawns a clean process; the abandoned tx, if real, resurfaces
+          // in wallet history for POST /records/:id/resolve.
           settle({ txids: [], error: null, timedOut: true });
+          this.destroy();
         }, timeout);
 
         this.proc.stdout.on("data", onData);
