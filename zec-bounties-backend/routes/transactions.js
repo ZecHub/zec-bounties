@@ -174,15 +174,24 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         ? idempotencyKey.trim()
         : randomUUID();
 
+    // Replay guard. A live prior attempt (anything not cleanly failed) means
+    // this request already ran, possibly still in flight, so refuse it. A
+    // batch that only produced FAILED rows released its bounties cleanly, so
+    // the same key may retry: clear the stale rows first, both to allow it and
+    // to avoid tripping the [bountyId, batchKey] unique constraint on re-claim.
     const priorAttempt = await prisma.transaction.findMany({
       where: { batchKey },
     });
     if (priorAttempt.length > 0) {
-      return res.status(409).json({
-        error: "This payment request was already submitted",
-        details: `Found ${priorAttempt.length} recorded transaction(s) for this request (${[...new Set(priorAttempt.map((r) => r.status))].join(", ")}). Check the Transactions tab before paying again.`,
-        records: priorAttempt.map(serializeTxRecord),
-      });
+      const live = priorAttempt.filter((r) => r.status !== "FAILED");
+      if (live.length > 0) {
+        return res.status(409).json({
+          error: "This payment request was already submitted",
+          details: `Found ${live.length} recorded transaction(s) for this request (${[...new Set(live.map((r) => r.status))].join(", ")}). Check the Transactions tab before paying again.`,
+          records: live.map(serializeTxRecord),
+        });
+      }
+      await prisma.transaction.deleteMany({ where: { batchKey } });
     }
 
     // Resolve the acting admin's default wallet
@@ -259,8 +268,6 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     // Build payment list, skipping any bounty whose assignee has no z_address
     const paymentList = [];
     const skipped = [];
-
-    console.log(bounties);
 
     for (const bounty of bounties) {
       const payoutAddress =
@@ -569,7 +576,13 @@ router.post(
         ]);
         await invalidateBounty(record.bountyId);
 
-        sendRealtimeUpdate("bounty_marked_paid", updatedBounty, req.user.id);
+        // Peers full-replace their card from this payload; without the txid
+        // they would drop the explorer link until the next refetch.
+        sendRealtimeUpdate(
+          "bounty_marked_paid",
+          { ...updatedBounty, paymentTxId: updatedRecord.txid },
+          req.user.id,
+        );
 
         return res.json({ success: true, record: serializeTxRecord(updatedRecord) });
       }

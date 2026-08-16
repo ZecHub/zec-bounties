@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,6 +29,24 @@ export function AuthorizePaymentPanel() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  // One idempotency key per selection, held stable across retries so a double
+  // submit of the same payout is caught by the backend. A different selection
+  // (or a successful send) gets a fresh key.
+  const attemptKey = useRef<{ fingerprint: string; key: string } | null>(null);
+  const keyForSelection = (ids: string[]) => {
+    const fingerprint = [...ids].sort().join(",");
+    if (attemptKey.current?.fingerprint !== fingerprint) {
+      attemptKey.current = {
+        fingerprint,
+        key:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      };
+    }
+    return attemptKey.current.key;
+  };
 
   const defaultWallet = zcashParams.find((p) => p.isDefault);
 
@@ -99,8 +117,9 @@ export function AuthorizePaymentPanel() {
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
     setIsProcessing(true);
+    const ids = Array.from(selectedIds);
     try {
-      const result = await authorizeDuePayment(Array.from(selectedIds));
+      const result = await authorizeDuePayment(ids, keyForSelection(ids));
       const txid = result.txids[0];
       toast.success("Payment sent", {
         description:
@@ -113,6 +132,7 @@ export function AuthorizePaymentPanel() {
             : ""),
         duration: 12000,
       });
+      attemptKey.current = null;
       setSelectedIds(new Set());
     } catch (error: any) {
       const [title, ...rest] = error.message?.split(": ") ?? [];

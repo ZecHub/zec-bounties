@@ -150,6 +150,21 @@ const ASSIGNEE_INCLUDE = {
   },
 };
 
+// The bounty's latest broadcast payout, exposed as a flat paymentTxId. Keeping
+// the include and the flatten together means the "which tx counts" rule lives
+// in one place for the exports and the single-bounty GET.
+const LATEST_PAYMENT_TX = {
+  where: { status: "BROADCAST" },
+  orderBy: { settledAt: "desc" },
+  take: 1,
+  select: { txid: true },
+};
+
+const withPaymentTxId = ({ transactions, ...bounty }) => ({
+  ...bounty,
+  paymentTxId: transactions?.[0]?.txid ?? null,
+});
+
 // Invalidates now, then invalidates again shortly after — this closes the
 // race window where a concurrent GET reads stale DB data and writes it to
 // cache *after* our invalidation already ran, silently re-poisoning it.
@@ -2059,22 +2074,14 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
             },
           },
         },
-        transactions: {
-          where: { status: "BROADCAST" },
-          orderBy: { settledAt: "desc" },
-          take: 1,
-          select: { txid: true },
-        },
+        transactions: LATEST_PAYMENT_TX,
       },
       orderBy: { paidAt: "desc" },
     });
 
     // Flatten the tx relation into paymentTxId so exports can show
     // proof-of-payment. Bounties paid before records existed stay null.
-    const data = bounties.map(({ transactions, ...bounty }) => ({
-      ...bounty,
-      paymentTxId: transactions[0]?.txid ?? null,
-    }));
+    const data = bounties.map(withPaymentTxId);
 
     res.json({ success: true, data });
   } catch (error) {
@@ -2100,20 +2107,12 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
             },
           },
         },
-        transactions: {
-          where: { status: "BROADCAST" },
-          orderBy: { settledAt: "desc" },
-          take: 1,
-          select: { txid: true },
-        },
+        transactions: LATEST_PAYMENT_TX,
       },
       orderBy: { completedAt: "desc" },
     });
 
-    const data = bounties.map(({ transactions, ...bounty }) => ({
-      ...bounty,
-      paymentTxId: transactions[0]?.txid ?? null,
-    }));
+    const data = bounties.map(withPaymentTxId);
 
     res.json({ success: true, data });
   } catch (error) {
@@ -2244,12 +2243,7 @@ router.get("/:id", optionalAuthenticate, async (req, res) => {
         assignees: { include: { user: { select: userSelect } } },
         createdByUser: { select: createdByUserSelect },
         team: { select: { id: true, name: true, logo: true } },
-        transactions: {
-          where: { status: "BROADCAST" },
-          orderBy: { settledAt: "desc" },
-          take: 1,
-          select: { txid: true },
-        },
+        transactions: LATEST_PAYMENT_TX,
       },
     });
 
@@ -2260,8 +2254,7 @@ router.get("/:id", optionalAuthenticate, async (req, res) => {
 
     // Expose the payout txid as a plain field; the paid badge on the bounty
     // page links it to a block explorer.
-    const { transactions, ...bounty } = found;
-    bounty.paymentTxId = transactions[0]?.txid ?? null;
+    const bounty = withPaymentTxId(found);
 
     await setCache(cacheKey, bounty, TTL.BOUNTY_SINGLE);
     res.json(bounty);

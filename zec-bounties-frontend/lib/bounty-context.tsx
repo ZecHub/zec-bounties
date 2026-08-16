@@ -132,7 +132,10 @@ interface BountyContextType {
   paymentIDs: string[] | undefined;
   paymentChain: string | undefined;
   paymentServerUrl: string | undefined;
-  authorizeDuePayment: (bountyIds: string[]) => Promise<{
+  authorizeDuePayment: (
+    bountyIds: string[],
+    idempotencyKey?: string,
+  ) => Promise<{
     success: boolean;
     paidCount: number;
     txids: string[];
@@ -906,18 +909,23 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   // ==================== Existing Functions (unchanged) ====================
 
-  const authorizeDuePayment = async (bountyIds: string[]) => {
+  const authorizeDuePayment = async (
+    bountyIds: string[],
+    idempotencyKey?: string,
+  ) => {
     if (!currentUser || currentUser.role !== "ADMIN") {
       return { success: false, paidCount: 0, txids: [], skipped: [] };
     }
 
-    // One key per attempt. If the response is ambiguous the server has the
-    // bounties locked under this key; a fresh click is a fresh key, so a
-    // stale retry can never replay the old batch.
-    const idempotencyKey =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
+    // The caller supplies a key that is stable across retries of one payout so
+    // the backend replay guard can actually fire on a double submit. Fall back
+    // to a per-call key for callers that don't (single-bounty modal), where the
+    // disabled button already prevents a double submit.
+    const key =
+      idempotencyKey ||
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
     try {
       const res = await fetch(
@@ -925,7 +933,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         {
           method: "POST",
           headers: getAuthHeaders(),
-          body: JSON.stringify({ bountyIds, idempotencyKey }),
+          body: JSON.stringify({ bountyIds, idempotencyKey: key }),
         },
       );
 
