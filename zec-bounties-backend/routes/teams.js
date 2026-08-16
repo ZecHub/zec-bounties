@@ -1629,19 +1629,24 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
       });
     }
 
+    if (sendResult.timedOut || sendResult.txids.length === 0) {
+      // No confirmation either way — tell the caller to check the wallet
+      // history before retrying, since the send may have gone through.
+      return res.status(502).json({
+        success: false,
+        outcome: "unknown",
+        error: "Payment outcome unknown",
+        details:
+          "zingo did not confirm the send. Check the team wallet's transaction history before retrying.",
+      });
+    }
+
     sendRealtimeUpdate(
       "team_payment_sent",
-      {
-        teamId,
-        result: sendResult[1],
-      },
+      { teamId, txids: sendResult.txids },
       req.user.id,
     );
-
-    res.json({
-      success: true,
-      result: sendResult[1],
-    });
+    res.json({ success: true, txids: sendResult.txids });
   } catch (err) {
     console.error(err);
 
