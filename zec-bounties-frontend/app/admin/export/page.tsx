@@ -64,6 +64,7 @@ interface ExportRow {
   title: string;
   bountyAmount: number;
   paidAt: string;
+  paymentTxId?: string | null;
   assigneeUser?: {
     id: string;
     name?: string;
@@ -415,6 +416,7 @@ export default function ExportPage() {
       "Bounty URL",
       "ZEC Amount",
       "Shielded Address",
+      "Transaction ID",
     ];
     const csvRows = rows.map((row) => {
       const recipient = getPrimaryRecipient(row);
@@ -427,6 +429,7 @@ export default function ExportPage() {
         `${baseUrl}/${row.id}`,
         row.bountyAmount.toString(),
         recipient?.z_address ?? "",
+        row.paymentTxId ?? "",
       ]
         .map(escapeCsv)
         .join(",");

@@ -25,6 +25,7 @@ import type {
   Community,
   TeamFavorite,
   TeamVerificationStatus,
+  PaymentRecord,
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
@@ -128,15 +129,23 @@ interface BountyContextType {
     winnerId?: string,
   ) => Promise<void>;
   approveBounty: (id: string, approved: boolean) => Promise<void>;
-  authorizePayment: (id: string) => Promise<void>;
   paymentIDs: string[] | undefined;
   paymentChain: string | undefined;
   paymentServerUrl: string | undefined;
   authorizeDuePayment: (bountyIds: string[]) => Promise<{
     success: boolean;
     paidCount: number;
+    txids: string[];
+    batchKey?: string;
     skipped: Array<{ id: string; title: string; reason: string }>;
   }>;
+  paymentRecords: PaymentRecord[];
+  fetchPaymentRecords: () => Promise<void>;
+  resolvePaymentRecord: (
+    recordId: string,
+    outcome: "broadcast" | "failed",
+    txid?: string,
+  ) => Promise<void>;
   deleteBounty: (id: string) => Promise<void>;
   zAddressUpdate: (z_address: string) => Promise<boolean | undefined>;
   uaAddressUpdate: (UA_address: string) => Promise<boolean | undefined>;
@@ -267,20 +276,6 @@ interface BountyContextType {
     },
   ) => Promise<void>;
 
-  authorizeBatchPayment: (
-    bountyId: string,
-    scheduledFor: Date,
-  ) => Promise<void>;
-  processBatchPayments: () => Promise<{
-    success: boolean;
-    batchId?: string;
-    message: string;
-  }>;
-  getPendingBatchPayments: () => Array<{
-    address: string;
-    amount: number;
-    memo?: string;
-  }>;
   setDefaultWallet: (accountName: string, teamId?: string) => Promise<void>;
 
   fetchExportPayments: (from?: string, to?: string) => Promise<any[]>;
@@ -397,6 +392,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | undefined>(undefined);
   const [addresses, setAddresses] = useState<string[]>([]);
   const [paymentIDs, setPaymentIDs] = useState<string[] | undefined>(undefined);
+  const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([]);
   const [categories, setCategories] = useState<BountyCategory[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const BOUNTIES_PER_PAGE = 10;
@@ -910,68 +906,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   // ==================== Existing Functions (unchanged) ====================
 
-  const authorizeBatchPayment = async (
-    bountyId: string,
-    scheduledFor: Date,
-  ) => {
-    if (!currentUser || currentUser.role !== "ADMIN") return;
-
-    try {
-      const res = await fetch(
-        `${backendUrl}/api/bounties/${bountyId}/authorize-payment`,
-        {
-          method: "PUT",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            paymentAuthorized: true,
-            paymentScheduled: {
-              type: "sunday_batch",
-              scheduledFor: scheduledFor.toISOString(),
-            },
-          }),
-        },
-      );
-
-      if (!res.ok) throw new Error("Failed to authorize batch payment");
-
-      const updated = await res.json();
-      setBounties((prev) =>
-        prev.map((bounty) => (bounty.id === bountyId ? updated : bounty)),
-      );
-
-      if (updated.paymentScheduled?.type === "instant") {
-        await processInstantPayment(bountyId);
-      }
-    } catch (error) {
-      console.error("Failed to authorize batch payment:", error);
-      throw error;
-    }
-  };
-
-  const processInstantPayment = async (bountyId: string) => {
-    const bounty = bounties.find((b) => b.id === bountyId);
-    if (!bounty || !bounty.assigneeUser?.z_address) return;
-
-    try {
-      await fetch(`${backendUrl}/api/bounties/process-instant-payment`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          address: bounty.assigneeUser.z_address,
-          amount: Math.floor(bounty.bountyAmount * 100000000),
-          memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
-          bountyId: bountyId,
-        }),
-      });
-    } catch (error) {
-      console.error("Failed to process instant payment:", error);
-    }
-  };
-
   const authorizeDuePayment = async (bountyIds: string[]) => {
     if (!currentUser || currentUser.role !== "ADMIN") {
-      return { success: false, paidCount: 0, skipped: [] };
+      return { success: false, paidCount: 0, txids: [], skipped: [] };
     }
+
+    // One key per attempt. If the response is ambiguous the server has the
+    // bounties locked under this key; a fresh click is a fresh key, so a
+    // stale retry can never replay the old batch.
+    const idempotencyKey =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     try {
       const res = await fetch(
@@ -979,25 +925,29 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         {
           method: "POST",
           headers: getAuthHeaders(),
-          body: JSON.stringify({ bountyIds }),
+          body: JSON.stringify({ bountyIds, idempotencyKey }),
         },
       );
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const errorData = await res.json();
-        const message = errorData.details
-          ? `${errorData.error}: ${errorData.details}`
-          : errorData.error || "Failed to authorize payment";
+        // Refresh regardless: on an unknown outcome (502) the bounties are
+        // now locked server-side and should drop out of the payable list.
+        await Promise.all([fetchBounties(), fetchPaymentRecords()]);
+        const message = data.details
+          ? `${data.error}: ${data.details}`
+          : data.error || "Failed to authorize payment";
         throw new Error(message);
       }
 
-      const data = await res.json();
-
-      await fetchBounties();
+      await Promise.all([fetchBounties(), fetchPaymentRecords()]);
 
       return {
         success: true,
         paidCount: data.paidCount,
+        txids: data.txids || [],
+        batchKey: data.batchKey,
         skipped: data.skipped || [],
       };
     } catch (error) {
@@ -1024,58 +974,53 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const authorizePayment = async (id: string) => {
+  // Durable payout records from the DB — bounty-linked, unlike the raw wallet
+  // history in fetchTransactionHashes.
+  const fetchPaymentRecords = async () => {
     if (!currentUser || currentUser.role !== "ADMIN") return;
 
     try {
-      const res = await fetch(
-        `${backendUrl}/api/bounties/${id}/authorize-payment`,
-        {
-          method: "PUT",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            paymentAuthorized: true,
-            paymentScheduled: {
-              type: "instant",
-            },
-          }),
-        },
-      );
+      const res = await fetch(`${backendUrl}/api/transactions/records`, {
+        headers: getAuthHeaders(),
+      });
 
-      if (!res.ok) throw new Error("Failed to authorize payment");
-
-      const updated = await res.json();
-      setBounties((prev) =>
-        prev.map((bounty) => (bounty.id === id ? updated : bounty)),
-      );
-
-      await processInstantPayment(id);
+      if (res.ok) {
+        const data = await res.json();
+        setPaymentRecords(data.records || []);
+      }
     } catch (error) {
-      console.error("Failed to authorize payment:", error);
-      throw error;
+      console.error("Failed to fetch payment records:", error);
     }
   };
 
-  const getPendingBatchPayments = (): Array<{
-    address: string;
-    amount: number;
-    memo?: string;
-  }> => {
-    const pendingBatchBounties = bounties.filter(
-      (bounty) =>
-        bounty.paymentAuthorized &&
-        bounty.paymentScheduled?.type === "sunday_batch" &&
-        bounty.assigneeUser?.z_address &&
-        bounty.status === "DONE" &&
-        bounty.isApproved &&
-        !bounty.isPaid,
+  // For UNKNOWN/PENDING records: the admin checked the wallet history and is
+  // telling the backend what actually happened to the send.
+  const resolvePaymentRecord = async (
+    recordId: string,
+    outcome: "broadcast" | "failed",
+    txid?: string,
+  ) => {
+    const res = await fetch(
+      `${backendUrl}/api/transactions/records/${recordId}/resolve`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+        // "failed" re-opens the bounty for payment, so the backend demands an
+        // explicit confirmation flag on that path.
+        body: JSON.stringify({
+          outcome,
+          txid,
+          ...(outcome === "failed" && { confirm: true }),
+        }),
+      },
     );
 
-    return pendingBatchBounties.map((bounty) => ({
-      address: bounty.assigneeUser!.z_address!,
-      amount: Math.floor(bounty.bountyAmount * 100000000),
-      memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
-    }));
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to resolve payment record");
+    }
+
+    await Promise.all([fetchBounties(), fetchPaymentRecords()]);
   };
 
   const fetchTeamTransactionHashes = async (teamId: string) => {
@@ -1092,80 +1037,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setTeamPaymentServerUrl(data.serverUrl);
     } catch (error) {
       console.error("Failed to fetch team transaction hashes:", error);
-    }
-  };
-
-  const processBatchPayments = async (): Promise<{
-    success: boolean;
-    batchId?: string;
-    message: string;
-  }> => {
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      return { success: false, message: "Unauthorized" };
-    }
-
-    try {
-      const batchPayments = getPendingBatchPayments();
-
-      if (batchPayments.length === 0) {
-        return {
-          success: true,
-          message: "No pending batch payments to process",
-        };
-      }
-
-      const res = await fetch(
-        `${backendUrl}/api/bounties/process-batch-payments`,
-        {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            payments: batchPayments,
-            batchTimestamp: new Date().toISOString(),
-          }),
-        },
-      );
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to process batch payments");
-      }
-
-      const result = await res.json();
-
-      if (result.success) {
-        const batchBountyIds = bounties
-          .filter(
-            (bounty) =>
-              bounty.paymentAuthorized &&
-              bounty.paymentScheduled?.type === "sunday_batch" &&
-              !bounty.isPaid,
-          )
-          .map((bounty) => bounty.id);
-
-        for (const bountyId of batchBountyIds) {
-          await fetch(`${backendUrl}/api/bounties/${bountyId}/mark-paid`, {
-            method: "PUT",
-            headers: getAuthHeaders(),
-            body: JSON.stringify({
-              isPaid: true,
-              paymentBatchId: result.batchId,
-              paidAt: new Date().toISOString(),
-            }),
-          });
-        }
-
-        await fetchBounties();
-      }
-
-      return result;
-    } catch (error) {
-      console.error("Failed to process batch payments:", error);
-      return {
-        success: false,
-        message:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      };
     }
   };
 
@@ -2235,16 +2106,22 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             break;
 
           case "payment_authorized":
-            setBounties((prev) =>
-              prev.map((bounty) =>
-                bounty.id === msg.payload.id ? msg.payload : bounty,
-              ),
-            );
-            break;
-
-          case "payment_processed":
-            fetchTransactionHashes();
-            fetchBounties();
+            // Two payload shapes share this event: the per-bounty authorize
+            // (a full bounty object, has .id) and the bulk payout (bountyIds
+            // + txids, no .id). The old handler only knew the first shape, so
+            // after a bulk payout every other admin's panel kept offering the
+            // just-paid bounties.
+            if (msg.payload.id) {
+              setBounties((prev) =>
+                prev.map((bounty) =>
+                  bounty.id === msg.payload.id ? msg.payload : bounty,
+                ),
+              );
+            } else {
+              fetchBounties();
+              fetchPaymentRecords();
+              fetchBalance();
+            }
             break;
 
           case "balance_updated":
@@ -2308,6 +2185,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             break;
 
           case "transactions_fetched":
+            setPaymentIDs(msg.payload.transactions);
             break;
 
           case "balance_fetched":
@@ -2333,18 +2211,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 bounty.id === msg.payload.id ? msg.payload : bounty,
               ),
             );
-            break;
-
-          case "batch_payment_processed":
-            fetchBounties();
-            fetchTransactionHashes();
-            fetchBalance();
-            break;
-
-          case "instant_payment_processed":
-            fetchBounties();
-            fetchTransactionHashes();
-            fetchBalance();
             break;
 
           case "bounty_marked_paid":
@@ -3425,7 +3291,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         updateBounty,
         updateBountyStatus,
         approveBounty,
-        authorizePayment,
         paymentIDs,
         paymentChain,
         paymentServerUrl,
@@ -3437,6 +3302,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         getAllSubmissionsForBounty,
         fetchTransactionHashes,
         authorizeDuePayment,
+        paymentRecords,
+        fetchPaymentRecords,
+        resolvePaymentRecord,
         deleteBounty,
         fetchBounties,
         loadMoreBounties,
@@ -3470,9 +3338,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         submitWork,
         fetchWorkSubmissions,
         reviewWorkSubmission,
-        authorizeBatchPayment,
-        processBatchPayments,
-        getPendingBatchPayments,
         zAddressUpdate,
         uaAddressUpdate,
         verifyZaddress,

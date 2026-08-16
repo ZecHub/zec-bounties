@@ -47,6 +47,7 @@ export function AuthorizePaymentPanel() {
       b.status === "DONE" &&
       b.isApproved &&
       !b.isPaid &&
+      !b.paymentInFlight &&
       b.chain === activeChain,
   );
 
@@ -55,7 +56,14 @@ export function AuthorizePaymentPanel() {
       b.status === "DONE" &&
       b.isApproved &&
       !b.isPaid &&
+      !b.paymentInFlight &&
       b.chain !== activeChain,
+  );
+
+  // Sends whose outcome the backend couldn't confirm — locked server-side
+  // until someone resolves them from the Transactions tab.
+  const inFlightBounties = bounties.filter(
+    (b) => b.status === "DONE" && !b.isPaid && b.paymentInFlight,
   );
 
   // unpaidDoneCount is only tracked server-side for MAIN chain today, so we can
@@ -93,12 +101,17 @@ export function AuthorizePaymentPanel() {
     setIsProcessing(true);
     try {
       const result = await authorizeDuePayment(Array.from(selectedIds));
-      toast.success("Payment authorized", {
+      const txid = result.txids[0];
+      toast.success("Payment sent", {
         description:
           `${result.paidCount} bounty payment(s) sent` +
+          (txid ? ` — tx ${txid.slice(0, 12)}…` : "") +
           (result.skipped.length > 0
-            ? `. ${result.skipped.length} skipped (missing address).`
-            : "."),
+            ? ` ${result.skipped.length} skipped: ${result.skipped
+                .map((s) => `${s.title} (${s.reason})`)
+                .join("; ")}`
+            : ""),
+        duration: 12000,
       });
       setSelectedIds(new Set());
     } catch (error: any) {
@@ -160,6 +173,22 @@ export function AuthorizePaymentPanel() {
         <div className="flex items-center gap-2 text-sm p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
           <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0" />
           <span>No default wallet set. Go to Settings to configure one.</span>
+        </div>
+      )}
+
+      {inFlightBounties.length > 0 && (
+        <div className="flex items-start gap-2.5 text-sm p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <span className="text-amber-800 dark:text-amber-200">
+            <span className="font-medium">
+              {inFlightBounties.length} payment
+              {inFlightBounties.length > 1 ? "s" : ""} awaiting settlement
+            </span>{" "}
+            — the wallet didn't confirm the send, so{" "}
+            {inFlightBounties.length > 1 ? "they are" : "it is"} locked against
+            retry. Check the wallet history and resolve from the Transactions
+            tab.
+          </span>
         </div>
       )}
 

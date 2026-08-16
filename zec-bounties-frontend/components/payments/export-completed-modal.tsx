@@ -38,6 +38,7 @@ interface ExportRow {
   bountyAmount: number;
   dateCreated: string;
   completedAt?: string | null;
+  paymentTxId?: string | null;
   chain: "MAIN" | "TEST";
   assigneeUser?: {
     id: string;
@@ -286,6 +287,7 @@ export function ExportCompletedModal({
       "ZEC Amount",
       "Network",
       "Payout Address",
+      "Transaction ID",
     ];
     const csvRows = exportRows.map((row) => {
       const recipient = getPrimaryRecipient(row);
@@ -304,6 +306,7 @@ export function ExportCompletedModal({
         row.bountyAmount.toString(),
         row.chain === "MAIN" ? "Mainnet" : "Testnet",
         getPayoutAddress(row) ?? "",
+        row.paymentTxId ?? "",
       ]
         .map(escapeCsv)
         .join(",");

@@ -125,6 +125,9 @@ export interface Bounty {
   paymentBatchId?: string;
   paidAt?: Date;
   paymentTxId?: string;
+  // True while a send is in flight or its outcome is unknown — the bounty is
+  // locked out of the payable set server-side until it settles.
+  paymentInFlight?: boolean;
   createdByUser?: User; // Populated user data
   assigneeUser?: User; // Populated user data
   applications?: BountyApplication[];
@@ -135,6 +138,31 @@ export interface Bounty {
   assignees?: BountyAssignee[];
   teamId?: string | null;
   team?: { id: string; name: string; logo?: string | null } | null;
+}
+
+// One row per bounty per payout attempt, from /api/transactions/records.
+// PENDING/UNKNOWN rows are unsettled sends that need manual resolution.
+export interface PaymentRecord {
+  id: string;
+  bountyId: string;
+  txid: string | null;
+  amountZat: number;
+  toAddress: string;
+  memo: string;
+  chain: "MAIN" | "TEST";
+  status: "PENDING" | "BROADCAST" | "FAILED" | "UNKNOWN";
+  batchKey: string;
+  initiatedBy: string;
+  walletAccount: string;
+  errorDetail?: string | null;
+  createdAt: string;
+  settledAt?: string | null;
+  bounty?: {
+    id: string;
+    title: string;
+    chain: "MAIN" | "TEST";
+    assigneeUser?: { id: string; name: string; nickname?: string | null };
+  };
 }
 
 export interface BountyFormData {
