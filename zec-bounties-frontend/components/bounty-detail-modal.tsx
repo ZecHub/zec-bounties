@@ -196,9 +196,13 @@ export function BountyDetailModal({
     }
   };
 
+  // A revision request sends the work back for another attempt, so it must not
+  // count as "already submitted" — otherwise the form never returns.
+  const needsRevision = userWorkSubmission?.status === "needs_revision";
+
   const canSubmitWork =
     isAssignedToCurrentUser &&
-    !hasCurrentUserSubmitted &&
+    (!hasCurrentUserSubmitted || needsRevision) &&
     !submissionsLoading &&
     bounty.status !== "TO_DO" &&
     bounty.status !== "DONE" &&
@@ -409,11 +413,14 @@ export function BountyDetailModal({
             {/* Submit Work */}
             {canSubmitWork && (
               <div className="border-t pt-4">
-                <h3 className="text-sm font-semibold mb-3">Submit Your Work</h3>
+                <h3 className="text-sm font-semibold mb-3">
+                  {needsRevision ? "Submit Revised Work" : "Submit Your Work"}
+                </h3>
                 <div className="space-y-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                   <p className="text-xs text-green-700 dark:text-green-300">
-                    You are assigned to this bounty. Ready to submit your
-                    completed work?
+                    {needsRevision
+                      ? "A revision was requested. Address the notes above and submit again."
+                      : "You are assigned to this bounty. Ready to submit your completed work?"}
                   </p>
                   <div className="space-y-1.5">
                     <Label htmlFor="submission-description" className="text-xs">
@@ -462,7 +469,7 @@ export function BountyDetailModal({
                     ) : (
                       <>
                         <Send className="w-3.5 h-3.5 mr-1.5" />
-                        Submit Work
+                        {needsRevision ? "Submit Revision" : "Submit Work"}
                       </>
                     )}
                   </Button>
