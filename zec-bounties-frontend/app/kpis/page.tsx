@@ -61,6 +61,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { profileHref } from "@/lib/profileHref";
+import { toast } from "sonner";
 
 type SortKey = "completed" | "submitted" | "completionRate" | "totalEarned";
 type ChartType =
@@ -794,10 +795,13 @@ export default function KpisDashboard() {
         setKpiSummary(summary);
       }
 
+      toast.success("Badges updated");
       closeBadgeModal();
     } catch (error) {
       console.error(error);
-      alert("Failed to save badges");
+      toast.error("Failed to save badges", {
+        description: "Please try again.",
+      });
     } finally {
       setIsSavingBadges(false);
     }
