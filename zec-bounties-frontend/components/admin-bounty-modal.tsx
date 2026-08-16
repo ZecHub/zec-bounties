@@ -27,6 +27,7 @@ import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -122,7 +123,7 @@ export function AdminBountyModal({
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
       ...prev,
-      timeToComplete: new Date(e.target.value),
+      timeToComplete: parseDateInputValue(e.target.value),
     }));
   };
 
@@ -231,13 +232,8 @@ export function AdminBountyModal({
                   <Input
                     id="timeToComplete"
                     type="date"
-                    min={new Date().toISOString().split("T")[0]}
-                    value={
-                      formData.timeToComplete instanceof Date &&
-                      !isNaN(formData.timeToComplete.getTime())
-                        ? formData.timeToComplete.toISOString().split("T")[0]
-                        : ""
-                    }
+                    min={toDateInputValue(new Date())}
+                    value={toDateInputValue(formData.timeToComplete)}
                     onChange={handleDateChange}
                     required
                   />

@@ -19,6 +19,27 @@ export function formatAddress(str: string, keep = 36) {
   return str.slice(0, keep) + "...." + str.slice(-keep);
 }
 
+// Date <input> helpers work in local time — toISOString() converts to UTC
+// first, which shifts the calendar day for viewers whose offset crosses it.
+
+export function toDateInputValue(date: Date | null | undefined): string {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+export function parseDateInputValue(value: string): Date {
+  const [year, month, day] = (value ?? "").split("-").map(Number);
+
+  if (!year || !month || !day) return new Date(NaN);
+
+  return new Date(year, month - 1, day);
+}
+
 export const confirmedTotal = (b: Balance) =>
   ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
     (b.confirmed_sapling_balance ?? 0) +
