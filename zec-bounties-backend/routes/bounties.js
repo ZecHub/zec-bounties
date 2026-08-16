@@ -843,11 +843,10 @@ router.put(
 
       const updated = await prisma.bounty.update({
         where: { id: req.params.id },
+        // FIX: this used to also write paymentAuthorizedAt, which doesn't
+        // exist on the model — every call 500'd.
         data: {
-          ...(paymentAuthorized !== undefined && {
-            paymentAuthorized,
-            paymentAuthorizedAt: paymentAuthorized ? new Date() : null,
-          }),
+          ...(paymentAuthorized !== undefined && { paymentAuthorized }),
         },
       });
 
@@ -863,11 +862,12 @@ router.put(
 
 // ─── Approve bounty (Admin) ───────────────────────────────────────────────────
 // FIX: id was cast to Number() but schema uses cuid strings — removed the cast.
+// FIX: the field is isApproved; writing `approved` made every call 500.
 router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
   try {
     const updated = await prisma.bounty.update({
       where: { id: req.params.id },
-      data: { approved: true },
+      data: { isApproved: true },
     });
     sendRealtimeUpdate("bounty_approved", updated, req.user.id);
     await invalidateBounty(req.params.id);
@@ -2059,11 +2059,24 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
             },
           },
         },
+        transactions: {
+          where: { status: "BROADCAST" },
+          orderBy: { settledAt: "desc" },
+          take: 1,
+          select: { txid: true },
+        },
       },
       orderBy: { paidAt: "desc" },
     });
 
-    res.json({ success: true, data: bounties });
+    // Flatten the tx relation into paymentTxId so exports can show
+    // proof-of-payment. Bounties paid before records existed stay null.
+    const data = bounties.map(({ transactions, ...bounty }) => ({
+      ...bounty,
+      paymentTxId: transactions[0]?.txid ?? null,
+    }));
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching export data:", error);
     res
@@ -2087,10 +2100,22 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
             },
           },
         },
+        transactions: {
+          where: { status: "BROADCAST" },
+          orderBy: { settledAt: "desc" },
+          take: 1,
+          select: { txid: true },
+        },
       },
       orderBy: { completedAt: "desc" },
     });
-    res.json({ success: true, data: bounties });
+
+    const data = bounties.map(({ transactions, ...bounty }) => ({
+      ...bounty,
+      paymentTxId: transactions[0]?.txid ?? null,
+    }));
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching completed bounties:", error);
     res
@@ -2212,20 +2237,31 @@ router.get("/:id", optionalAuthenticate, async (req, res) => {
       ? USER_SELECT_WITH_ROLE
       : USER_SELECT_PUBLIC;
 
-    const bounty = await prisma.bounty.findUnique({
+    const found = await prisma.bounty.findUnique({
       where: { id: bountyId },
       include: {
         assigneeUser: { select: userSelect },
         assignees: { include: { user: { select: userSelect } } },
         createdByUser: { select: createdByUserSelect },
         team: { select: { id: true, name: true, logo: true } },
+        transactions: {
+          where: { status: "BROADCAST" },
+          orderBy: { settledAt: "desc" },
+          take: 1,
+          select: { txid: true },
+        },
       },
     });
 
-    if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-    if (!(await canViewPrivateBounty(bounty, req.user))) {
+    if (!found) return res.status(404).json({ error: "Bounty not found" });
+    if (!(await canViewPrivateBounty(found, req.user))) {
       return res.status(404).json({ error: "Bounty not found" });
     }
+
+    // Expose the payout txid as a plain field; the paid badge on the bounty
+    // page links it to a block explorer.
+    const { transactions, ...bounty } = found;
+    bounty.paymentTxId = transactions[0]?.txid ?? null;
 
     await setCache(cacheKey, bounty, TTL.BOUNTY_SINGLE);
     res.json(bounty);
