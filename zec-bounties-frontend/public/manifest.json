@@ -1,0 +1,12 @@
+{
+  "name": "Zec Bounties",
+  "short_name": "Zec Bounties",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    { "src": "/ZecHubBlue.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/ZecHubBlue.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

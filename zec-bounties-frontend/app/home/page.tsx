@@ -437,7 +437,10 @@ function HomeContent() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                     {DEFRAG_LEGEND.map((item) => (
-                      <div key={item.status} className="flex items-center gap-1.5">
+                      <div
+                        key={item.status}
+                        className="flex items-center gap-1.5"
+                      >
                         <span
                           className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
                         />
