@@ -16,10 +16,21 @@ function markDismissed(key: string) {
   localStorage.setItem(key, String(Date.now() + DISMISS_DAYS * 86400000));
 }
 
+function isIosSafari() {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua) && !("MSStream" in window);
+  const isStandalone =
+    "standalone" in window.navigator && (window.navigator as any).standalone;
+  return isIos && !isStandalone;
+}
+
 export function AppPromptBanner() {
   const { currentUser } = useBounty();
   const { canInstall, promptInstall } = usePwaInstall();
-  const [stage, setStage] = useState<"install" | "notify" | "hidden">("hidden");
+  const [stage, setStage] = useState<
+    "install" | "ios-install" | "notify" | "hidden"
+  >("hidden");
   const [busy, setBusy] = useState(false);
 
   const needsNotifyPrompt = () =>
@@ -31,6 +42,8 @@ export function AppPromptBanner() {
   useEffect(() => {
     if (canInstall && !isDismissed(INSTALL_DISMISS_KEY)) {
       setStage("install");
+    } else if (isIosSafari() && !isDismissed(INSTALL_DISMISS_KEY)) {
+      setStage("ios-install");
     } else if (needsNotifyPrompt()) {
       setStage("notify");
     } else {
@@ -93,6 +106,23 @@ export function AppPromptBanner() {
             >
               Add to Home Screen
             </button>
+            <button
+              onClick={dismissInstall}
+              className="rounded-lg px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400"
+            >
+              Not now
+            </button>
+          </div>
+        </>
+      ) : stage === "ios-install" ? (
+        <>
+          <p className="text-sm font-medium text-black dark:text-white">
+            Add Zec Bounties to your home screen
+          </p>
+          <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
+            Tap the Share icon, then &quot;Add to Home Screen.&quot;
+          </p>
+          <div className="mt-3 flex justify-end">
             <button
               onClick={dismissInstall}
               className="rounded-lg px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400"
