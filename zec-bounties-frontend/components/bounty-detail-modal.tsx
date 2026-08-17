@@ -438,6 +438,7 @@ export function BountyDetailModal({
                       value={deliverableUrl}
                       onChange={(e) => setDeliverableUrl(e.target.value)}
                       className="w-full px-3 py-1.5 border rounded-md text-sm"
+                      autoComplete="off"
                     />
                     <p className="text-[11px] text-muted-foreground">
                       Link to your completed work (GitHub, Drive, deployed app,
