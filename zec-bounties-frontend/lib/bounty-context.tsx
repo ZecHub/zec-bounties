@@ -1926,17 +1926,21 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     const userName = displayName(currentUser);
 
     function connect() {
-      ws = new WebSocket(`${backendWebSpocketUrl}`);
+      const token = localStorage.getItem("authToken");
+
+      // No token, no socket. Don't attempt to connect anonymously — the
+      // backend will reject it anyway, and doing this client-side avoids a
+      // pointless connect/401/retry loop for logged-out users.
+      if (!token) return;
+
+      ws = new WebSocket(
+        `${backendWebSpocketUrl}?token=${encodeURIComponent(token)}`,
+      );
 
       ws.onopen = () => {
         retryDelay = 1000; // reset backoff on successful connect
-        ws.send(
-          JSON.stringify({
-            type: "join",
-            userId,
-            userName,
-          }),
-        );
+        // No "join" message needed — the server already knows who you are
+        // from the verified token used during the handshake.
       };
 
       ws.onmessage = (event) => {
@@ -2285,8 +2289,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         console.error("WebSocket error:", error);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (destroyed) return; // don't reconnect if the component unmounted
+        if (event.code === 4001) return;
         retryTimeout = setTimeout(() => {
           retryDelay = Math.min(retryDelay * 2, 30000); // cap at 30s
           connect();
