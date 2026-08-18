@@ -418,6 +418,61 @@ class ZingoProcess {
     });
   }
 
+  parseAddress(zaddress, timeout = 10000) {
+    return new Promise((resolve, reject) => {
+      if (!zaddress) {
+        reject(new Error("No zaddress provided"));
+        return;
+      }
+      // Reject control characters — the address is written to stdin as a
+      // single line; a raw newline would let it be interpreted as a
+      // second, attacker-chosen command by the zingo-cli REPL.
+      if (/[\r\n]/.test(zaddress)) {
+        reject(new Error("Invalid address"));
+        return;
+      }
+
+      const startBufferLen = this.buffer.length;
+      const command = `parse_address ${zaddress}`;
+      this.proc.stdin.write(command + "\n");
+
+      const check = () => {
+        const chunk = this.buffer.slice(startBufferLen);
+        const clean = chunk.replace(/\u001b\[[0-9;]*m/g, "");
+
+        const jsonText = extractJsonAddress(clean);
+        if (jsonText) {
+          try {
+            resolve(JSON.parse(jsonText));
+          } catch (e) {
+            reject(e);
+          }
+          return true;
+        }
+        return false;
+      };
+
+      const interval = setInterval(() => {
+        if (check()) {
+          clearInterval(interval);
+          clearTimeout(timer);
+        }
+      }, 50);
+
+      const timer = setTimeout(() => {
+        clearInterval(interval);
+        reject(new Error("Zingo parse_address timeout"));
+      }, timeout);
+
+      this.waiters.push(() => {
+        if (check()) {
+          clearInterval(interval);
+          clearTimeout(timer);
+        }
+      });
+    });
+  }
+
   quicksend(recipients, timeout = 10000) {
     return new Promise((resolve, reject) => {
       let buffer = "";

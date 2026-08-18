@@ -6,6 +6,7 @@ const protoLoader = require("@grpc/proto-loader");
 const path = require("path");
 const { createServer } = require("http");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const { handleWebSocket } = require("./middleware/websocket");
 const { WebSocketServer } = require("ws");
 const prisma = require("./prisma/client");
@@ -37,10 +38,51 @@ app.use("/api/zcash", require("./routes/zcash"));
 app.use("/api/teams", require("./routes/teams"));
 app.use("/api/kpis", require("./routes/kpis"));
 app.use("/api/users", require("./routes/users"));
+app.use("/api/notifications", require("./routes/notifications"));
 
 // WebSocket server
-const wss = new WebSocketServer({ server });
-wss.on("connection", (ws) => handleWebSocket(ws, prisma));
+// SECURITY FIX (S2): reject the upgrade before a socket is ever handed to
+// handleWebSocket unless the caller presents a valid JWT for a real user.
+// Identity is derived here, server-side, from the verified token — the
+// client can no longer just claim a userId.
+const wss = new WebSocketServer({
+  server,
+  verifyClient: async (info, done) => {
+    try {
+      const url = new URL(info.req.url, `http://${info.req.headers.host}`);
+      // Accept the token either as ?token=... or via Sec-WebSocket-Protocol,
+      // since browsers can't set custom headers on the WS handshake.
+      const token =
+        url.searchParams.get("token") ||
+        info.req.headers["sec-websocket-protocol"];
+
+      if (!token) {
+        return done(false, 401, "Unauthorized");
+      }
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+      });
+
+      if (!user) {
+        return done(false, 401, "Unauthorized");
+      }
+
+      // Stash the verified user on the upgrade request so the
+      // 'connection' handler can trust it without re-parsing anything
+      // the client sent.
+      info.req.authenticatedUser = user;
+      done(true);
+    } catch (err) {
+      done(false, 401, "Unauthorized");
+    }
+  },
+});
+
+wss.on("connection", (ws, req) => {
+  handleWebSocket(ws, prisma, req.authenticatedUser);
+});
 
 // Middleware to attach wss to request object
 app.use((req, res, next) => {
