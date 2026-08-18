@@ -13,9 +13,12 @@ const {
   setCache,
   delCache,
   deleteCacheByPattern,
+  getVersion,
+  bumpVersion,
   TTL,
 } = require("../utils/cache");
 const sendMail = require("../utils/sendMail");
+const notifyUser = require("../utils/notifyUser");
 
 // ─── Email settings ───────────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -32,6 +35,26 @@ const sendMailIfEnabled = async (options) => {
   }
 
   return sendMail(options);
+};
+
+// Sends a push notification only to users who opted in AND have an active subscription.
+// userIds: string[] — candidates to notify
+const sendPushToOptedIn = async (userIds, payload) => {
+  if (!userIds.length) return;
+  try {
+    const recipients = await prisma.user.findMany({
+      where: {
+        id: { in: userIds },
+        pushNotifications: true,
+        pushSubscriptions: { some: {} },
+      },
+      select: { id: true },
+    });
+    console.log("verified recipients:", recipients);
+    await Promise.all(recipients.map((u) => notifyUser(u.id, payload)));
+  } catch (err) {
+    console.error("Push notification failed:", err);
+  }
 };
 
 // ─── Reusable select shapes (avoids re-typing & keeps payloads small) ─────────
@@ -113,12 +136,10 @@ const invalidateWithRetry = async (keys, delayMs = 500) => {
 };
 
 const invalidateBounty = async (bountyId) => {
-  await invalidateWithRetry([
-    `bounty:public:${bountyId}`,
-    `bounty:full:${bountyId}`,
-    `assignees:${bountyId}`,
-    "stats:totals",
-    "bounties:*",
+  await Promise.all([
+    delCache(`assignees:${bountyId}`),
+    delCache("stats:totals"),
+    bumpVersion("bounties"),
   ]);
 };
 
@@ -169,7 +190,7 @@ router.post("/", authenticate, async (req, res) => {
         assignee: resolvedAssignee,
         isApproved,
         categoryId,
-        ...(chain && { chain }), // NEW — falls back to schema default (TEST) if omitted
+        ...(chain && { chain }),
         ...(isClient &&
           resolvedAssignee && {
             assignees: {
@@ -195,34 +216,58 @@ router.post("/", authenticate, async (req, res) => {
     sendRealtimeUpdate("new_bounties", bounty, req.user.id);
     await deleteCacheByPattern("bounties:*");
 
-    // Respond immediately — don't block on mail
+    // Respond immediately — don't block on notifications
     res.status(201).json(bounty);
 
-    // Fire-and-forget notification to all users
+    // Fire-and-forget notifications
     (async () => {
       try {
+        const creatorDisplayName =
+          bounty.createdByUser.nickname || bounty.createdByUser.name;
+
+        // Load once, filter twice — email and push use the same base list
+        // so a user's push/email prefs are always evaluated consistently.
         const cachedUsers = await getCache("users:all");
         const users =
           cachedUsers ??
           (await prisma.user.findMany({
-            select: { email: true, emailNotifications: true },
+            select: {
+              id: true,
+              email: true,
+              emailNotifications: true,
+              pushNotifications: true,
+            },
           }));
 
-        const recipients = users
+        const otherUsers = users.filter((u) => u.id !== req.user.id);
+
+        // in the bounty creation IIFE, right after building otherUsers
+        console.log("otherUsers sample:", otherUsers.slice(0, 3));
+
+        const emailRecipients = otherUsers
           .filter((u) => u.emailNotifications !== false)
           .map((u) => u.email)
           .filter(Boolean);
 
-        const creatorDisplayName =
-          bounty.createdByUser.nickname || bounty.createdByUser.name;
+        const pushCandidateIds = otherUsers
+          .filter((u) => u.pushNotifications)
+          .map((u) => u.id);
 
-        await Promise.all(
-          recipients.map((recipient) =>
-            sendMailIfEnabled({
-              to: recipient,
-              subject: `New Bounty Created: ${bounty.title}`,
-              text: `A new bounty has been created.\n\nCreated by: ${creatorDisplayName}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
-              html: `
+        console.log("pushCandidateIds:", pushCandidateIds);
+
+        await Promise.all([
+          sendPushToOptedIn(pushCandidateIds, {
+            title: "New Bounty Available",
+            body: `${bounty.title} — ${bounty.bountyAmount} ZEC`,
+            url: `/bounties/${bounty.id}`,
+          }),
+          Promise.all(
+            emailRecipients.map((recipient) =>
+              sendMailIfEnabled({
+                to: recipient,
+                subject: `New Bounty Created: ${bounty.title}`,
+                text: `A new bounty has been created.\n\nCreated by: ${creatorDisplayName}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
+                html: `
             <h2>New Bounty Created</h2>
             <p><strong>Created by:</strong> ${creatorDisplayName}</p>
             <p><strong>Title:</strong> ${bounty.title}</p>
@@ -232,11 +277,12 @@ router.post("/", authenticate, async (req, res) => {
             <p><strong>Amount:</strong> ${bounty.bountyAmount} ZEC</p>
             <p><strong>Time to complete:</strong> ${bounty.timeToComplete}</p>
           `,
-            }),
+              }),
+            ),
           ),
-        );
-      } catch (mailErr) {
-        console.error("Bounty notification email failed:", mailErr);
+        ]);
+      } catch (notificationErr) {
+        console.error("Bounty notification failed:", notificationErr);
       }
     })();
   } catch (err) {
@@ -245,33 +291,40 @@ router.post("/", authenticate, async (req, res) => {
   }
 });
 
-// ─── List bounties (paginated, lean payload) ──────────────────────────────────
+// ─── List bounties (paginated, lean payload) ──────────────────────────────
 router.get("/", optionalAuthenticate, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(parseInt(req.query.limit) || 10, 50);
     const isAuthed = Boolean(req.user);
-
-    // Default MAIN. Admins may pass ?chain=TEST or ?chain=ALL
+    const isDev = process.env.NODE_ENV !== "production";
+    const isAdmin = req.user?.role === "ADMIN";
     const chainParam = String(req.query.chain || "MAIN").toUpperCase();
-    let chainFilter = { chain: "MAIN" };
 
-    if (chainParam === "ALL") {
-      if (!req.user || req.user.role !== "ADMIN") {
+    let chainFilter;
+    if (isDev) {
+      chainFilter = {};
+    } else if (chainParam === "ALL") {
+      if (!isAdmin)
         return res.status(403).json({ error: "ALL chains requires admin" });
-      }
       chainFilter = {};
     } else if (chainParam === "TEST") {
-      if (!req.user || req.user.role !== "ADMIN") {
+      if (!isAdmin)
         return res.status(403).json({ error: "TEST chain requires admin" });
-      }
       chainFilter = { chain: "TEST" };
-    } else if (chainParam !== "MAIN") {
+    } else if (chainParam === "MAIN") {
+      chainFilter = { chain: "MAIN" };
+    } else {
       return res.status(400).json({ error: "Invalid chain value" });
     }
 
-    // Namespace cache by auth level + chain — avoids PII leak and stale chain mixes
-    const cacheKey = `bounties:${isAuthed ? "full" : "public"}:${JSON.stringify(
+    // Snapshot the version BEFORE reading the DB. Any mutation that commits
+    // after this line will bump the version and be invisible to this
+    // request's cache key — which is fine, this request just serves
+    // (correctly) slightly-stale data for its own duration, same as before.
+    const version = await getVersion("bounties");
+
+    const cacheKey = `bounties:v${version}:${isAuthed ? "full" : "public"}:${JSON.stringify(
       {
         page,
         limit,
@@ -287,7 +340,6 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
-    // Select shape depends on auth state — no PII/wallet data for anonymous callers
     const userSelect = isAuthed ? USER_SELECT : USER_SELECT_PUBLIC;
     const createdByUserSelect = isAuthed
       ? USER_SELECT_WITH_ROLE
@@ -301,21 +353,12 @@ router.get("/", optionalAuthenticate, async (req, res) => {
         take: limit,
         orderBy: { dateCreated: "desc" },
         include: {
-          assignees: {
-            include: { user: { select: userSelect } },
-          },
-          assigneeUser: {
-            select: assigneeUserSelect,
-          },
-          createdByUser: {
-            select: createdByUserSelect,
-          },
+          assignees: { include: { user: { select: userSelect } } },
+          assigneeUser: { select: assigneeUserSelect },
+          createdByUser: { select: createdByUserSelect },
         },
       }),
-
-      prisma.bounty.count({
-        where: chainFilter,
-      }),
+      prisma.bounty.count({ where: chainFilter }),
     ]);
 
     const result = { data: bounties, total, page, limit };
@@ -353,7 +396,7 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
     const existingAssigneeIds = new Set(existingAssignees.map((a) => a.userId));
     const newAssigneeIds = new Set(userIds);
 
-    const [, assignees] = await prisma.$transaction(async (tx) => {
+    const [freshBounty, assignees] = await prisma.$transaction(async (tx) => {
       await tx.bountyAssignee.deleteMany({ where: { bountyId } });
 
       if (userIds.length === 0) {
@@ -361,25 +404,33 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
           where: { id: bountyId },
           data: { status: "CANCELLED", assignee: null },
         });
-        return [null, []];
-      }
-
-      await tx.bountyAssignee.createMany({
-        data: userIds.map((userId) => ({ bountyId, userId })),
-      });
-
-      if (["TO_DO", "CANCELLED"].includes(bounty.status)) {
-        await tx.bounty.update({
-          where: { id: bountyId },
-          data: { status: "IN_PROGRESS" },
+      } else {
+        await tx.bountyAssignee.createMany({
+          data: userIds.map((userId) => ({ bountyId, userId })),
         });
+        if (["TO_DO", "CANCELLED"].includes(bounty.status)) {
+          await tx.bounty.update({
+            where: { id: bountyId },
+            data: { status: "IN_PROGRESS" },
+          });
+        }
       }
 
       const created = await tx.bountyAssignee.findMany({
         where: { bountyId },
         include: { user: { select: USER_SELECT_FULL } },
       });
-      return [null, created];
+
+      const bountyRow = await tx.bounty.findUnique({
+        where: { id: bountyId },
+        include: {
+          ...ASSIGNEE_INCLUDE,
+          assigneeUser: { select: USER_SELECT_FULL },
+          createdByUser: { select: USER_SELECT_WITH_ROLE },
+        },
+      });
+
+      return [bountyRow, created];
     });
 
     sendRealtimeUpdate(
@@ -387,6 +438,7 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
       { bountyId, assignees },
       req.user.id,
     );
+    sendRealtimeUpdate("bounty_updated", freshBounty, req.user.id); // ← new
     await invalidateBounty(bountyId);
     res.status(200).json({ assignees });
 
@@ -475,12 +527,21 @@ router.delete(
         where: { bountyId_userId: { bountyId, userId } },
       });
 
+      const freshBounty = await prisma.bounty.findUnique({
+        where: { id: bountyId },
+        include: {
+          ...ASSIGNEE_INCLUDE,
+          assigneeUser: { select: USER_SELECT_FULL },
+          createdByUser: { select: USER_SELECT_WITH_ROLE },
+        },
+      });
+
       sendRealtimeUpdate(
         "bounty_assignees_updated",
         { bountyId, removedUserId: userId },
-
         req.user.id,
       );
+      sendRealtimeUpdate("bounty_updated", freshBounty, req.user.id); // ← new
       await invalidateBounty(bountyId);
       res.json({ message: "Assignee removed successfully" });
     } catch (error) {
@@ -885,7 +946,9 @@ router.patch(
       const submission = await prisma.workSubmission.findUnique({
         where: { id: submissionId },
         include: {
-          bounty: { select: { id: true, createdBy: true, status: true } },
+          bounty: {
+            select: { id: true, createdBy: true, status: true, assignee: true },
+          },
           submitterUser: { select: USER_SELECT_MINIMAL },
         },
       });
@@ -931,8 +994,14 @@ router.patch(
             },
           });
 
-          // Approving no longer auto-rejects siblings or strips assignees.
-          // That's the separate, explicit "reject others" action.
+          if (status === "rejected") {
+            await tx.bountyAssignee.deleteMany({
+              where: {
+                bountyId: submission.bounty.id,
+                userId: submission.submittedBy,
+              },
+            });
+          }
 
           const updBounty = await tx.bounty.update({
             where: { id: submission.bounty.id },
@@ -945,6 +1014,10 @@ router.patch(
                 }),
               ...(status !== "approved" &&
                 submission.bounty.status === "DONE" && { completedAt: null }),
+              ...(status === "rejected" &&
+                submission.bounty.assignee === submission.submittedBy && {
+                  assignee: null,
+                }),
             },
             include: {
               createdByUser: { select: USER_SELECT_WITH_ROLE },
@@ -1040,6 +1113,119 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
   }
 });
 
+// ─── Reject all other pending submissions once one is approved ──────────────
+router.patch(
+  "/submissions/:submissionId/reject-others",
+  authenticate,
+  async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const userId = req.user.id;
+      const userRole = req.user.role;
+
+      const keptSubmission = await prisma.workSubmission.findUnique({
+        where: { id: submissionId },
+        select: {
+          id: true,
+          bountyId: true,
+          submittedBy: true,
+          status: true,
+          bounty: { select: { id: true, createdBy: true, assignee: true } },
+        },
+      });
+      if (!keptSubmission)
+        return res.status(404).json({ error: "Submission not found" });
+
+      if (keptSubmission.bounty.createdBy !== userId && userRole !== "ADMIN") {
+        return res.status(403).json({
+          error:
+            "You do not have permission to manage this bounty's submissions",
+        });
+      }
+
+      if (keptSubmission.status !== "approved") {
+        return res.status(400).json({
+          error: "Can only reject other submissions once one has been approved",
+        });
+      }
+
+      const othersPending = await prisma.workSubmission.findMany({
+        where: {
+          bountyId: keptSubmission.bountyId,
+          id: { not: submissionId },
+          status: "pending",
+        },
+        select: { id: true, submittedBy: true },
+      });
+
+      if (othersPending.length === 0) {
+        return res.json({
+          message: "No other pending submissions",
+          rejectedCount: 0,
+        });
+      }
+
+      const rejectedUserIds = [
+        ...new Set(othersPending.map((s) => s.submittedBy)),
+      ];
+
+      await prisma.$transaction(async (tx) => {
+        await tx.workSubmission.updateMany({
+          where: { id: { in: othersPending.map((s) => s.id) } },
+          data: {
+            status: "rejected",
+            reviewedBy: userId,
+            reviewedAt: new Date(),
+          },
+        });
+
+        // Unassign the rejected submitters
+        await tx.bountyAssignee.deleteMany({
+          where: {
+            bountyId: keptSubmission.bountyId,
+            userId: { in: rejectedUserIds },
+          },
+        });
+
+        // Clean up the legacy single `assignee` field if it pointed to a loser
+        if (rejectedUserIds.includes(keptSubmission.bounty.assignee)) {
+          await tx.bounty.update({
+            where: { id: keptSubmission.bountyId },
+            data: { assignee: keptSubmission.submittedBy },
+          });
+        }
+      });
+
+      sendRealtimeUpdate(
+        "submissions_rejected_others",
+        {
+          bountyId: keptSubmission.bountyId,
+          keptSubmissionId: submissionId,
+          rejectedSubmissionIds: othersPending.map((s) => s.id),
+          rejectedUserIds,
+        },
+        req.user.id,
+      );
+      sendRealtimeUpdate(
+        "bounty_assignees_updated",
+        { bountyId: keptSubmission.bountyId },
+        req.user.id,
+      );
+
+      await invalidateSubmissions(keptSubmission.bountyId);
+      await invalidateBounty(keptSubmission.bountyId);
+
+      res.json({
+        message: "Other submissions rejected",
+        rejectedCount: othersPending.length,
+      });
+    } catch (error) {
+      console.error("Error rejecting other submissions:", error);
+      res.status(500).json({ error: "Failed to reject other submissions" });
+    }
+  },
+);
+
 // ─── Fetch all users ──────────────────────────────────────────────────────────
 router.get("/users", authenticate, async (req, res) => {
   try {
@@ -1058,6 +1244,7 @@ router.get("/users", authenticate, async (req, res) => {
         UA_address: true,
         avatar: true,
         emailNotifications: true,
+        pushNotifications: true,
       },
     });
     await setCache(cacheKey, users, TTL.USERS);
@@ -1331,7 +1518,7 @@ router.put(
       if (!application)
         return res.status(404).json({ error: "Application not found" });
 
-      const result = await prisma.$transaction(async (tx) => {
+      const [result, updatedBounty] = await prisma.$transaction(async (tx) => {
         const updated = await tx.bountyApplication.update({
           where: { id: applicationId },
           data: { status, reviewedAt: new Date(), reviewedBy: req.user.id },
@@ -1359,8 +1546,21 @@ router.put(
             data: { status: "IN_PROGRESS" },
           });
         }
-        return updated;
+
+        // Read the bounty back *inside* the same transaction so the
+        // assignees list reflects this accept, not a racing one.
+        const freshBounty = await tx.bounty.findUnique({
+          where: { id: application.bountyId },
+          include: {
+            ...ASSIGNEE_INCLUDE,
+            assigneeUser: { select: USER_SELECT_FULL },
+            createdByUser: { select: USER_SELECT_WITH_ROLE },
+          },
+        });
+
+        return [updated, freshBounty];
       });
+
       await invalidateApplications(
         application.applicantId,
         application.bountyId,
@@ -1368,6 +1568,7 @@ router.put(
       await invalidateBounty(application.bountyId);
 
       sendRealtimeUpdate("application_updated", result, req.user.id);
+      sendRealtimeUpdate("bounty_updated", updatedBounty, req.user.id); // ← new
       res.json(result);
 
       // Fire-and-forget — applicant just got assigned via acceptance
@@ -1586,20 +1787,27 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
-    const [totalAmountResult, countResult] = await Promise.all([
-      // Sum ALL bounty amounts — no pagination, one DB round-trip
-      prisma.bounty.aggregate({
-        where: { chain: "MAIN" },
-        _sum: { bountyAmount: true },
-        _count: { id: true },
-      }),
-      // Separate counts per status so the dashboard can show accurate numbers
-      prisma.bounty.groupBy({
-        by: ["status"],
-        where: { chain: "MAIN" },
-        _count: { id: true },
-      }),
-    ]);
+    const [totalAmountResult, countResult, unpaidDoneCount] = await Promise.all(
+      [
+        // Sum ALL bounty amounts — no pagination, one DB round-trip
+        prisma.bounty.aggregate({
+          where: { chain: "MAIN" },
+          _sum: { bountyAmount: true },
+          _count: { id: true },
+        }),
+        // Separate counts per status so the dashboard can show accurate numbers
+        prisma.bounty.groupBy({
+          by: ["status"],
+          where: { chain: "MAIN" },
+          _count: { id: true },
+        }),
+        // DONE but not yet paid — groupBy status alone can't capture this,
+        // since isPaid is orthogonal to status
+        prisma.bounty.count({
+          where: { chain: "MAIN", status: "DONE", isPaid: false },
+        }),
+      ],
+    );
 
     const statusCounts = countResult.reduce((acc, row) => {
       acc[row.status] = row._count.id;
@@ -1610,6 +1818,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
       totalBountyAmount: totalAmountResult._sum.bountyAmount ?? 0,
       totalBountyCount: totalAmountResult._count.id,
       statusCounts,
+      unpaidDoneCount,
     };
 
     // Cache for 60 s — short TTL so it reflects recent changes quickly
@@ -1622,13 +1831,13 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// ─── Get single bounty ────────────────────────────────────────────────────────
-
+// ─── Get single bounty ────────────────────────────────────────────────────
 router.get("/:id", optionalAuthenticate, async (req, res) => {
   try {
     const bountyId = req.params.id;
     const isAuthed = Boolean(req.user);
-    const cacheKey = `bounty:${isAuthed ? "full" : "public"}:${bountyId}`;
+    const version = await getVersion("bounties");
+    const cacheKey = `bounty:v${version}:${isAuthed ? "full" : "public"}:${bountyId}`;
 
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);

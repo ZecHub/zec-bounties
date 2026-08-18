@@ -27,6 +27,7 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.10",
     "redis": "^5.12.1",
+    "web-push": "^3.6.7",
     "ws": "^8.14.2"
   },
   "devDependencies": {

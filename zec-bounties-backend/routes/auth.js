@@ -1,4 +1,3 @@
-const path = require("path");
 const express = require("express");
 const axios = require("axios");
 const bcrypt = require("bcrypt");
@@ -8,14 +7,14 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 const { verifyZaddress, verifyUaddress } = require("../helpers/db-query.js");
 const {
   getLatestZcashParams,
-  getLatestZcashParamsForClientUser,
+  getVerificationZcashParams,
+  getWalletDataDir,
 } = require("../helpers/zcash/zcashHelper.js");
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const { sendRealtimeUpdate } = require("../middleware/websocket");
 
-// const { isSaplingZcashAddress } = require("../utils/zingo/zingoLib/parseAddresses");
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET;
 
@@ -25,37 +24,34 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 router.get("/github", (req, res) => {
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=user:email`;
-  res.redirect(githubAuthUrl); // Sends user to GitHub
+  res.redirect(githubAuthUrl);
 });
 
-// GitHub calls this route after user authenticates OR cancels
+// GitHub callback
 router.get("/github/callback", async (req, res) => {
   const { code, error, error_description } = req.query;
 
-  // Handle user cancellation or errors from GitHub
   if (error) {
     console.log(`GitHub OAuth error: ${error} - ${error_description}`);
     return res.redirect(`${FRONTEND_URL}/login?error=oauth_cancelled`);
   }
 
-  // Handle missing authorization code
   if (!code) {
     console.log("No authorization code received from GitHub");
     return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
   }
 
   try {
-    // Exchange code for access token
     const tokenResponse = await axios.post(
       "https://github.com/login/oauth/access_token",
       {
         client_id: GITHUB_CLIENT_ID,
         client_secret: GITHUB_CLIENT_SECRET,
-        code: code,
+        code,
       },
       {
         headers: {
-          Accept: "application/json", // Important: Get JSON response
+          Accept: "application/json",
         },
       },
     );
@@ -67,21 +63,24 @@ router.get("/github/callback", async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
     }
 
-    // Get user info from GitHub
     const userResponse = await axios.get("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     });
 
-    // Get user's email addresses (GitHub API returns this separately)
     const emailResponse = await axios.get(
       "https://api.github.com/user/emails",
       {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       },
     );
 
     const githubUser = userResponse.data;
     const emails = emailResponse.data;
+
     const primaryEmail =
       emails.find((email) => email.primary)?.email || githubUser.email;
 
@@ -90,13 +89,11 @@ router.get("/github/callback", async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/login?error=no_email`);
     }
 
-    // Create/find user in YOUR database
     let user = await prisma.user.findUnique({
       where: { email: primaryEmail },
     });
 
     if (!user) {
-      // Generate a unique nickname
       let nickname = githubUser.login.toLowerCase();
 
       const exists = await prisma.user.findUnique({
@@ -107,7 +104,6 @@ router.get("/github/callback", async (req, res) => {
         nickname = `${nickname}.${Math.floor(Math.random() * 10000)}`;
       }
 
-      // Create new user
       user = await prisma.user.create({
         data: {
           name: githubUser.name || githubUser.login,
@@ -119,7 +115,6 @@ router.get("/github/callback", async (req, res) => {
         },
       });
     } else if (!user.githubId) {
-      // Link GitHub account to existing user
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
@@ -129,12 +124,17 @@ router.get("/github/callback", async (req, res) => {
       });
     }
 
-    // Generate YOUR app's JWT token
-    const token = jwt.sign({ id: user.id, role: user.role }, SECRET, {
-      expiresIn: "7d",
-    });
+    const token = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+      },
+      SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
 
-    // Redirect back to frontend with token
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (error) {
     console.error("GitHub OAuth error:", error.message);
@@ -144,24 +144,30 @@ router.get("/github/callback", async (req, res) => {
 
 router.get("/verify", (req, res) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token" });
+
+  if (!authHeader) {
+    return res.status(401).json({ error: "No token" });
+  }
 
   const token = authHeader.split(" ")[1];
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return res.json({ user: decoded }); // contains id, role, email if you put them in JWT
+    return res.json({ user: decoded });
   } catch (err) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 });
 
-// utest18jxt2wjaklhtny5hx8xp7036v0qpy76j0rcsczsw34prh2svs6qst5eumxm35k9lpf3efxf0rayhh2u85zspp7m7z5w6288n2vzzu5u8
-
 router.get("/me", async (req, res) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "No token" });
+
+  if (!authHeader) {
+    return res.status(401).json({ error: "No token" });
+  }
 
   const token = authHeader.split(" ")[1];
+
   try {
     const decoded = jwt.verify(token, SECRET);
 
@@ -181,7 +187,9 @@ router.get("/me", async (req, res) => {
       },
     });
 
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
     return res.json({ user });
   } catch (err) {
@@ -192,6 +200,7 @@ router.get("/me", async (req, res) => {
 router.patch("/update-email-notifications", authenticate, async (req, res) => {
   try {
     const { emailNotifications } = req.body;
+
     if (typeof emailNotifications !== "boolean") {
       return res
         .status(400)
@@ -217,7 +226,9 @@ router.patch("/update-email-notifications", authenticate, async (req, res) => {
     });
 
     await delCache("users:all");
+
     sendRealtimeUpdate("user_updated", updated, req.user.id);
+
     res.json({ user: updated });
   } catch (error) {
     console.error("Failed to update email notifications:", error);
@@ -229,22 +240,8 @@ router.post("/verify-zaddress", authenticate, async (req, res) => {
   try {
     const { z_address } = req.body;
 
-    // Get params based on user role
-    let params;
-    if (req.user.role === "CLIENT") {
-      params = await getLatestZcashParamsForClientUser();
-    } else {
-      params = await getLatestZcashParams(req.user.id);
-    }
-
-    if (!params) {
-      return res.status(404).json({
-        error: "No Zcash params found. Initialize wallet first.",
-      });
-    }
-
+    const params = getVerificationZcashParams();
     const result = await verifyZaddress(z_address, params);
-    console.log("Verification result:", result);
 
     return res.json({ isVerified: result });
   } catch (err) {
@@ -257,26 +254,12 @@ router.post("/verify-uaddress", authenticate, async (req, res) => {
   try {
     const { z_address } = req.body;
 
-    // Get params based on user role
-    let params;
-    if (req.user.role === "CLIENT") {
-      params = await getLatestZcashParamsForClientUser();
-    } else {
-      params = await getLatestZcashParams(req.user.id);
-    }
-
-    if (!params) {
-      return res.status(404).json({
-        error: "No Zcash params found. Initialize wallet first.",
-      });
-    }
-
+    const params = getVerificationZcashParams();
     const result = await verifyUaddress(z_address, params);
-    console.log("Verification result:", result);
 
     return res.json({ isVerified: result });
   } catch (err) {
-    console.error("Error verifying Z-address:", err);
+    console.error("Error verifying U-address:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -284,12 +267,7 @@ router.post("/verify-uaddress", authenticate, async (req, res) => {
 // Check if user has Zcash params set up
 router.get("/has-zcash-params", authenticate, async (req, res) => {
   try {
-    let params;
-    if (req.user.role === "CLIENT") {
-      params = await getLatestZcashParamsForClientUser();
-    } else {
-      params = await getLatestZcashParams(req.user.id);
-    }
+    const params = await getLatestZcashParams(req.user.id);
 
     return res.json({
       hasParams: !!params,
@@ -303,8 +281,6 @@ router.get("/has-zcash-params", authenticate, async (req, res) => {
 
 router.patch("/update-zaddress", authenticate, async (req, res) => {
   const { z_address } = req.body;
-
-  // const validAddress = verifyZaddress(z_address);
 
   const validAddress = true;
 
@@ -325,14 +301,17 @@ router.patch("/update-zaddress", authenticate, async (req, res) => {
       },
     });
 
-    res.json({ message: "Z-address updated successfully", user: updatedUser });
+    res.json({
+      message: "Z-address updated successfully",
+      user: updatedUser,
+    });
   } catch (error) {
     console.error("Error updating z_address:", error);
     res.status(500).json({ error: "Failed to update z_address" });
   }
 });
 
-// In-memory OTP store  { userId: { otp, expiresAt } }
+// In-memory OTP store
 const otpStore = new Map();
 
 // Step 1: Request OTP
@@ -340,7 +319,11 @@ router.post("/recovery/request-otp", authenticate, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { email: true, name: true, nickname: true },
+      select: {
+        email: true,
+        name: true,
+        nickname: true,
+      },
     });
 
     if (!user?.email) {
@@ -349,17 +332,20 @@ router.post("/recovery/request-otp", authenticate, async (req, res) => {
         .json({ error: "No email associated with account" });
     }
 
-    // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+    const expiresAt = Date.now() + 5 * 60 * 1000;
 
-    // Overwrite any existing OTP for this user
-    otpStore.set(req.user.id, { otp, expiresAt });
+    otpStore.set(req.user.id, {
+      otp,
+      expiresAt,
+    });
 
-    // Send email — plug in your mailer here (nodemailer, resend, sendgrid, etc.)
     await sendRecoveryOtpEmail(user.email, user.name, otp);
 
-    res.json({ message: "OTP sent", email: maskEmail(user.email) });
+    res.json({
+      message: "OTP sent",
+      email: maskEmail(user.email),
+    });
   } catch (err) {
     console.error("OTP request error:", err);
     res.status(500).json({ error: "Failed to send OTP" });
@@ -371,34 +357,46 @@ router.post("/recovery/verify-otp", authenticate, async (req, res) => {
   const { otp, accountName } = req.body;
 
   if (!otp || !accountName) {
-    return res.status(400).json({ error: "OTP and accountName required" });
+    return res.status(400).json({
+      error: "OTP and accountName required",
+    });
   }
 
   const record = otpStore.get(req.user.id);
 
   if (!record) {
-    return res
-      .status(401)
-      .json({ error: "No OTP requested. Request a new one." });
+    return res.status(401).json({
+      error: "No OTP requested. Request a new one.",
+    });
   }
 
   if (Date.now() > record.expiresAt) {
     otpStore.delete(req.user.id);
-    return res.status(401).json({ error: "OTP expired. Request a new one." });
+
+    return res.status(401).json({
+      error: "OTP expired. Request a new one.",
+    });
   }
 
   if (record.otp !== otp) {
-    return res.status(401).json({ error: "Incorrect OTP" });
+    return res.status(401).json({
+      error: "Incorrect OTP",
+    });
   }
 
   // Valid — consume immediately
   otpStore.delete(req.user.id);
 
   try {
-    // Verify wallet belongs to this user and get its config
+    // Find the wallet params belonging to this user.
+    // walletId is now the source of truth for the wallet directory.
     const zcashParam = await prisma.zcashParams.findFirst({
-      where: { accountName, ownerId: req.user.id },
+      where: {
+        accountName,
+        ownerId: req.user.id,
+      },
       select: {
+        walletId: true,
         accountName: true,
         chain: true,
         serverUrl: true,
@@ -408,48 +406,54 @@ router.post("/recovery/verify-otp", authenticate, async (req, res) => {
     });
 
     if (!zcashParam) {
-      return res
-        .status(404)
-        .json({ error: "Wallet not found or access denied" });
+      return res.status(404).json({
+        error: "Wallet not found or access denied",
+      });
     }
 
-    // Build dataDir the same way zcashHelper does
-    const dataDir =
-      zcashParam.isTeam && zcashParam.teamId
-        ? path.join(
-            process.cwd(),
-            "wallets",
-            `team:${zcashParam.teamId}`,
-            accountName,
-            zcashParam.chain,
-          )
-        : path.join(
-            process.cwd(),
-            "wallets",
-            req.user.id,
-            accountName,
-            zcashParam.chain,
-          );
+    if (!zcashParam.walletId) {
+      console.error(
+        `Wallet "${accountName}" for user "${req.user.id}" has no walletId`,
+      );
 
-    const params = { ...zcashParam, dataDir };
+      return res.status(500).json({
+        error: "Wallet is missing walletId",
+      });
+    }
+
+    // walletId is now the ONLY source used to resolve the wallet directory.
+    const dataDir = getWalletDataDir(zcashParam.walletId);
+
+    const params = {
+      ...zcashParam,
+      dataDir,
+    };
 
     const recoveryInfo = await executeZingoCliRecoveryInfo(
       "recovery_info",
       params,
     );
 
-    res.json({ data: recoveryInfo });
+    res.json({
+      data: recoveryInfo,
+    });
   } catch (err) {
     console.error("Recovery fetch error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({
+      error: "Internal server error",
+    });
   }
 });
 
 router.patch("/update-ua-address", authenticate, async (req, res) => {
   const { UA_address } = req.body;
+
   if (!UA_address?.startsWith("u1")) {
-    return res.status(400).json({ error: "Invalid mainnet unified address" });
+    return res.status(400).json({
+      error: "Invalid mainnet unified address",
+    });
   }
+
   try {
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
@@ -462,9 +466,15 @@ router.patch("/update-ua-address", authenticate, async (req, res) => {
         UA_address: true,
       },
     });
-    res.json({ message: "Mainnet address updated", user: updatedUser });
+
+    res.json({
+      message: "Mainnet address updated",
+      user: updatedUser,
+    });
   } catch (error) {
-    res.status(500).json({ error: "Failed to update UA_address" });
+    res.status(500).json({
+      error: "Failed to update UA_address",
+    });
   }
 });
 
@@ -487,7 +497,6 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
       });
     }
 
-    // Check uniqueness
     const existing = await prisma.user.findUnique({
       where: { nickname },
     });
@@ -500,7 +509,9 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
 
     const updated = await prisma.user.update({
       where: { id: req.user.id },
-      data: { nickname: nickname?.trim() || null },
+      data: {
+        nickname: nickname?.trim() || null,
+      },
       select: {
         id: true,
         name: true,
@@ -524,12 +535,64 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
       deleteCacheByPattern("applications:*"),
       deleteCacheByPattern("submissions:*"),
     ]);
+
     sendRealtimeUpdate("user_updated", updated, req.user.id);
 
     res.json({ user: updated });
   } catch (error) {
     console.error("Failed to update nickname:", error);
-    res.status(500).json({ error: "Failed to update nickname" });
+    res.status(500).json({
+      error: "Failed to update nickname",
+    });
+  }
+});
+
+// Self-serve role selection
+router.patch("/select-role", authenticate, async (req, res) => {
+  try {
+    const { role } = req.body;
+    const ALLOWED_ROLES = ["HUNTER", "TEAM"];
+
+    if (!ALLOWED_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Role must be one of: ${ALLOWED_ROLES.join(", ")}`,
+      });
+    }
+
+    if (req.user.role !== "CLIENT") {
+      return res.status(403).json({
+        error: "Role has already been set for this account",
+      });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { role },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        avatar: true,
+        nickname: true,
+        isRobin: true,
+        isManOfSteel: true,
+        z_address: true,
+        UA_address: true,
+        emailNotifications: true,
+      },
+    });
+
+    await delCache("users:all");
+
+    sendRealtimeUpdate("user_updated", updated, req.user.id);
+
+    res.json({ user: updated });
+  } catch (error) {
+    console.error("Failed to select role:", error);
+    res.status(500).json({
+      error: "Failed to update role",
+    });
   }
 });
 

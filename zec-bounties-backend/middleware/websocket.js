@@ -1,5 +1,4 @@
-// Store all connected clients
-const clients = new Set();
+const clients = new Map(); // userId -> { ws, userId, userName }
 
 // Broadcast to all connected clients
 function broadcast(data, excludeWs) {
@@ -14,12 +13,8 @@ function broadcast(data, excludeWs) {
 
 // Get WebSocket connection by userId
 function getClientByUserId(userId) {
-  for (const client of clients) {
-    if (client.userId === userId) {
-      return client.ws;
-    }
-  }
-  return null;
+  const client = clients.get(userId);
+  return client ? client.ws : null;
 }
 
 // Send a message to a specific user only (no broadcast)
@@ -30,91 +25,60 @@ function sendToUser(userId, type, payload) {
   }
 }
 
-function handleWebSocket(ws, prisma) {
-  let currentClient = null;
+function handleWebSocket(ws, prisma, user) {
+  // If this user already has a live connection, close the old one so a
+  // stale/duplicate/hijacked socket can't keep receiving sendToUser events.
+  const existing = clients.get(user.id);
+  if (existing && existing.ws.readyState === 1) {
+    existing.ws.close(4001, "Replaced by new connection");
+  }
+
+  const currentClient = { ws, userId: user.id, userName: user.name };
+  clients.set(user.id, currentClient);
+
+  ws.send(
+    JSON.stringify({
+      type: "joined",
+      content: `Welcome, ${user.name}!`,
+    }),
+  );
+
+  broadcast(
+    {
+      type: "system",
+      content: `${user.name} joined the chat`,
+    },
+    ws,
+  );
+
+  console.log(`User ${user.name} connected. Total clients: ${clients.size}`);
 
   ws.on("message", async (data) => {
     try {
       const message = JSON.parse(data.toString());
 
       switch (message.type) {
-        case "join":
-          if (!message.userId) {
+        case "message": {
+          if (!message.content) {
             ws.send(
               JSON.stringify({
                 type: "error",
-                content: "userId is required",
+                content: "Invalid message format",
               }),
             );
             break;
           }
 
-          // Fetch user from database
-          const user = await prisma.user.findUnique({
-            where: { id: message.userId },
-          });
-
-          if (!user) {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                content: "User not found",
-              }),
-            );
-            break;
-          }
-
-          // Add client to connected clients
-          currentClient = {
-            ws,
-            userId: user.id,
-            userName: user.name,
-          };
-          clients.add(currentClient);
-
-          // Send confirmation to the joining user
-          ws.send(
-            JSON.stringify({
-              type: "joined",
-              content: `Welcome, ${user.name}!`,
-            }),
-          );
-
-          // Broadcast to others that user joined
-          broadcast(
-            {
-              type: "system",
-              content: `${user.name} joined the chat`,
-            },
-            ws,
-          );
-
-          console.log(
-            `User ${user.name} connected. Total clients: ${clients.size}`,
-          );
-          break;
-
-        case "message":
-          if (!currentClient || !message.content) {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                content: "Invalid message format or not joined",
-              }),
-            );
-            break;
-          }
-
-          // Save message to database
+          // userId comes from the authenticated `user`, never from the
+          // client-sent message.
           const savedMessage = await prisma.message.create({
             data: {
               content: message.content,
-              userId: currentClient.userId,
+              userId: user.id,
             },
             include: { user: true },
           });
 
-          // Broadcast to all connected clients (including sender)
           const responseData = {
             type: "message",
             id: savedMessage.id,
@@ -126,6 +90,7 @@ function handleWebSocket(ws, prisma) {
 
           broadcast(responseData);
           break;
+        }
 
         case "ping":
           ws.send(JSON.stringify({ type: "pong" }));
@@ -143,26 +108,24 @@ function handleWebSocket(ws, prisma) {
   });
 
   ws.on("close", () => {
-    if (currentClient) {
-      clients.delete(currentClient);
+    // Only remove the map entry if it's still this socket — avoids a race
+    // where an old socket's close event deletes a newer replacement client.
+    if (clients.get(user.id)?.ws === ws) {
+      clients.delete(user.id);
       console.log(
-        `User ${currentClient.userName} disconnected. Total clients: ${clients.size}`,
+        `User ${user.name} disconnected. Total clients: ${clients.size}`,
       );
-
-      // Broadcast to others that user left
       broadcast({
         type: "system",
-        content: `${currentClient.userName} left the chat`,
+        content: `${user.name} left the chat`,
       });
-
-      currentClient = null;
     }
   });
 
   ws.on("error", (error) => {
     console.error("WebSocket error:", error);
-    if (currentClient) {
-      clients.delete(currentClient);
+    if (clients.get(user.id)?.ws === ws) {
+      clients.delete(user.id);
     }
   });
 }

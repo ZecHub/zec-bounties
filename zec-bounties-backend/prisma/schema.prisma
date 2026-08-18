@@ -43,6 +43,8 @@ model User {
   ofacVerified         Boolean             @default(false)
   teamMembers          TeamMember[]        @relation("UserTeams")
   badges               Json                @default("[]")
+  pushNotifications    Boolean @default(true)
+  pushSubscriptions    PushSubscription[]
 }
 
 model Bounty {
@@ -204,6 +206,17 @@ model TeamWallet {
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@map("team_wallets")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
