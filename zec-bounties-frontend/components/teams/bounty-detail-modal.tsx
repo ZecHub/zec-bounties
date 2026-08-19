@@ -22,8 +22,6 @@ import {
   Send,
   AlertTriangle,
   ExternalLink,
-  Share2,
-  Check,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -54,7 +52,6 @@ export function BountyDetailModal({
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
-    editSubmission,
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
@@ -64,18 +61,6 @@ export function BountyDetailModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmission[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editDescription, setEditDescription] = useState("");
-  const [editDeliverableUrl, setEditDeliverableUrl] = useState("");
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const [linkCopied, setLinkCopied] = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
@@ -137,75 +122,6 @@ export function BountyDetailModal({
     ? (workSubmissions.find((s) => s.submittedBy === currentUser.id) ?? null)
     : null;
   const hasCurrentUserSubmitted = !!userWorkSubmission;
-
-  const EDIT_WINDOW_MS = 15 * 60 * 1000;
-  const submittedAtMs = userWorkSubmission?.submittedAt
-    ? new Date(userWorkSubmission.submittedAt).getTime()
-    : null;
-  const editMsRemaining = submittedAtMs
-    ? EDIT_WINDOW_MS - (now - submittedAtMs)
-    : 0;
-
-  const isNeedsRevision = userWorkSubmission?.status === "needs_revision";
-
-  const canEditSubmission =
-    hasCurrentUserSubmitted &&
-    (isNeedsRevision ||
-      (userWorkSubmission?.status === "pending" && editMsRemaining > 0));
-
-  const startEdit = () => {
-    setEditDescription(userWorkSubmission?.description ?? "");
-    setEditDeliverableUrl(userWorkSubmission?.deliverableUrl ?? "");
-    setIsEditing(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!userWorkSubmission || !editDescription.trim()) return;
-    setIsSavingEdit(true);
-    try {
-      const updated = await editSubmission(userWorkSubmission.id, {
-        description: editDescription,
-        deliverableUrl: editDeliverableUrl,
-      });
-      setWorkSubmissions((prev) =>
-        prev.map((s) => (s.id === updated.id ? updated : s)),
-      );
-      setIsEditing(false);
-      toast.success("Submission updated!");
-    } catch (error) {
-      console.error("Failed to edit submission:", error);
-      toast.error("Failed to update submission");
-    } finally {
-      setIsSavingEdit(false);
-    }
-  };
-
-  const handleShare = async () => {
-    const url = `${window.location.origin}/bounty/${bounty.id}`;
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: bounty.title,
-          text: `Check out this bounty: ${bounty.title}`,
-          url,
-        });
-        return;
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        // fall through to clipboard on other errors
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      setLinkCopied(true);
-      toast.success("Link copied to clipboard");
-      setTimeout(() => setLinkCopied(false), 2000);
-    } catch {
-      toast.error("Couldn't copy link");
-    }
-  };
 
   const canSubmitWork =
     isAssignedToCurrentUser &&
@@ -378,24 +294,9 @@ export function BountyDetailModal({
               </Badge>
             )}
           </div>
-          <div className="flex items-start justify-between gap-2">
-            <DialogTitle className="text-lg font-semibold leading-snug flex-1">
-              {bounty.title}
-            </DialogTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={handleShare}
-              title="Share this bounty"
-            >
-              {linkCopied ? (
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-              ) : (
-                <Share2 className="h-3.5 w-3.5" />
-              )}
-            </Button>
-          </div>
+          <DialogTitle className="text-lg font-semibold leading-snug">
+            {bounty.title}
+          </DialogTitle>
           <DialogDescription className="flex items-center gap-3 mt-1">
             <span className="flex items-center gap-1 text-xs">
               <Clock className="h-3 w-3" />
@@ -449,7 +350,6 @@ export function BountyDetailModal({
                       value={deliverableUrl}
                       onChange={(e) => setDeliverableUrl(e.target.value)}
                       className="w-full px-3 py-1.5 border rounded-md text-sm"
-                      autoComplete="off"
                     />
                     <p className="text-[11px] text-muted-foreground">
                       Link to your completed work (GitHub, Drive, deployed app,
@@ -501,75 +401,20 @@ export function BountyDetailModal({
                     </Badge>
                   </div>
 
-                  {isEditing ? (
-                    <div className="space-y-2">
-                      <Textarea
-                        value={editDescription}
-                        onChange={(e) => setEditDescription(e.target.value)}
-                        className="min-h-[80px] text-sm bg-white dark:bg-green-950/30"
-                      />
-                      <input
-                        type="url"
-                        value={editDeliverableUrl}
-                        onChange={(e) => setEditDeliverableUrl(e.target.value)}
-                        placeholder="https://github.com/username/repo"
-                        className="w-full px-3 py-1.5 border rounded-md text-sm"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={handleSaveEdit}
-                          disabled={!editDescription.trim() || isSavingEdit}
-                          className="bg-green-600 hover:bg-green-700 text-white"
-                        >
-                          {isSavingEdit ? "Saving..." : "Save Changes"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setIsEditing(false)}
-                          disabled={isSavingEdit}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="p-2.5 bg-white dark:bg-green-950/30 border rounded text-xs text-green-700 dark:text-green-300 leading-relaxed">
-                        {userWorkSubmission?.description}
-                      </div>
+                  <div className="p-2.5 bg-white dark:bg-green-950/30 border rounded text-xs text-green-700 dark:text-green-300 leading-relaxed">
+                    {userWorkSubmission?.description}
+                  </div>
 
-                      {userWorkSubmission?.deliverableUrl && (
-                        <a
-                          href={userWorkSubmission.deliverableUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all"
-                        >
-                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                          {userWorkSubmission.deliverableUrl}
-                        </a>
-                      )}
-
-                      {canEditSubmission && (
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-[11px] text-green-600 dark:text-green-400">
-                            {isNeedsRevision
-                              ? "Edit and resubmit your work"
-                              : `You can edit for ${Math.ceil(editMsRemaining / 60000)} more min`}
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={startEdit}
-                          >
-                            Edit Submission
-                          </Button>
-                        </div>
-                      )}
-                    </>
+                  {userWorkSubmission?.deliverableUrl && (
+                    <a
+                      href={userWorkSubmission.deliverableUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all"
+                    >
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                      {userWorkSubmission.deliverableUrl}
+                    </a>
                   )}
 
                   <p className="text-[11px] text-green-600 dark:text-green-400">
