@@ -140,10 +140,13 @@ export function BountyDetailModal({
   const editMsRemaining = submittedAtMs
     ? EDIT_WINDOW_MS - (now - submittedAtMs)
     : 0;
+
+  const isNeedsRevision = userWorkSubmission?.status === "needs_revision";
+
   const canEditSubmission =
     hasCurrentUserSubmitted &&
-    userWorkSubmission?.status === "pending" &&
-    editMsRemaining > 0;
+    (isNeedsRevision ||
+      (userWorkSubmission?.status === "pending" && editMsRemaining > 0));
 
   const startEdit = () => {
     setEditDescription(userWorkSubmission?.description ?? "");
@@ -155,10 +158,13 @@ export function BountyDetailModal({
     if (!userWorkSubmission || !editDescription.trim()) return;
     setIsSavingEdit(true);
     try {
-      await editSubmission(userWorkSubmission.id, {
+      const updated = await editSubmission(userWorkSubmission.id, {
         description: editDescription,
         deliverableUrl: editDeliverableUrl,
       });
+      setWorkSubmissions((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s)),
+      );
       setIsEditing(false);
       toast.success("Submission updated!");
     } catch (error) {
@@ -544,8 +550,9 @@ export function BountyDetailModal({
                       {canEditSubmission && (
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-[11px] text-green-600 dark:text-green-400">
-                            You can edit for{" "}
-                            {Math.ceil(editMsRemaining / 60000)} more min
+                            {isNeedsRevision
+                              ? "Edit and resubmit your work"
+                              : `You can edit for ${Math.ceil(editMsRemaining / 60000)} more min`}
                           </span>
                           <Button
                             size="sm"
