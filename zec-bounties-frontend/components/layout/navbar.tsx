@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   User,
   Loader2,
-  BarChart3, // ← Added for Dashboard icon
+  BarChart3,
+  BookOpen,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -152,6 +153,17 @@ export function Navbar({
               <span className="hidden sm:inline">ZEC Bounties</span>
             </Link>
           </div>
+
+          {/* Docs — public */}
+	<div className="hidden xl:flex items-center space-x-5 text-sm font-medium mr-4">
+	  <Link
+	    href="/docs"
+	    className="flex items-center gap-1.5 transition-colors hover:text-primary"
+	  >
+	    <BookOpen className="h-4 w-4" />
+	    Docs
+	  </Link>
+	</div>
 
           {/* Desktop Navigation */}
           {currentUser && (
@@ -311,6 +323,15 @@ export function Navbar({
                     />
                   </div>
 
+                  <Link
+			  href="/docs"
+			  className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+			  onClick={() => setMobileMenuOpen(false)}
+			>
+			  <BookOpen className="h-4 w-4" />
+			  Docs
+			</Link>
+
                   {!currentUser && (
                     <>
                       <Button
@@ -354,6 +375,8 @@ export function Navbar({
                         >
                           Profile
                         </Link>
+
+                       
 
                         {isAdmin && (
                           <Link
