@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutGrid,
   List,
+  Grid3X3,
   Plus,
   Filter,
   ArrowRight,
@@ -22,6 +23,7 @@ import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
+import { formatStatus } from "@/lib/utils";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { FavoriteTeamsSidebar } from "@/components/favorite-teams-sidebar";
 import { HeroCarousel } from "@/components/hero-carousel";
@@ -59,6 +61,33 @@ const KANBAN_COLUMNS: {
   },
 ];
 
+// Windows 98-style defrag map colors (inspired by classic Disk Defragmenter)
+const DEFRAG_STATUS_COLORS: Record<BountyStatus, string> = {
+  TO_DO: "bg-cyan-400", // free / pending
+  IN_PROGRESS: "bg-blue-800", // allocated / in use
+  IN_REVIEW: "bg-red-500", // fragmented / needs attention
+  DONE: "bg-blue-500", // contiguous / completed
+  CANCELLED: "bg-zinc-700",
+};
+
+const DEFRAG_LEGEND: { status: BountyStatus; label: string; color: string }[] =
+  [
+    { status: "TO_DO", label: "Todo", color: "bg-cyan-400" },
+    { status: "IN_PROGRESS", label: "In Progress", color: "bg-blue-800" },
+    { status: "IN_REVIEW", label: "In Review", color: "bg-red-500" },
+    { status: "DONE", label: "Done", color: "bg-blue-500" },
+    { status: "CANCELLED", label: "Cancelled", color: "bg-zinc-700" },
+  ];
+
+// Order for defrag map so same-status blocks form contiguous runs (classic look)
+const STATUS_ORDER: BountyStatus[] = [
+  "TO_DO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "DONE",
+  "CANCELLED",
+];
+
 function HomeContent() {
   const {
     bounties,
@@ -76,6 +105,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
 
   const [activeCategory, setActiveCategory] = useState("All");
+  const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -118,6 +148,17 @@ function HomeContent() {
       })),
     [filteredBounties],
   );
+
+  const defragBounties = useMemo(() => {
+    return [...filteredBounties].sort((a, b) => {
+      const ai = STATUS_ORDER.indexOf(a.status);
+      const bi = STATUS_ORDER.indexOf(b.status);
+      if (ai !== bi) return ai - bi;
+      return (
+        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+      );
+    });
+  }, [filteredBounties]);
 
   const missingUA = !currentUser?.UA_address;
 
@@ -274,6 +315,38 @@ function HomeContent() {
                       : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
                   }`}
                 >
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === "defrag" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setViewMode("defrag")}
+                  title="Defrag map view"
+                >
+                  <Grid3X3 className="h-4 w-4" />
+                </Button>
+                {canLoadMore && (
+                  <div className="relative group">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore || bountiesLoading}
+                    >
+                      {isLoadingMore || bountiesLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ChevronsDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
+                      Load more
+                    </span>
+                  </div>
+                )}
+              </div>
                   {cat}
                   <Badge
                     variant="secondary"
@@ -433,6 +506,9 @@ function HomeContent() {
                       </div>
                     ))}
                 </div>
+              )
+            ) : viewMode === "defrag" ? (
+              filteredBounties.length === 0 ? (
               ) : (
                 <div className="text-center py-20 border rounded-xl bg-muted/20">
                   <p className="text-muted-foreground">
@@ -441,6 +517,109 @@ function HomeContent() {
                     {searchQuery ? " matching your search" : ""}.
                   </p>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                    {DEFRAG_LEGEND.map((item) => (
+                      <div
+                        key={item.status}
+                        className="flex items-center gap-1.5"
+                      >
+                        <span
+                          className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                    ))}
+                    <span className="ml-auto text-[11px] opacity-70">
+                      {filteredBounties.length} bounties · click a block to open
+                    </span>
+                  </div>
+                  <div
+                    className="rounded border border-border bg-black p-1.5 overflow-hidden"
+                    style={{
+                      // Classic dense map look
+                      imageRendering: "pixelated",
+                    }}
+                  >
+                    <div
+                      className="grid gap-px"
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, 14px)",
+                        justifyContent: "start",
+                      }}
+                    >
+                      {defragBounties.map((bounty) => {
+                        const color =
+                          DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
+                        return (
+                          <button
+                            key={bounty.id}
+                            type="button"
+                            title={`${bounty.title} — ${formatStatus(bounty.status)}`}
+                            onClick={() => openBounty(bounty)}
+                            className={`
+                              relative h-[14px] w-[14px]
+                              border border-black/90 ${color}
+                              hover:z-10 hover:scale-[1.8] hover:border-white
+                              focus:outline-none focus:ring-1 focus:ring-white
+                              transition-transform duration-75
+                              cursor-pointer
+                            `}
+                          >
+                            {/* center "data" pixel for Done / In Progress (classic map look) */}
+                            {(bounty.status === "DONE" ||
+                              bounty.status === "IN_PROGRESS") && (
+                              <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : filteredBounties.length > 0 ? (
+              <div className="space-y-8">
+                {kanbanGroups
+                  .filter((col) => col.bounties.length > 0)
+                  .map((col) => (
+                    <div key={col.status} className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 rounded-full ${col.dotColor}`}
+                        />
+                        <h3 className="text-sm font-semibold">{col.label}</h3>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] h-5 px-1.5"
+                        >
+                          {col.bounties.length}
+                        </Badge>
+                        <div className="flex-1 border-t border-border/50 ml-1" />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {col.bounties.map((bounty) => (
+                          <BountyCard
+                            key={bounty.id}
+                            bounty={bounty}
+                            viewMode="list"
+                            onClick={() => openBounty(bounty)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <div className="text-center py-20 border rounded-xl bg-muted/20">
+                <p className="text-muted-foreground">
+                  No bounties found
+                  {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
+                  {searchQuery ? " matching your search" : ""}.
+                </p>
+              </div>
+            )}
               )}
 
               {canLoadMore && <div ref={sentinelRef} className="h-4" />}

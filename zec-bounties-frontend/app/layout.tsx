@@ -7,6 +7,7 @@ import { ZAddressProvider } from "@/components/address/zaddress-integration-hook
 import { ThemeProvider } from "@/components/theme-provider";
 import { Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { AppPromptBanner } from "@/components/app-prompt-banner";
 import "./globals.css";
 import { ColorThemeProvider } from "@/components/theme/color-theme-provider";
 
@@ -17,6 +18,7 @@ export const metadata: Metadata = {
   title: "ZEC Bounties | Bounty Platform",
   description:
     "ZEC Bounties is a privacy-first bounty platform for the Zcash cryptocurrency (ZEC). Zcash is a digital currency providing censorship-resistant, secure, and private payments. ZEC Bounties enables bug bounties, community rewards, development incentives, and contributor programs designed to support innovation and growth across the Zcash ecosystem. It is a great way to earn Zcash (ZEC)",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -53,11 +55,22 @@ export default function RootLayout({
         />
         {/* Optional: Meta robots */}
         <meta name="robots" content="index, follow" />
+        <meta name="theme-color" content="#0a0a0a" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <Suspense fallback={<div>Loading...</div>}>
+            <BountyProvider>
+              {/* <ZAddressProvider> */}
+              {children}
+              {/* </ZAddressProvider> */}
+              <Toaster position="top-right" />
+              <AppPromptBanner />
+            </BountyProvider>
+          </Suspense>
           <ColorThemeProvider>
             <Suspense fallback={<div>Loading...</div>}>
               <BountyProvider>

@@ -19,6 +19,7 @@ import {
   User,
   Users,
   Building2,
+  BookOpen,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -60,15 +61,12 @@ import { cn } from "@/lib/utils";
 function ActiveWalletTypePill() {
   const { zcashParams, currentTeam } = useBounty();
   if (!zcashParams || zcashParams.length === 0) return null;
-
   const active =
     zcashParams.find((p) => p.isDefault) ?? zcashParams[zcashParams.length - 1];
   if (!active) return null;
-
   const isTeam = !!(active.isTeam && active.teamId);
   const teamName = isTeam && currentTeam ? currentTeam.name : null;
   const accountLabel = active.accountName || "Wallet";
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -121,7 +119,6 @@ function SyncStatusBadge({ status }: { status: SyncStatus | null }) {
     status.percentage_total_blocks_scanned ||
     status.percentage_total_outputs_scanned;
   const done = pct === 100 || status.in_progress === false;
-
   return (
     <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono">
       {done ? (
@@ -151,13 +148,11 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
   const { currentUser, switchRole, isSwitchingRole } = useBounty();
   const router = useRouter();
   if (!currentUser?.isRobin) return null;
-
   const isAdmin = currentUser.role === "ADMIN";
   const handleSwitch = async () => {
     await switchRole();
     router.push(isAdmin ? "/home" : "/admin");
   };
-
   if (compact) {
     return (
       <Button
@@ -181,7 +176,6 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
       </Button>
     );
   }
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -226,9 +220,7 @@ export function AdminNavbar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-
   const RESCAN_HIDE_MS = 0.5 * 60 * 1000; // 5 minutes
-
   const [rescanHidden, setRescanHidden] = useState(() => {
     try {
       const ts = localStorage.getItem("walletImportedAt");
@@ -237,7 +229,6 @@ export function AdminNavbar({
       return false;
     }
   });
-
   useEffect(() => {
     try {
       const ts = localStorage.getItem("walletImportedAt");
@@ -250,11 +241,9 @@ export function AdminNavbar({
       const timer = setTimeout(() => setRescanHidden(false), remaining);
       return () => clearTimeout(timer);
     } catch {
-      // localStorage unavailable — just show the button
       setRescanHidden(false);
     }
   }, []);
-
   const {
     currentUser,
     currentTeam,
@@ -270,15 +259,12 @@ export function AdminNavbar({
     rescanWallet,
     rescanLoading,
   } = useBounty();
-
-  // Derive active wallet for mobile sheet
   const activeWallet =
     zcashParams?.find((p) => p.isDefault) ??
     (zcashParams && zcashParams.length > 0
       ? zcashParams[zcashParams.length - 1]
       : null);
   const activeIsTeam = !!(activeWallet?.isTeam && activeWallet?.teamId);
-
   const confirmedTotal = (b: Balance | undefined) => {
     return (
       ((b?.confirmed_ironwood_balance ?? 0) +
@@ -288,9 +274,7 @@ export function AdminNavbar({
       1e8
     );
   };
-
   const fmt = (n: number) => n.toFixed(4);
-
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -299,18 +283,15 @@ export function AdminNavbar({
       setIsRefreshing(false);
     }
   };
-
   const handleWalletClick = async () => {
     setTopupOpen(true);
     await Promise.all([fetchAddresses()]);
   };
-
   const handleWalletClickMobile = async () => {
     setTopupOpen(true);
     setMobileMenuOpen(false);
     await Promise.all([fetchAddresses()]);
   };
-
   const handleSyncStatus = async () => {
     setIsSyncing(true);
     try {
@@ -319,7 +300,6 @@ export function AdminNavbar({
       setIsSyncing(false);
     }
   };
-
   return (
     <>
       <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -351,13 +331,13 @@ export function AdminNavbar({
 
           {/* Desktop nav links */}
           <div className="hidden xl:flex items-center space-x-4 text-sm font-medium mr-auto">
-            {/* <Link
-              href="/admin/dashboard"
-              prefetch
-              className="transition-colors hover:text-primary"
+             <Link
+              href="/docs"
+              className="flex items-center gap-1.5 transition-colors hover:text-primary"
             >
-              Dashboard
-            </Link> */}
+              <BookOpen className="h-4 w-4" />
+              Docs
+            </Link>
             <Link
               href="/admin/bounties"
               className="transition-colors hover:text-primary"
@@ -398,11 +378,11 @@ export function AdminNavbar({
             >
               Settings
             </Link>
+           
           </div>
 
           {/* Desktop right side */}
           <div className="hidden xl:flex items-center gap-1.5 ml-auto">
-            {/* Search */}
             <div className="relative max-w-sm mr-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -413,9 +393,7 @@ export function AdminNavbar({
                 className="pl-8 h-9 w-[180px] lg:w-[260px] bg-muted/50 border-none focus-visible:ring-1"
               />
             </div>
-
             <TooltipProvider delayDuration={300}>
-              {/* Sync / rescan status */}
               {syncStatus || syncStatusError ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -458,10 +436,8 @@ export function AdminNavbar({
                 </Tooltip>
               ) : null}
 
-              {/* ── ACTIVE WALLET TYPE PILL — always visible ── */}
               <ActiveWalletTypePill />
 
-              {/* Balance */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -516,7 +492,6 @@ export function AdminNavbar({
                 )}
               </Tooltip>
 
-              {/* Refresh */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -536,7 +511,6 @@ export function AdminNavbar({
                 </TooltipContent>
               </Tooltip>
 
-              {/* Sync status */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -557,8 +531,6 @@ export function AdminNavbar({
                   Refresh sync status
                 </TooltipContent>
               </Tooltip>
-
-              {/* Rescan */}
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -584,10 +556,8 @@ export function AdminNavbar({
                 </TooltipContent>
               </Tooltip>
 
-              {/* Role toggle */}
               <RoleToggleButton />
 
-              {/* Theme */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -598,12 +568,10 @@ export function AdminNavbar({
                 <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                 <span className="sr-only">Toggle theme</span>
               </Button>
-
               <Button variant="ghost" size="icon" className="h-9 w-9">
                 <Bell className="h-4 w-4" />
               </Button>
 
-              {/* User menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -634,7 +602,6 @@ export function AdminNavbar({
 
           {/* Mobile right side */}
           <div className="flex xl:hidden items-center gap-2 ml-auto">
-            {/* Mobile wallet type pill — compact, icon only on very small screens */}
             {activeWallet && (
               <div
                 className={cn(
@@ -654,7 +621,6 @@ export function AdminNavbar({
                 </span>
               </div>
             )}
-
             <Button
               variant="ghost"
               size="icon"
@@ -665,7 +631,6 @@ export function AdminNavbar({
               <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
               <span className="sr-only">Toggle theme</span>
             </Button>
-
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -692,7 +657,6 @@ export function AdminNavbar({
                     />
                   </div>
 
-                  {/* Active wallet type — prominent in mobile sheet */}
                   {activeWallet && (
                     <div
                       className={cn(
@@ -745,13 +709,13 @@ export function AdminNavbar({
 
                   <div className="flex flex-col gap-1">
                     {[
-                      // { href: "/admin/dashboard", label: "Dashboard" },
                       { href: "/admin/bounties", label: "Bounties" },
                       { href: "/admin/export", label: "Export" },
                       { href: "/admin/teams", label: "Teams" },
                       { href: "/admin/profile", label: "Profile" },
                       { href: "/admin/kpis", label: "KPIs" },
                       { href: "/admin/settings", label: "Settings" },
+                      { href: "/docs", label: "Docs" },
                     ].map(({ href, label }) => (
                       <Link
                         key={href}
@@ -821,7 +785,6 @@ export function AdminNavbar({
                       )}
                       Sync
                     </Button>
-
                     <Button
                       variant="outline"
                       className={cn(
@@ -866,6 +829,7 @@ export function AdminNavbar({
                   </div>
 
                   <div className="border-t" />
+
                   <Button
                     variant="ghost"
                     className="justify-start text-destructive"
@@ -879,7 +843,6 @@ export function AdminNavbar({
           </div>
         </div>
       </nav>
-
       {isAdmin && (
         <WalletTopupModal open={topupOpen} onOpenChange={setTopupOpen} />
       )}
