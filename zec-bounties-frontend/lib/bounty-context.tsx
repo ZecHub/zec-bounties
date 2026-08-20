@@ -339,6 +339,7 @@ interface BountyContextType {
   rescanTeamWallet: (teamId: string) => Promise<void>;
   teamRescanLoading: boolean;
   teamRescanStatus: string | null;
+  teamActivityVersion: number;
 
   // Favorites
   favoriteTeamIds: Set<string>;
@@ -427,6 +428,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   >(undefined);
   const [teamRescanLoading, setTeamRescanLoading] = useState(false);
   const [teamRescanStatus, setTeamRescanStatus] = useState<string | null>(null);
+  const [teamActivityVersion, setTeamActivityVersion] = useState(0);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -2158,6 +2160,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 msg.payload,
               ],
             }));
+            setTeamActivityVersion((v) => v + 1);
             break;
 
           case "application_updated":
@@ -2177,6 +2180,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 (app) => (app.id === msg.payload.id ? msg.payload : app),
               ),
             }));
+            setTeamActivityVersion((v) => v + 1);
             break;
 
           case "application_deleted":
@@ -2192,6 +2196,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 (app) => app.id !== msg.payload.id,
               ),
             }));
+            setTeamActivityVersion((v) => v + 1);
             break;
 
           case "payment_authorized":
@@ -2228,6 +2233,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 msg.payload,
               ],
             }));
+            setTeamActivityVersion((v) => v + 1);
             break;
 
           case "submission_reviewed":
@@ -2245,6 +2251,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               ),
             }));
             fetchBounties();
+            setTeamActivityVersion((v) => v + 1);
             break;
 
           case "category_created":
@@ -2453,6 +2460,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 (s) => (s.id === msg.payload.id ? msg.payload : s),
               ),
             }));
+            setTeamActivityVersion((v) => v + 1);
             break;
 
           case "submissions_rejected_others":
@@ -2475,6 +2483,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                     : s,
               ),
             }));
+            setTeamActivityVersion((v) => v + 1);
           case "team_favorited":
             setFavoriteTeamIds((prev) => new Set(prev).add(msg.payload.teamId));
             break;
@@ -3339,6 +3348,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         rescanTeamWallet,
         teamRescanLoading,
         teamRescanStatus,
+        teamActivityVersion,
       }}
     >
       {children}

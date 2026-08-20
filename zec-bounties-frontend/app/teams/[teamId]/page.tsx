@@ -62,6 +62,7 @@ import {
   Upload,
   Pencil,
   FolderSync,
+  FileText,
 } from "lucide-react";
 import { formatStatus } from "@/lib/utils";
 import { displayName } from "@/lib/displayName";
@@ -358,6 +359,8 @@ function OverviewTab({
     acceptApplication,
     rejectApplication,
     reviewWorkSubmission,
+    rejectOtherSubmissions,
+    teamActivityVersion,
   } = useBounty();
 
   const [applications, setApplications] = useState<BountyApplication[]>([]);
@@ -381,7 +384,7 @@ function OverviewTab({
 
   useEffect(() => {
     loadActivity();
-  }, [team.id]);
+  }, [team.id, teamActivityVersion]);
 
   const totalPaid = teamBounties
     .filter((b) => b.status === "DONE")
@@ -420,6 +423,16 @@ function OverviewTab({
     setIsUpdating(true);
     try {
       await reviewWorkSubmission(submissionId, { status: action, reviewNotes });
+      await loadActivity();
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRejectOthers = async (submissionId: string) => {
+    setIsUpdating(true);
+    try {
+      await rejectOtherSubmissions(submissionId);
       await loadActivity();
     } finally {
       setIsUpdating(false);
@@ -965,6 +978,25 @@ function OverviewTab({
                         </Button>
                         <Button
                           size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const textarea = document.getElementById(
+                              `team-review-notes-${submission.id}`,
+                            ) as HTMLTextAreaElement;
+                            handleSubmissionReview(
+                              submission.id,
+                              "needs_revision",
+                              textarea?.value,
+                            );
+                          }}
+                          disabled={isUpdating}
+                          className="flex-1"
+                        >
+                          <FileText className="w-3.5 h-3.5 mr-1.5" />
+                          Revise
+                        </Button>
+                        <Button
+                          size="sm"
                           variant="destructive"
                           onClick={() => {
                             const textarea = document.getElementById(
@@ -983,6 +1015,61 @@ function OverviewTab({
                           Reject
                         </Button>
                       </div>
+                    </div>
+                  )}
+
+                  {submission.status === "approved" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-900/20">
+                        <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-600 dark:text-green-400" />
+                        <p className="text-xs text-green-700 dark:text-green-300">
+                          Approved
+                        </p>
+                      </div>
+
+                      {submissions.some(
+                        (s) =>
+                          s.bountyId === submission.bountyId &&
+                          s.id !== submission.id &&
+                          s.status === "pending",
+                      ) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                "Reject all other pending submissions for this bounty? This can't be undone.",
+                              )
+                            ) {
+                              handleRejectOthers(submission.id);
+                            }
+                          }}
+                          disabled={isUpdating}
+                          className="w-full gap-1.5 text-xs text-destructive hover:bg-destructive/10"
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                          Reject remaining pending submissions
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {submission.status === "rejected" && (
+                    <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 dark:border-red-800 dark:bg-red-900/20">
+                      <XCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                      <p className="text-xs text-red-700 dark:text-red-300">
+                        Rejected
+                      </p>
+                    </div>
+                  )}
+
+                  {submission.status === "needs_revision" && (
+                    <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 dark:border-orange-800 dark:bg-orange-900/20">
+                      <FileText className="h-3.5 w-3.5 flex-shrink-0 text-orange-600 dark:text-orange-400" />
+                      <p className="text-xs text-orange-700 dark:text-orange-300">
+                        Revision requested — bounty back to In Progress
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1089,6 +1176,7 @@ function TeamActivityFeed({
     acceptApplication,
     rejectApplication,
     reviewWorkSubmission,
+    teamActivityVersion,
   } = useBounty();
   const [applications, setApplications] = useState<BountyApplication[]>([]);
   const [submissions, setSubmissions] = useState<WorkSubmission[]>([]);
@@ -1111,7 +1199,7 @@ function TeamActivityFeed({
 
   useEffect(() => {
     loadActivity();
-  }, [teamId]);
+  }, [teamId, teamActivityVersion]);
 
   const pendingApplications = applications.filter(
     (a) => a.status === "pending",

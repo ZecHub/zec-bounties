@@ -107,7 +107,6 @@ function HomeContent() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
@@ -315,38 +314,6 @@ function HomeContent() {
                       : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
                   }`}
                 >
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === "defrag" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setViewMode("defrag")}
-                  title="Defrag map view"
-                >
-                  <Grid3X3 className="h-4 w-4" />
-                </Button>
-                {canLoadMore && (
-                  <div className="relative group">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleLoadMore}
-                      disabled={isLoadingMore || bountiesLoading}
-                    >
-                      {isLoadingMore || bountiesLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <ChevronsDown className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
-                      Load more
-                    </span>
-                  </div>
-                )}
-              </div>
                   {cat}
                   <Badge
                     variant="secondary"
@@ -358,7 +325,7 @@ function HomeContent() {
               ))}
             </div>
 
-            <div className="lg:col-span-3 space-y-6 min-w-0 flex-1">
+            <div className="space-y-6 min-w-0 flex-1">
               <div className="flex items-center justify-between pb-4 border-b">
                 <h2 className="text-xl font-bold">
                   {activeTeamId
@@ -374,6 +341,7 @@ function HomeContent() {
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => setViewMode("grid")}
+                    title="Grid view"
                   >
                     <LayoutGrid className="h-4 w-4" />
                   </Button>
@@ -382,8 +350,18 @@ function HomeContent() {
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => setViewMode("list")}
+                    title="List view"
                   >
                     <List className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === "defrag" ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setViewMode("defrag")}
+                    title="Defrag map view"
+                  >
+                    <Grid3X3 className="h-4 w-4" />
                   </Button>
                   {canLoadMore && (
                     <div className="relative group">
@@ -413,68 +391,63 @@ function HomeContent() {
                   <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
                   <p className="text-muted-foreground">Loading bounties...</p>
                 </div>
+              ) : filteredBounties.length === 0 ? (
+                <div className="text-center py-20 border rounded-xl bg-muted/20">
+                  <p className="text-muted-foreground">
+                    No bounties found
+                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
+                    {searchQuery ? " matching your search" : ""}.
+                  </p>
+                </div>
               ) : viewMode === "grid" ? (
-                filteredBounties.length === 0 ? (
-                  <div className="text-center py-20 border rounded-xl bg-muted/20">
-                    <p className="text-muted-foreground">
-                      No bounties found
-                      {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                      {searchQuery ? " matching your search" : ""}.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto pb-4 -mx-1 px-1">
-                    <div className="flex gap-4 items-start min-w-max">
-                      {kanbanGroups.map((col) => (
+                <div className="overflow-x-auto pb-4 -mx-1 px-1">
+                  <div className="flex gap-4 items-start min-w-max">
+                    {kanbanGroups.map((col) => (
+                      <div
+                        key={col.status}
+                        className="flex flex-col gap-3 w-72 flex-shrink-0"
+                      >
                         <div
-                          key={col.status}
-                          className="flex flex-col gap-3 w-72 flex-shrink-0"
+                          className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
                         >
-                          <div
-                            className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-2 w-2 rounded-full ${col.dotColor}`}
+                            />
+                            <span className="text-sm font-semibold">
+                              {col.label}
+                            </span>
+                          </div>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] h-5 px-1.5"
                           >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                              />
-                              <span className="text-sm font-semibold">
-                                {col.label}
-                              </span>
-                            </div>
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] h-5 px-1.5"
-                            >
-                              {col.bounties.length}
-                            </Badge>
-                          </div>
-                          <div className="flex flex-col gap-3">
-                            {col.bounties.length === 0 ? (
-                              <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
-                                <p className="text-xs text-muted-foreground">
-                                  No bounties
-                                </p>
-                              </div>
-                            ) : (
-                              col.bounties.map((bounty) => (
-                                <BountyCard
-                                  key={bounty.id}
-                                  bounty={bounty}
-                                  viewMode="kanban"
-                                  onClick={() => {
-                                    setSelectedBounty(bounty);
-                                    setIsDetailModalOpen(true);
-                                  }}
-                                />
-                              ))
-                            )}
-                          </div>
+                            {col.bounties.length}
+                          </Badge>
                         </div>
-                      ))}
-                    </div>
+                        <div className="flex flex-col gap-3">
+                          {col.bounties.length === 0 ? (
+                            <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
+                              <p className="text-xs text-muted-foreground">
+                                No bounties
+                              </p>
+                            </div>
+                          ) : (
+                            col.bounties.map((bounty) => (
+                              <BountyCard
+                                key={bounty.id}
+                                bounty={bounty}
+                                viewMode="kanban"
+                                onClick={() => openBounty(bounty)}
+                              />
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )
-              ) : filteredBounties.length > 0 ? (
+                </div>
+              ) : viewMode === "list" ? (
                 <div className="space-y-8">
                   {kanbanGroups
                     .filter((col) => col.bounties.length > 0)
@@ -506,18 +479,8 @@ function HomeContent() {
                       </div>
                     ))}
                 </div>
-              )
-            ) : viewMode === "defrag" ? (
-              filteredBounties.length === 0 ? (
               ) : (
-                <div className="text-center py-20 border rounded-xl bg-muted/20">
-                  <p className="text-muted-foreground">
-                    No bounties found
-                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                    {searchQuery ? " matching your search" : ""}.
-                  </p>
-                </div>
-              ) : (
+                // defrag view
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                     {DEFRAG_LEGEND.map((item) => (
@@ -578,48 +541,6 @@ function HomeContent() {
                     </div>
                   </div>
                 </div>
-              )
-            ) : filteredBounties.length > 0 ? (
-              <div className="space-y-8">
-                {kanbanGroups
-                  .filter((col) => col.bounties.length > 0)
-                  .map((col) => (
-                    <div key={col.status} className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                        />
-                        <h3 className="text-sm font-semibold">{col.label}</h3>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] h-5 px-1.5"
-                        >
-                          {col.bounties.length}
-                        </Badge>
-                        <div className="flex-1 border-t border-border/50 ml-1" />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {col.bounties.map((bounty) => (
-                          <BountyCard
-                            key={bounty.id}
-                            bounty={bounty}
-                            viewMode="list"
-                            onClick={() => openBounty(bounty)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : (
-              <div className="text-center py-20 border rounded-xl bg-muted/20">
-                <p className="text-muted-foreground">
-                  No bounties found
-                  {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                  {searchQuery ? " matching your search" : ""}.
-                </p>
-              </div>
-            )}
               )}
 
               {canLoadMore && <div ref={sentinelRef} className="h-4" />}
