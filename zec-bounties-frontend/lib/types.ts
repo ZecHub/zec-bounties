@@ -119,6 +119,7 @@ export interface Bounty {
   status: BountyStatus;
   isApproved: boolean;
   isPaid: boolean;
+  isPrivate: boolean;
   paymentAuthorized: boolean;
   paymentScheduled?: PaymentSchedule;
   paymentBatchId?: string;
@@ -244,6 +245,7 @@ export interface Team {
   members: TeamMember[];
   wallet?: TeamWallet | null;
   logo?: string | null;
+  banner?: string | null;
   isPrivate: boolean;
 }
 

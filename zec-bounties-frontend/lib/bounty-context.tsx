@@ -340,6 +340,8 @@ interface BountyContextType {
   teamRescanLoading: boolean;
   teamRescanStatus: string | null;
   teamActivityVersion: number;
+  uploadTeamBanner: (teamId: string, file: File) => Promise<Team>;
+  removeTeamBanner: (teamId: string) => Promise<void>;
 
   // Favorites
   favoriteTeamIds: Set<string>;
@@ -2116,11 +2118,20 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
         switch (msg.type) {
           case "new_bounties":
-            setBounties((prev) =>
-              prev.some((b) => b.id === msg.payload.id)
-                ? prev // already have it (e.g. creator's own optimistic add)
-                : [msg.payload, ...prev],
-            );
+            setBounties((prev) => {
+              if (prev.some((b) => b.id === msg.payload.id)) return prev;
+
+              const b = msg.payload;
+              const canView =
+                !b.isPrivate ||
+                currentUser?.role === "ADMIN" ||
+                b.createdBy === currentUser?.id ||
+                (b.teamId != null &&
+                  (teams.some((t) => t.id === b.teamId) ||
+                    favoriteTeamIds.has(b.teamId)));
+
+              return canView ? [b, ...prev] : prev;
+            });
             fetchTotalStats();
             break;
 
@@ -2484,6 +2495,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               ),
             }));
             setTeamActivityVersion((v) => v + 1);
+            break;
           case "team_favorited":
             setFavoriteTeamIds((prev) => new Set(prev).add(msg.payload.teamId));
             break;
@@ -3204,6 +3216,43 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return data;
   };
 
+  const uploadTeamBanner = async (
+    teamId: string,
+    file: File,
+  ): Promise<Team> => {
+    if (!currentUser) throw new Error("Unauthorized");
+
+    const formData = new FormData();
+    formData.append("banner", file);
+
+    const token = localStorage.getItem("authToken");
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/banner`, {
+      method: "POST",
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to upload banner");
+
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
+    return json.team;
+  };
+
+  const removeTeamBanner = async (teamId: string): Promise<void> => {
+    if (!currentUser) throw new Error("Unauthorized");
+
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/banner`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to remove banner");
+
+    setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
+  };
+
   return (
     <BountyContext.Provider
       value={{
@@ -3349,6 +3398,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         teamRescanLoading,
         teamRescanStatus,
         teamActivityVersion,
+        removeTeamBanner,
+        uploadTeamBanner,
       }}
     >
       {children}

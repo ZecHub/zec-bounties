@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -8,10 +8,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Pencil, Image as ImageIcon, Check } from "lucide-react";
-import { backendUrl } from "@/lib/configENV";
+import { Pencil, Image as ImageIcon, Check, Loader2, X } from "lucide-react";
+import { useBounty } from "@/lib/bounty-context";
 
-// Preset gradients — swap for uploaded images once banner upload exists.
+// Preset gradients — used as a fallback when the team has no uploaded banner.
 // Reuses the same chart-token palette as the homepage hero carousel so
 // it stays visually consistent with the rest of the app.
 const GRADIENT_PRESETS = [
@@ -50,18 +50,51 @@ function defaultGradientFor(teamId: string) {
 
 interface TeamBannerProps {
   teamId: string;
-  bannerUrl?: string | null; // wire this up once the backend field exists
+  bannerUrl?: string | null; // full gateway URL now, or null
   canManage: boolean;
 }
 
 export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
+  const { uploadTeamBanner, removeTeamBanner } = useBounty();
   const [editing, setEditing] = useState(false);
-  // TODO(backend): replace this local-only state with `team.bannerColor` /
-  // `team.bannerUrl` once the Team model + upload route exist, the same
-  // way team.logo works today. For now this only persists client-side.
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Purely cosmetic fallback — only shown when there's no real banner.
   const [gradient, setGradient] = useState(() => defaultGradientFor(teamId));
 
   const hasRealImage = !!bannerUrl;
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      await uploadTeamBanner(teamId, file);
+      setEditing(false);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to upload banner");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemove = async () => {
+    setUploading(true);
+    setError(null);
+    try {
+      await removeTeamBanner(teamId);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to remove banner");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <>
@@ -72,7 +105,7 @@ export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
       >
         {hasRealImage && (
           <img
-            src={`${backendUrl}${bannerUrl}`}
+            src={bannerUrl!}
             alt="Team banner"
             className="h-full w-full object-cover"
           />
@@ -98,38 +131,72 @@ export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Choose a color
-              </p>
-              <div className="grid grid-cols-5 gap-2">
-                {GRADIENT_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => setGradient(preset)}
-                    title={preset.label}
-                    className={`relative h-12 rounded-lg border bg-gradient-to-br ${preset.className} transition hover:scale-105`}
-                  >
-                    {gradient.id === preset.id && (
-                      <span className="absolute inset-0 flex items-center justify-center">
-                        <Check className="h-4 w-4 drop-shadow" />
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div className="rounded-lg border border-dashed p-4 text-center">
               <ImageIcon className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
-                Image upload is coming soon — colors are available now.
+                PNG, JPEG, WEBP, or SVG. Max 5MB.
               </p>
-              <Button size="sm" variant="outline" disabled className="mt-3">
-                Upload image
-              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <div className="mt-3 flex justify-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : hasRealImage ? (
+                    "Replace image"
+                  ) : (
+                    "Upload image"
+                  )}
+                </Button>
+                {hasRealImage && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRemove}
+                    disabled={uploading}
+                    className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
+                  >
+                    <X className="mr-1 h-3.5 w-3.5" /> Remove
+                  </Button>
+                )}
+              </div>
+              {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
             </div>
+
+            {!hasRealImage && (
+              <div>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Or pick a color (used until you upload an image)
+                </p>
+                <div className="grid grid-cols-5 gap-2">
+                  {GRADIENT_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setGradient(preset)}
+                      title={preset.label}
+                      className={`relative h-12 rounded-lg border bg-gradient-to-br ${preset.className} transition hover:scale-105`}
+                    >
+                      {gradient.id === preset.id && (
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <Check className="h-4 w-4 drop-shadow" />
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-2 flex justify-end">

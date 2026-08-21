@@ -35,6 +35,15 @@ function resolveAssetUrl(raw: string): string {
   return ABSOLUTE_URL_RE.test(raw) ? raw : `${backendUrl}${raw}`;
 }
 
+export function pinataUrl(cid?: string | null): string | undefined {
+  if (!cid) return undefined;
+
+  const gateway =
+    process.env.NEXT_PUBLIC_PINATA_GATEWAY || "gateway.pinata.cloud";
+
+  return `https://${gateway}/ipfs/${cid}`;
+}
+
 /**
  * Avatar image src for a bounty's creator — team logo takes precedence
  * over the individual user's personal avatar when the bounty was posted
@@ -43,9 +52,16 @@ function resolveAssetUrl(raw: string): string {
  */
 export function bountyCreatorAvatarSrc(
   bounty?:
-    | (DisplayNameBounty & { createdByUser?: DisplayNameUserWithAvatar | null })
+    | (DisplayNameBounty & {
+        createdByUser?: DisplayNameUserWithAvatar | null;
+      })
     | null,
 ): string | undefined {
-  const raw = bounty?.team ? bounty.team.logo : bounty?.createdByUser?.avatar;
-  return raw ? resolveAssetUrl(raw) : undefined;
+  if (bounty?.team?.logo) {
+    return pinataUrl(bounty.team.logo);
+  }
+
+  return bounty?.createdByUser?.avatar
+    ? resolveAssetUrl(bounty.createdByUser.avatar)
+    : undefined;
 }

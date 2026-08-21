@@ -174,7 +174,7 @@ function ExploreContent() {
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-xs font-semibold text-muted-foreground">
                           {team.logo ? (
                             <img
-                              src={`${backendUrl}${team.logo}`}
+                              src={team.logo}
                               alt={`${team.name} logo`}
                               className="h-full w-full object-cover"
                             />

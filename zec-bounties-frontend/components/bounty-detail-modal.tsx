@@ -55,6 +55,8 @@ export function BountyDetailModal({
     fetchWorkSubmissions,
     submitWork,
     editSubmission,
+    teams,
+    favoriteTeamIds,
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
@@ -129,6 +131,14 @@ export function BountyDetailModal({
       bounty.assignee === currentUser.id);
 
   const isSuggestedTask = bounty.createdByUser?.role === "CLIENT";
+
+  const canViewPrivate =
+    !bounty.isPrivate ||
+    currentUser?.role === "ADMIN" ||
+    bounty.createdBy === currentUser?.id ||
+    (bounty.teamId != null &&
+      (teams.some((t) => t.id === bounty.teamId) ||
+        favoriteTeamIds.has(bounty.teamId)));
 
   const isMissingUAForMainnet =
     bounty.chain === "MAIN" && !currentUser?.UA_address;
@@ -217,6 +227,7 @@ export function BountyDetailModal({
 
   const canApply =
     currentUser &&
+    canViewPrivate &&
     bounty.createdBy !== currentUser.id &&
     !userApplication &&
     !isAssignedToCurrentUser &&
@@ -247,6 +258,14 @@ export function BountyDetailModal({
           type: "info",
           title: "Your bounty",
           message: "You cannot apply to your own bounty.",
+        };
+      }
+      if (!canViewPrivate) {
+        return {
+          type: "info",
+          title: "Private bounty",
+          message:
+            "This bounty belongs to a private team you're not a member of.",
         };
       }
       if (isSuggestedTask) {

@@ -235,16 +235,17 @@ export default function TeamConsolePage() {
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> All teams
         </Button>
 
-        <TeamBanner teamId={team.id} bannerUrl={null} canManage={canManage} />
+        <TeamBanner
+          teamId={team.id}
+          bannerUrl={team.banner}
+          canManage={canManage}
+        />
 
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <Avatar className="h-14 w-14 border">
               {team.logo && (
-                <AvatarImage
-                  src={`${backendUrl}${team.logo}`}
-                  alt={`${team.name} logo`}
-                />
+                <AvatarImage src={team.logo} alt={`${team.name} logo`} />
               )}
               <AvatarFallback className="text-lg font-semibold">
                 {initials(team.name)}
@@ -1910,7 +1911,7 @@ function SettingsTab({
             <Avatar className="h-16 w-16 border rounded-lg">
               {team.logo && (
                 <AvatarImage
-                  src={`${backendUrl}${team.logo}`}
+                  src={team.logo}
                   alt={`${team.name} logo`}
                   className="object-cover"
                 />

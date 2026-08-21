@@ -221,7 +221,7 @@ export default function TeamsPage() {
                       <Avatar className="h-16 w-16 border-4 border-card shrink-0 shadow-sm">
                         {team.logo && (
                           <AvatarImage
-                            src={`${backendUrl}${team.logo}`}
+                            src={team.logo}
                             alt={`${team.name} logo`}
                           />
                         )}
