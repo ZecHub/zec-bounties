@@ -355,36 +355,12 @@ const getBadgeIcons = (
 };
 
   const getDefaultAvatarClasses = (
-    completed: number,
-    badges: string[] = [],
-  ) => {
-    const avatarOverride = badges.find((b) => b.startsWith("avatar:"));
-
-    if (avatarOverride) {
-      switch (avatarOverride) {
-        case "avatar:red":
-          return "bg-red-500 text-white";
-        case "avatar:blue":
-          return "bg-blue-500 text-white";
-        case "avatar:purple":
-          return "bg-purple-500 text-white";
-        case "avatar:gold":
-          return "bg-yellow-500 text-black";
-        case "avatar:pink":
-          return "bg-pink-500 text-white";
-        case "avatar:default":
-        default:
-          break;
-      }
-    }
-
-    if (completed >= 60) return "bg-pink-500 text-white";
-    if (completed >= 20) return "bg-yellow-500 text-black";
-    if (completed >= 10) return "bg-purple-500 text-white";
-    if (completed >= 5) return "bg-blue-500 text-white";
-    if (completed >= 1) return "bg-red-500 text-white";
-    return "bg-muted text-muted-foreground";
-  };
+  completed: number,
+  badges: string[] = [],
+) => {
+  // Always a plain muted circle when no image
+  return "bg-muted text-muted-foreground";
+};
 
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
