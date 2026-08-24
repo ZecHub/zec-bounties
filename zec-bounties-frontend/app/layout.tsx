@@ -9,6 +9,7 @@ import { Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { AppPromptBanner } from "@/components/app-prompt-banner";
 import "./globals.css";
+import { ColorThemeProvider } from "@/components/theme/color-theme-provider";
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -28,6 +29,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+                      try {
+                        var t = localStorage.getItem('colorTheme');
+                        if (t) document.documentElement.setAttribute('data-color-theme', t);
+                      } catch (e) {}
+                    `,
+          }}
+        />
         {/* Structured Data for SEO */}
         <script
           type="application/ld+json"
@@ -51,15 +62,16 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-          <Suspense fallback={<div>Loading...</div>}>
-            <BountyProvider>
-              {/* <ZAddressProvider> */}
-              {children}
-              {/* </ZAddressProvider> */}
-              <Toaster position="top-right" />
-              <AppPromptBanner />
-            </BountyProvider>
-          </Suspense>
+          <ColorThemeProvider>
+            <Suspense fallback={<div>Loading...</div>}>
+              <BountyProvider>
+                {/* <ZAddressProvider> */}
+                {children}
+                {/* </ZAddressProvider> */}
+                <Toaster position="top-right" />
+              </BountyProvider>
+            </Suspense>
+          </ColorThemeProvider>
           <Analytics />
         </ThemeProvider>
       </body>

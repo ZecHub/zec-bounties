@@ -14,8 +14,16 @@ import {
   User,
   Loader2,
   BarChart3,
-  BookOpen,
+  RefreshCw,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  Building2,
+  FolderSync,
 } from "lucide-react";
+import { Balance } from "@/lib/types";
+import type { SyncStatus } from "@/lib/bounty-context";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -44,7 +52,6 @@ import { useState } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/theme/theme-picker";
 
 // ── Role toggle button ────────────────────────────────────────────────────────
@@ -53,11 +60,11 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
   if (!currentUser?.isRobin) return null;
 
-  const isAdmin = currentUser.role === "ADMIN";
+  const isTeam = currentUser.role === "TEAM";
 
   const handleSwitch = async () => {
     await switchRole();
-    router.push(isAdmin ? "/home" : "/admin");
+    router.push(isTeam ? "/home" : "/admin");
   };
 
   if (compact) {
@@ -70,14 +77,14 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
       >
         {isSwitchingRole ? (
           <Loader2 className="h-4 w-4 animate-spin" />
-        ) : isAdmin ? (
+        ) : isTeam ? (
           <User className="h-4 w-4" />
         ) : (
           <ShieldCheck className="h-4 w-4" />
         )}
         {isSwitchingRole
           ? "Switching..."
-          : isAdmin
+          : isTeam
             ? "Switch to Client"
             : "Switch to Admin"}
       </Button>
@@ -97,30 +104,95 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
           >
             {isSwitchingRole ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : isAdmin ? (
+            ) : isTeam ? (
               <User className="h-3.5 w-3.5" />
             ) : (
               <ShieldCheck className="h-3.5 w-3.5" />
             )}
             <span className="hidden xl:inline">
-              {isSwitchingRole ? "..." : isAdmin ? "Client" : "Admin"}
+              {isSwitchingRole ? "..." : isTeam ? "Client" : "Admin"}
             </span>
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          {isAdmin ? "Switch to Client view" : "Switch to Admin view"}
+          {isTeam ? "Switch to Client view" : "Switch to Admin view"}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
 }
 
-export function Navbar({
-  isAdmin = false,
+function ActiveWalletTypePill() {
+  const { zcashParams, currentTeam } = useBounty();
+  if (!zcashParams || zcashParams.length === 0) return null;
+  const active =
+    zcashParams.find((p) => p.isDefault) ?? zcashParams[zcashParams.length - 1];
+  if (!active) return null;
+  const isTeam = !!(active.isTeam && active.teamId);
+  const teamName = isTeam && currentTeam ? currentTeam.name : null;
+  const accountLabel = active.accountName || "Wallet";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold cursor-default select-none transition-colors",
+            isTeam
+              ? "bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/50 dark:border-violet-800 dark:text-violet-300"
+              : "bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/50 dark:border-sky-800 dark:text-sky-300",
+          )}
+        >
+          {isTeam ? (
+            <Building2 className="h-3 w-3 shrink-0" />
+          ) : (
+            <User className="h-3 w-3 shrink-0" />
+          )}
+          <span className="hidden lg:inline">
+            {isTeam ? (teamName ?? "Team") : accountLabel}
+          </span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs max-w-[200px]">
+        <p className="font-semibold mb-0.5">
+          {isTeam ? "Team wallet" : "Personal wallet"}
+        </p>
+        <p className="text-muted-foreground">{accountLabel}</p>
+        {teamName && <p className="text-muted-foreground">Team: {teamName}</p>}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SyncStatusBadge({ status }: { status: SyncStatus | null }) {
+  if (!status) return null;
+  const pct =
+    status.percentage_total_blocks_scanned ||
+    status.percentage_total_outputs_scanned;
+  const done = pct === 100 || status.in_progress === false;
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono">
+      {done ? (
+        <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+      ) : (
+        <Activity className="h-3 w-3 text-amber-400 animate-pulse shrink-0" />
+      )}
+      <span className={done ? "text-emerald-500" : "text-amber-400"}>
+        {pct != null
+          ? `${Number(pct).toFixed(2)}%`
+          : status.in_progress
+            ? "…"
+            : "—"}
+      </span>
+    </div>
+  );
+}
+
+export function TeamNavbar({
+  isTeam = false,
   searchQuery,
   onSearchChange,
 }: {
-  isAdmin?: boolean;
+  isTeam?: boolean;
   searchQuery?: string;
   onSearchChange?: (value: string) => void;
 }) {
@@ -129,7 +201,51 @@ export function Navbar({
   const [topupOpen, setTopupOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [zecBalance] = useState(0.0);
-  const { currentUser, logout } = useBounty();
+  const {
+    currentUser,
+    logout,
+    currentTeam,
+    fetchTeamWalletBalance,
+    teamSyncStatus,
+    teamSyncStatusError,
+    fetchTeamSyncStatus,
+    rescanTeamWallet,
+    teamRescanLoading,
+  } = useBounty();
+  const [teamBalance, setTeamBalance] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const confirmedTotal = (b: Balance | undefined) =>
+    ((b?.confirmed_ironwood_balance ?? 0) +
+      (b?.confirmed_orchard_balance ?? 0) +
+      (b?.confirmed_sapling_balance ?? 0) +
+      (b?.confirmed_transparent_balance ?? 0)) /
+    1e8;
+  const fmt = (n: number) => n.toFixed(4);
+
+  const handleRefresh = async () => {
+    if (!currentTeam) return;
+    setIsRefreshing(true);
+    try {
+      const bal = await fetchTeamWalletBalance(currentTeam.id);
+      setTeamBalance(bal);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+  const handleSyncStatus = async () => {
+    if (!currentTeam) return;
+    setIsSyncing(true);
+    try {
+      await fetchTeamSyncStatus(currentTeam.id);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+  const currentSyncStatus = currentTeam
+    ? (teamSyncStatus[currentTeam.id] ?? null)
+    : null;
 
   return (
     <>
@@ -156,50 +272,29 @@ export function Navbar({
             </Link>
           </div>
 
-          {/* Docs — public */}
-          <div className="hidden xl:flex items-center space-x-5 text-sm font-medium mr-4">
-            <Link
-              href="/docs"
-              className="flex items-center gap-1.5 transition-colors hover:text-primary"
-            >
-              <BookOpen className="h-4 w-4" />
-              Docs
-            </Link>
-          </div>
-
           {/* Desktop Navigation */}
           {currentUser && (
             <div className="hidden xl:flex items-center space-x-5 text-sm font-medium mr-auto">
               {/* Dashboard Link - Visible to everyone */}
               <Link
-                href="/kpis"
+                href="/teams"
                 className="flex items-center gap-1.5 transition-colors hover:text-primary"
               >
-                <BarChart3 className="h-4 w-4" />
-                Dashboard
+                Teams
               </Link>
 
               <Link
-                href="/my-bounties"
+                href="/teams/bounties"
                 className="transition-colors hover:text-primary"
               >
-                My Bounties
+                Bounties
               </Link>
               <Link
-                href="/profile"
+                href="/teams/profile"
                 className="transition-colors hover:text-primary"
               >
                 Profile
               </Link>
-
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  className="transition-colors text-primary font-bold"
-                >
-                  Admin Console
-                </Link>
-              )}
             </div>
           )}
 
@@ -216,15 +311,78 @@ export function Navbar({
               />
             </div>
 
-            {isAdmin && currentUser && (
-              <Button
-                variant="ghost"
-                className="gap-2 h-9 text-xs font-mono"
-                onClick={() => setTopupOpen(true)}
-              >
-                <Wallet className="h-4 w-4" />
-                {zecBalance.toFixed(4)} ZEC
-              </Button>
+            {isTeam && currentUser && currentTeam?.wallet && (
+              <>
+                {(currentSyncStatus || teamSyncStatusError) && (
+                  <div className="px-1">
+                    {teamSyncStatusError ? (
+                      <div className="flex items-center gap-2 text-xs text-destructive font-mono">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        {teamSyncStatusError}
+                      </div>
+                    ) : (
+                      <SyncStatusBadge status={currentSyncStatus} />
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  className="gap-2 justify-start font-mono"
+                  onClick={() => {
+                    setTopupOpen(true);
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <Wallet className="h-4 w-4" />
+                  {teamBalance
+                    ? `${fmt(confirmedTotal(teamBalance))} ZEC`
+                    : "0.0000 ZEC"}
+                </Button>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    variant="outline"
+                    className="gap-1.5 flex-1 text-xs"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                  >
+                    <RefreshCw
+                      className={cn(
+                        "h-3.5 w-3.5",
+                        isRefreshing && "animate-spin",
+                      )}
+                    />
+                    Refresh
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-1.5 flex-1 text-xs"
+                    onClick={handleSyncStatus}
+                    disabled={isSyncing}
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Activity className="h-3.5 w-3.5" />
+                    )}
+                    Sync
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-1.5 flex-1 text-xs"
+                    onClick={() => rescanTeamWallet(currentTeam.id)}
+                    disabled={teamRescanLoading}
+                  >
+                    {teamRescanLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FolderSync className="h-3.5 w-3.5" />
+                    )}
+                    Rescan
+                  </Button>
+                </div>
+              </>
             )}
 
             {/* Role Toggle */}
@@ -327,15 +485,6 @@ export function Navbar({
                     />
                   </div>
 
-                  <Link
-                    href="/docs"
-                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    <BookOpen className="h-4 w-4" />
-                    Docs
-                  </Link>
-
                   {!currentUser && (
                     <>
                       <Button
@@ -357,30 +506,30 @@ export function Navbar({
                       <div className="flex flex-col gap-2">
                         {/* Dashboard - Mobile */}
                         <Link
-                          href="/kpis"
+                          href="/teams"
                           className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
                           <BarChart3 className="h-4 w-4" />
-                          Dashboard
+                          Teams
                         </Link>
 
                         <Link
-                          href="/my-bounties"
+                          href="/teams/bounties"
                           className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
                           My Bounties
                         </Link>
                         <Link
-                          href="/profile"
+                          href="/teams/profile"
                           className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
                           Profile
                         </Link>
 
-                        {isAdmin && (
+                        {isTeam && (
                           <Link
                             href="/admin"
                             className="px-3 py-2 text-sm font-bold text-primary rounded-md hover:bg-accent transition-colors"
@@ -393,7 +542,7 @@ export function Navbar({
 
                       <div className="border-t" />
 
-                      {isAdmin && (
+                      {isTeam && (
                         <Button
                           variant="outline"
                           className="gap-2 justify-start font-mono"
@@ -460,7 +609,7 @@ export function Navbar({
         </div>
       </nav>
 
-      {isAdmin && currentUser && (
+      {isTeam && currentUser && (
         <WalletTopupModal open={topupOpen} onOpenChange={setTopupOpen} />
       )}
     </>
