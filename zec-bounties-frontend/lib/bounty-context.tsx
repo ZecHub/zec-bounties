@@ -3373,7 +3373,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchTeamSyncStatus = async (teamId: string) => {
-    if (!currentUser) return;
+    if (!currentUser || currentUser.role !== "TEAM") return;
     setTeamSyncStatusLoading(true);
     setTeamSyncStatusError(null);
     try {

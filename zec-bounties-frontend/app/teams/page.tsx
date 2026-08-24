@@ -91,7 +91,11 @@ export default function TeamsPage() {
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-background text-foreground">
-        <TeamNavbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+        <TeamNavbar
+          isTeam
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
         <div className="xl:container xl:mx-auto px-4 py-16 text-center">
           <p className="text-muted-foreground">Log in to view your teams.</p>
         </div>

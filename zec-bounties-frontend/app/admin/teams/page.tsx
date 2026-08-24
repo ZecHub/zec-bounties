@@ -57,10 +57,10 @@ import {
   EyeOff,
   ArrowLeft,
   XIcon,
-  MessageCircle,
   Link2,
   ExternalLink,
 } from "lucide-react";
+import { RxDiscordLogo } from "react-icons/rx";
 import type { Balance, Team, TeamVerificationStatus } from "@/lib/types";
 import {
   Tooltip,
@@ -195,7 +195,7 @@ function SocialLinksCard({ team }: { team: Team }) {
             rel="noopener noreferrer"
             className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
           >
-            <MessageCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <RxDiscordLogo className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <span className="truncate">{team.discordUrl}</span>
             <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
           </a>

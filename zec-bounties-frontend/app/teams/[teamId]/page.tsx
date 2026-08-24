@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Plus, UserPlus, X } from "lucide-react";
-import { backendUrl } from "@/lib/configENV";
+import { confirmedTotal, fmt } from "@/lib/utils";
 import { TeamBanner } from "@/components/teams/team-banner";
 import {
   Table,
@@ -106,6 +106,7 @@ const TABS: Tab[] = [
 ];
 
 function formatZec(amount: number) {
+  console.log(amount);
   return `${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} ZEC`;
 }
 
@@ -220,7 +221,11 @@ export default function TeamConsolePage() {
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-background text-foreground">
-        <TeamNavbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+        <TeamNavbar
+          isTeam
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
         <div className="xl:container xl:mx-auto px-4 py-16 text-center">
           <p className="text-muted-foreground">Log in to view this team.</p>
         </div>
@@ -231,7 +236,11 @@ export default function TeamConsolePage() {
   if (teamsLoading && !team) {
     return (
       <main className="min-h-screen bg-background text-foreground">
-        <TeamNavbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+        <TeamNavbar
+          isTeam
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
         <div className="xl:container xl:mx-auto px-4 py-20 flex flex-col items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
           <p className="text-muted-foreground">Loading team...</p>
@@ -243,7 +252,11 @@ export default function TeamConsolePage() {
   if (!team) {
     return (
       <main className="min-h-screen bg-background text-foreground">
-        <TeamNavbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+        <TeamNavbar
+          isTeam
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
         <div className="xl:container xl:mx-auto px-4 py-16 text-center">
           <p className="mb-4 text-muted-foreground">
             Team not found, or you don't have access to it.
@@ -261,7 +274,11 @@ export default function TeamConsolePage() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <TeamNavbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
+      <TeamNavbar
+        isTeam
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      />
 
       <div className="xl:container xl:mx-auto px-4 py-8">
         <Button
@@ -2018,6 +2035,8 @@ function TreasuryTab({
     setIsFetchingTxHashes(true);
     try {
       await fetchTeamTransactionHashes(team.id);
+    } catch (error) {
+      console.error("Failed to fetch team transaction hashes:", error);
     } finally {
       setIsFetchingTxHashes(false);
     }
@@ -2076,9 +2095,6 @@ function TreasuryTab({
       </div>
     );
   }
-
-  const confirmed =
-    balance?.confirmed_sapling_balance ?? balance?.confirmed_orchard_balance;
 
   return (
     <div className="space-y-6">
@@ -2178,8 +2194,8 @@ function TreasuryTab({
         <div className="mt-6 text-3xl font-bold text-primary">
           {balanceLoading
             ? "…"
-            : confirmed != null
-              ? formatZec(confirmed / 1e8)
+            : balance
+              ? formatZec(confirmedTotal(balance))
               : "—"}
         </div>
         {teamRescanStatus && (
