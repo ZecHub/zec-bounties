@@ -296,6 +296,9 @@ function CreateTeamPanel({
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [twitterUrl, setTwitterUrl] = useState("");
+  const [discordUrl, setDiscordUrl] = useState("");
+  const [additionalLinks, setAdditionalLinks] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -304,18 +307,37 @@ function CreateTeamPanel({
     if (!nextOpen) {
       setName("");
       setDescription("");
+      setTwitterUrl("");
+      setDiscordUrl("");
+      setAdditionalLinks([""]);
       setError(null);
     }
   };
 
+  const updateLink = (index: number, value: string) => {
+    setAdditionalLinks((prev) => prev.map((l, i) => (i === index ? value : l)));
+  };
+
+  const addLinkField = () => setAdditionalLinks((prev) => [...prev, ""]);
+
+  const removeLinkField = (index: number) =>
+    setAdditionalLinks((prev) => prev.filter((_, i) => i !== index));
+
   const handleCreate = async () => {
     if (!name.trim()) return;
+    if (!twitterUrl.trim() || !discordUrl.trim()) {
+      setError("Twitter and Discord links are required");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const team = await createTeam({
         name: name.trim(),
         description: description.trim() || undefined,
+        twitterUrl: twitterUrl.trim(),
+        discordUrl: discordUrl.trim(),
+        additionalLinks: additionalLinks.map((l) => l.trim()).filter(Boolean),
       });
       handleClose(false);
       router.push(`/teams/${team.id}`); // jump straight into the new team's console
@@ -360,6 +382,68 @@ function CreateTeamPanel({
               className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
             />
           </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="team-twitter" className="text-xs">
+              Twitter / X link <span className="text-red-500">*</span>
+            </Label>
+            <input
+              id="team-twitter"
+              type="url"
+              placeholder="https://x.com/yourteam"
+              value={twitterUrl}
+              onChange={(e) => setTwitterUrl(e.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="team-discord" className="text-xs">
+              Discord link <span className="text-red-500">*</span>
+            </Label>
+            <input
+              id="team-discord"
+              type="url"
+              placeholder="https://discord.gg/yourteam"
+              value={discordUrl}
+              onChange={(e) => setDiscordUrl(e.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Additional links</Label>
+              <button
+                type="button"
+                onClick={addLinkField}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Add link
+              </button>
+            </div>
+            {additionalLinks.map((link, i) => (
+              <div key={i} className="flex gap-2">
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={link}
+                  onChange={(e) => updateLink(i, e.target.value)}
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
+                />
+                {additionalLinks.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeLinkField(i)}
+                    className="shrink-0 px-2 text-sm text-muted-foreground hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
 

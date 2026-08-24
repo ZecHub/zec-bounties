@@ -24,6 +24,7 @@ import type {
   Balance,
   Community,
   TeamFavorite,
+  TeamVerificationStatus,
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
@@ -290,7 +291,13 @@ interface BountyContextType {
   teams: Team[];
   teamsLoading: boolean;
   fetchTeams: () => Promise<void>;
-  createTeam: (data: { name: string; description?: string }) => Promise<Team>;
+  createTeam: (data: {
+    name: string;
+    description?: string;
+    twitterUrl: string;
+    discordUrl: string;
+    additionalLinks?: string[];
+  }) => Promise<Team>;
   updateTeam: (
     id: string,
     data: { name?: string; description?: string; isPrivate?: boolean },
@@ -342,6 +349,16 @@ interface BountyContextType {
   teamActivityVersion: number;
   uploadTeamBanner: (teamId: string, file: File) => Promise<Team>;
   removeTeamBanner: (teamId: string) => Promise<void>;
+  teamVerifications: Record<string, TeamVerificationStatus>;
+  fetchTeamVerification: (
+    teamId: string,
+  ) => Promise<TeamVerificationStatus | null>;
+  verifyTeam: (teamId: string) => Promise<TeamVerificationStatus>;
+  unverifyTeam: (teamId: string) => Promise<TeamVerificationStatus>;
+  teamSyncStatus: Record<string, SyncStatus | null>;
+  teamSyncStatusLoading: boolean;
+  teamSyncStatusError: string | null;
+  fetchTeamSyncStatus: (teamId: string) => Promise<void>;
 
   // Favorites
   favoriteTeamIds: Set<string>;
@@ -431,6 +448,16 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [teamRescanLoading, setTeamRescanLoading] = useState(false);
   const [teamRescanStatus, setTeamRescanStatus] = useState<string | null>(null);
   const [teamActivityVersion, setTeamActivityVersion] = useState(0);
+  const [teamVerifications, setTeamVerifications] = useState<
+    Record<string, TeamVerificationStatus>
+  >({});
+  const [teamSyncStatus, setTeamSyncStatus] = useState<
+    Record<string, SyncStatus | null>
+  >({});
+  const [teamSyncStatusLoading, setTeamSyncStatusLoading] = useState(false);
+  const [teamSyncStatusError, setTeamSyncStatusError] = useState<string | null>(
+    null,
+  );
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -1800,6 +1827,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const createTeam = async (data: {
     name: string;
     description?: string;
+    twitterUrl: string;
+    discordUrl: string;
+    additionalLinks?: string[];
   }): Promise<Team> => {
     if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams`, {
@@ -2118,20 +2148,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
         switch (msg.type) {
           case "new_bounties":
-            setBounties((prev) => {
-              if (prev.some((b) => b.id === msg.payload.id)) return prev;
-
-              const b = msg.payload;
-              const canView =
-                !b.isPrivate ||
-                currentUser?.role === "ADMIN" ||
-                b.createdBy === currentUser?.id ||
-                (b.teamId != null &&
-                  (teams.some((t) => t.id === b.teamId) ||
-                    favoriteTeamIds.has(b.teamId)));
-
-              return canView ? [b, ...prev] : prev;
-            });
+            setBounties((prev) =>
+              prev.some((b) => b.id === msg.payload.id)
+                ? prev // already have it (e.g. creator's own optimistic add)
+                : [msg.payload, ...prev],
+            );
             fetchTotalStats();
             break;
 
@@ -2517,6 +2538,26 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
           case "team_bounties_privacy_changed":
             fetchBounties();
+            break;
+          case "team_verification_updated":
+            setTeams((prev) =>
+              prev.map((t) =>
+                t.id === msg.payload.teamId
+                  ? { ...t, isVerified: msg.payload.isVerified }
+                  : t,
+              ),
+            );
+            setTeamVerifications((prev) => ({
+              ...prev,
+              [msg.payload.teamId]: {
+                verificationCount: msg.payload.verificationCount,
+                requiredVerifications: msg.payload.requiredVerifications,
+                isVerified: msg.payload.isVerified,
+                verifiedByMe: prev[msg.payload.teamId]?.verifiedByMe ?? false,
+                verifiers: prev[msg.payload.teamId]?.verifiers ?? [],
+              },
+            }));
+            setTeamActivityVersion((v) => v + 1);
             break;
         }
       };
@@ -3253,6 +3294,106 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
   };
 
+  const fetchTeamVerification = async (
+    teamId: string,
+  ): Promise<TeamVerificationStatus | null> => {
+    if (!currentUser) return null;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/verification`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      const status = data as TeamVerificationStatus;
+      setTeamVerifications((prev) => ({ ...prev, [teamId]: status }));
+      return status;
+    } catch (error) {
+      console.error("Failed to fetch team verification:", error);
+      return null;
+    }
+  };
+
+  const verifyTeam = async (
+    teamId: string,
+  ): Promise<TeamVerificationStatus> => {
+    if (!currentUser) throw new Error("Unauthorized");
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/verify`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to verify team");
+    setTeams((prev) =>
+      prev.map((t) =>
+        t.id === teamId ? { ...t, isVerified: json.isVerified } : t,
+      ),
+    );
+    setTeamVerifications((prev) => ({
+      ...prev,
+      [teamId]: {
+        verificationCount: json.verificationCount,
+        requiredVerifications: json.requiredVerifications,
+        isVerified: json.isVerified,
+        verifiedByMe: true,
+        verifiers: prev[teamId]?.verifiers ?? [],
+      },
+    }));
+
+    return json;
+  };
+
+  const unverifyTeam = async (
+    teamId: string,
+  ): Promise<TeamVerificationStatus> => {
+    if (!currentUser) throw new Error("Unauthorized");
+    const res = await fetch(`${backendUrl}/api/teams/${teamId}/verify`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to remove verification");
+    setTeams((prev) =>
+      prev.map((t) =>
+        t.id === teamId ? { ...t, isVerified: json.isVerified } : t,
+      ),
+    );
+    setTeamVerifications((prev) => ({
+      ...prev,
+      [teamId]: {
+        verificationCount: json.verificationCount,
+        requiredVerifications: json.requiredVerifications,
+        isVerified: json.isVerified,
+        verifiedByMe: false,
+        verifiers: prev[teamId]?.verifiers ?? [],
+      },
+    }));
+
+    return json;
+  };
+
+  const fetchTeamSyncStatus = async (teamId: string) => {
+    if (!currentUser) return;
+    setTeamSyncStatusLoading(true);
+    setTeamSyncStatusError(null);
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/sync-status`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch sync status");
+      const data = await res.json();
+      setTeamSyncStatus((prev) => ({ ...prev, [teamId]: data }));
+    } catch (error) {
+      console.error("Failed to fetch team sync status:", error);
+      setTeamSyncStatusError(
+        error instanceof Error ? error.message : "Sync status unavailable",
+      );
+    } finally {
+      setTeamSyncStatusLoading(false);
+    }
+  };
+
   return (
     <BountyContext.Provider
       value={{
@@ -3400,6 +3541,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         teamActivityVersion,
         removeTeamBanner,
         uploadTeamBanner,
+        teamVerifications,
+        fetchTeamVerification,
+        unverifyTeam,
+        verifyTeam,
+        teamSyncStatus,
+        teamSyncStatusLoading,
+        teamSyncStatusError,
+        fetchTeamSyncStatus,
       }}
     >
       {children}

@@ -56,8 +56,12 @@ import {
   Eye,
   EyeOff,
   ArrowLeft,
+  XIcon,
+  MessageCircle,
+  Link2,
+  ExternalLink,
 } from "lucide-react";
-import type { Balance } from "@/lib/types";
+import type { Balance, Team, TeamVerificationStatus } from "@/lib/types";
 import {
   Tooltip,
   TooltipContent,
@@ -90,16 +94,6 @@ interface TeamWallet {
   chain: string;
   serverUrl: string;
   createdAt: string;
-}
-
-interface Team {
-  id: string;
-  name: string;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-  members: TeamMember[];
-  wallet?: TeamWallet | null;
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -159,6 +153,148 @@ function RoleBadge({ role }: { role: TeamMember["role"] }) {
       <Icon className="h-2.5 w-2.5" />
       {cfg.label}
     </Badge>
+  );
+}
+
+function SocialLinksCard({ team }: { team: Team }) {
+  const hasAny =
+    team.twitterUrl || team.discordUrl || team.additionalLinks?.length > 0;
+
+  if (!hasAny) {
+    return (
+      <div className="p-3 sm:p-4 border-b">
+        <p className="text-xs text-muted-foreground">
+          No social links provided for this team.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 sm:p-4 border-b space-y-2">
+      <h3 className="text-xs font-semibold text-muted-foreground mb-1">
+        Social & links
+      </h3>
+      <div className="flex flex-col gap-1.5">
+        {team.twitterUrl && (
+          <a
+            href={team.twitterUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
+          >
+            <XIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate">{team.twitterUrl}</span>
+            <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </a>
+        )}
+        {team.discordUrl && (
+          <a
+            href={team.discordUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
+          >
+            <MessageCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate">{team.discordUrl}</span>
+            <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </a>
+        )}
+        {team.additionalLinks?.map((link, i) => (
+          <a
+            key={i}
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
+          >
+            <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate">{link}</span>
+            <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VerificationCard({ team }: { team: Team }) {
+  const { teamVerifications, fetchTeamVerification, verifyTeam, unverifyTeam } =
+    useBounty();
+  const status = teamVerifications[team.id] ?? null;
+  const [loading, setLoading] = useState(!status);
+  const [acting, setActing] = useState(false);
+
+  useEffect(() => {
+    if (!status) {
+      setLoading(true);
+      fetchTeamVerification(team.id).finally(() => setLoading(false));
+    }
+  }, [team.id]);
+
+  const handleToggle = async () => {
+    setActing(true);
+    try {
+      status?.verifiedByMe
+        ? await unverifyTeam(team.id)
+        : await verifyTeam(team.id);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setActing(false);
+    }
+  };
+
+  if (loading || !status) {
+    return (
+      <div className="p-3 sm:p-4 border-b flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" /> Loading verification...
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 sm:p-4 border-b space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className={
+              status.isVerified
+                ? "bg-green-500/10 text-green-600 border-green-500/30"
+                : "bg-amber-500/10 text-amber-600 border-amber-500/30"
+            }
+          >
+            {status.isVerified ? "Verified" : "Unverified"}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            {status.verificationCount}/{status.requiredVerifications} admin
+            sign-offs
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant={status.verifiedByMe ? "outline" : "default"}
+          className="h-7 text-xs"
+          onClick={handleToggle}
+          disabled={acting}
+        >
+          {acting ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : status.verifiedByMe ? (
+            "Remove my verification"
+          ) : (
+            "Verify team"
+          )}
+        </Button>
+      </div>
+      {!status.isVerified && (
+        <p className="text-[11px] text-muted-foreground">
+          This team can't post bounties until {status.requiredVerifications}{" "}
+          admins verify it.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -690,10 +826,10 @@ function TeamDetailPanel({
   const [balanceError, setBalanceError] = useState<string | null>(null);
 
   const confirmedTotal = (b: Balance) =>
-  ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
-    (b.confirmed_sapling_balance ?? 0) +
-    (b.confirmed_transparent_balance ?? 0)) /
-  1e8;
+    ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
+      (b.confirmed_sapling_balance ?? 0) +
+      (b.confirmed_transparent_balance ?? 0)) /
+    1e8;
 
   const fmt = (n: number) => n.toFixed(4);
 
@@ -895,6 +1031,8 @@ function TeamDetailPanel({
           </div>
         ))}
       </div>
+      <SocialLinksCard team={team} />
+      <VerificationCard team={team} />
 
       {/* Wallet card */}
       {team.wallet && (
@@ -940,11 +1078,11 @@ function TeamDetailPanel({
                         <span className="text-muted-foreground">Ironwood</span>
                         <span className="font-mono">
                           {fmt(
-				  (balance.confirmed_ironwood_balance ??
-				    balance.confirmed_orchard_balance ??
-				    0) / 1e8,
-				)}{" "}
-				ZEC
+                            (balance.confirmed_ironwood_balance ??
+                              balance.confirmed_orchard_balance ??
+                              0) / 1e8,
+                          )}{" "}
+                          ZEC
                         </span>
                       </div>
                       <div className="flex justify-between gap-4">
@@ -1297,6 +1435,17 @@ export default function AdminTeamsPage() {
                             {team.members.length} member
                             {team.members.length !== 1 ? "s" : ""}
                           </span>
+                          {!team.isVerified && (
+                            <>
+                              <span className="text-muted-foreground/40 text-xs">
+                                ·
+                              </span>
+                              <span className="text-xs text-amber-600">
+                                Unverified
+                              </span>
+                            </>
+                          )}
+
                           {team.wallet && (
                             <>
                               <span className="text-muted-foreground/40 text-xs">

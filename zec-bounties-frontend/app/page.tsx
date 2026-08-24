@@ -75,12 +75,28 @@ export default function RootPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // Redirect logged-in users straight to /home
+  // Redirect logged-in users to the page for their role
   useEffect(() => {
-    if (!isLoading && currentUser && currentUser.role === "CLIENT")
-      router.replace("/home");
-    else if (!isLoading && currentUser && currentUser.role === "ADMIN")
-      router.replace("/admin");
+    if (isLoading || !currentUser) return;
+
+    switch (currentUser.role) {
+      case "CLIENT":
+        router.replace("/onboarding"); // legacy role — push through onboarding to become HUNTER
+        break;
+      case "HUNTER":
+        router.replace("/home");
+        break;
+      case "TEAM":
+        router.replace("/teams");
+        break;
+      case "ADMIN":
+        router.replace("/admin");
+        break;
+      default:
+        // Unknown/future role — don't leave the user on a blank page
+        router.replace("/home");
+        break;
+    }
   }, [currentUser, isLoading, router]);
 
   // On load / when the URL param changes, open the matching bounty

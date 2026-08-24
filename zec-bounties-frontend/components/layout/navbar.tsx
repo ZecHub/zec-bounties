@@ -44,6 +44,8 @@ import { useState } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { ThemePicker } from "@/components/theme/theme-picker";
 
 // ── Role toggle button ────────────────────────────────────────────────────────
 function RoleToggleButton({ compact = false }: { compact?: boolean }) {
@@ -155,15 +157,15 @@ export function Navbar({
           </div>
 
           {/* Docs — public */}
-	<div className="hidden xl:flex items-center space-x-5 text-sm font-medium mr-4">
-	  <Link
-	    href="/docs"
-	    className="flex items-center gap-1.5 transition-colors hover:text-primary"
-	  >
-	    <BookOpen className="h-4 w-4" />
-	    Docs
-	  </Link>
-	</div>
+          <div className="hidden xl:flex items-center space-x-5 text-sm font-medium mr-4">
+            <Link
+              href="/docs"
+              className="flex items-center gap-1.5 transition-colors hover:text-primary"
+            >
+              <BookOpen className="h-4 w-4" />
+              Docs
+            </Link>
+          </div>
 
           {/* Desktop Navigation */}
           {currentUser && (
@@ -238,6 +240,8 @@ export function Navbar({
               <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
               <span className="sr-only">Toggle theme</span>
             </Button>
+
+            <ThemePicker />
 
             {currentUser && (
               <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -324,13 +328,13 @@ export function Navbar({
                   </div>
 
                   <Link
-			  href="/docs"
-			  className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
-			  onClick={() => setMobileMenuOpen(false)}
-			>
-			  <BookOpen className="h-4 w-4" />
-			  Docs
-			</Link>
+                    href="/docs"
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    Docs
+                  </Link>
 
                   {!currentUser && (
                     <>
@@ -375,8 +379,6 @@ export function Navbar({
                         >
                           Profile
                         </Link>
-
-                       
 
                         {isAdmin && (
                           <Link

@@ -51,6 +51,7 @@ import { Balance } from "@/lib/types";
 import type { SyncStatus } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ThemePicker } from "@/components/theme/theme-picker";
 
 // ── Active wallet type pill — always visible in the navbar ─────────────────
 //
@@ -331,7 +332,7 @@ export function AdminNavbar({
 
           {/* Desktop nav links */}
           <div className="hidden xl:flex items-center space-x-4 text-sm font-medium mr-auto">
-             <Link
+            <Link
               href="/docs"
               className="flex items-center gap-1.5 transition-colors hover:text-primary"
             >
@@ -378,7 +379,6 @@ export function AdminNavbar({
             >
               Settings
             </Link>
-           
           </div>
 
           {/* Desktop right side */}
@@ -568,6 +568,9 @@ export function AdminNavbar({
                 <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                 <span className="sr-only">Toggle theme</span>
               </Button>
+
+              <ThemePicker />
+
               <Button variant="ghost" size="icon" className="h-9 w-9">
                 <Bell className="h-4 w-4" />
               </Button>

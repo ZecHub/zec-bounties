@@ -116,20 +116,20 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
             className={`bg-gradient-to-br ${slide.gradient}`}
             style={{ width: `${100 / slides.length}%` }}
           >
-            <div className="flex flex-col gap-6 px-6 py-10 sm:px-10 sm:py-14 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-4 px-6 py-6 imd:px-10 imd:py-14 imd:flex-row imd:items-center imd:justify-between">
               <div className="max-w-xl space-y-3">
                 <span className="inline-block rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                   {slide.eyebrow}
                 </span>
-                <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+                <h2 className="text-2xl imd:text-3xl font-extrabold tracking-tight">
                   {slide.title}
                 </h2>
-                <p className="text-muted-foreground text-base sm:text-lg">
+                <p className="text-muted-foreground text-sm imd:text-lg">
                   {slide.description}
                 </p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-3">
+              <div className="flex shrink-0 items-center gap-3 pb-2 imd:pb-0">
                 {slide.cta.href && !slide.cta.onClick ? (
                   <Link href={slide.cta.href}>
                     <Button className="rounded-full shadow-lg shadow-primary/20">

@@ -216,7 +216,7 @@ export default function MyBountiesPage() {
               </p>
             </div>
             <Button
-              className="gap-2 rounded-full shadow-lg shadow-primary/20 shrink-0"
+              className="hidden imd:block gap-2 rounded-full shadow-lg shadow-primary/20 shrink-0"
               onClick={handleNewBounty}
             >
               <Plus className="w-4 h-4" /> New Bounty

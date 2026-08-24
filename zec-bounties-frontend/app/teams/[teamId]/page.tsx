@@ -11,6 +11,8 @@ import type {
   BountyApplication,
   WorkSubmission,
   TeamFavorite,
+  TeamVerificationStatus,
+  SyncStatus,
 } from "@/lib/types";
 import { getUserRole } from "../page";
 import { TeamsNewBountyModal } from "@/components/teams/new-bounty-modal";
@@ -63,6 +65,12 @@ import {
   Pencil,
   FolderSync,
   FileText,
+  Wallet,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Activity,
+  AlertCircle,
 } from "lucide-react";
 import { formatStatus } from "@/lib/utils";
 import { displayName } from "@/lib/displayName";
@@ -72,6 +80,14 @@ import { RefreshCw } from "lucide-react";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { Switch } from "@/components/ui/switch";
 import { BountyCard } from "@/components/bounty-card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Tab =
   | "Overview"
@@ -160,6 +176,28 @@ function submissionStatusClass(status?: string) {
     default:
       return "text-muted-foreground border-border bg-muted/30";
   }
+}
+
+function VerificationStatusBanner({ teamId }: { teamId: string }) {
+  const { teamVerifications, fetchTeamVerification } = useBounty();
+  const status = teamVerifications[teamId] ?? null;
+
+  useEffect(() => {
+    if (!status) fetchTeamVerification(teamId);
+  }, [teamId]);
+
+  if (!status || status.isVerified) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+      This team is awaiting verification —{" "}
+      <strong>
+        {status.verificationCount}/{status.requiredVerifications}
+      </strong>{" "}
+      admins have signed off. Bounties can't be posted until verification is
+      complete.
+    </div>
+  );
 }
 
 export default function TeamConsolePage() {
@@ -262,6 +300,16 @@ export default function TeamConsolePage() {
           </div>
           <Badge variant="outline" className={`w-fit ${roleBadgeClass(role)}`}>
             {role}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={`w-fit ${
+              team.isVerified
+                ? "text-green-600 border-green-500/30 bg-green-500/10"
+                : "text-amber-600 border-amber-500/30 bg-amber-500/10"
+            }`}
+          >
+            {team.isVerified ? "Verified" : "Pending verification"}
           </Badge>
         </div>
 
@@ -451,6 +499,8 @@ function OverviewTab({
           value={team.wallet ? "See Treasury tab" : "—"}
         />
       </div>
+
+      {!team.isVerified && <VerificationStatusBanner teamId={team.id} />}
 
       <div className="rounded-xl border bg-card overflow-hidden">
         <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
@@ -1110,7 +1160,7 @@ function BountyProgramTab({
           <h2 className="text-sm font-semibold text-muted-foreground">
             {teamBounties.length} bounties
           </h2>
-          {canManage && (
+          {canManage && team.isVerified && (
             <Button
               size="sm"
               className="rounded-full"
@@ -1118,6 +1168,14 @@ function BountyProgramTab({
             >
               <Plus className="mr-1.5 h-4 w-4" /> New bounty
             </Button>
+          )}
+          {canManage && !team.isVerified && (
+            <Badge
+              variant="outline"
+              className="text-amber-600 border-amber-500/30 bg-amber-500/10"
+            >
+              Verification required to post bounties
+            </Badge>
           )}
         </div>
 
@@ -1616,6 +1674,301 @@ function CommunityTab({ team }: { team: Team }) {
   );
 }
 
+function TeamWalletModal({
+  open,
+  onOpenChange,
+  team,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  team: Team;
+}) {
+  const { createTeamWallet, importTeamWallet, deleteTeamWallet } = useBounty();
+  const [tab, setTab] = useState<"new" | "import">("new");
+  const [accountName, setAccountName] = useState("");
+  const [chain, setChain] = useState("mainnet");
+  const [serverUrl, setServerUrl] = useState("https://zec.rocks:443");
+  const [seedPhrase, setSeedPhrase] = useState("");
+  const [birthdayHeight, setBirthdayHeight] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showSeed, setShowSeed] = useState(false);
+  const [confirmReplace, setConfirmReplace] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setTab("new");
+      setAccountName("");
+      setChain("mainnet");
+      setServerUrl("https://zec.rocks:443");
+      setSeedPhrase("");
+      setBirthdayHeight("");
+      setShowSeed(false);
+      setConfirmReplace(false);
+      setError(null);
+    }
+  }, [open]);
+
+  const doSubmit = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Backend 409s creating/importing a wallet when one already exists —
+      // remove the current one first if we're replacing.
+      if (team.wallet) {
+        await deleteTeamWallet(team.id);
+      }
+
+      if (tab === "import") {
+        await importTeamWallet(team.id, {
+          accountName: accountName.trim(),
+          seedPhrase: seedPhrase.trim(),
+          chain,
+          serverUrl,
+          ...(birthdayHeight && { birthdayHeight: parseInt(birthdayHeight) }),
+        });
+      } else {
+        await createTeamWallet(team.id, {
+          accountName: accountName.trim(),
+          chain,
+          serverUrl,
+        });
+      }
+
+      onOpenChange(false);
+    } catch (err: any) {
+      // If we already deleted the old wallet but creation/import failed,
+      // the team is now walletless — say so plainly.
+      setError(
+        team.wallet
+          ? `${err.message}. The previous wallet was removed — try again.`
+          : err.message,
+      );
+    } finally {
+      setLoading(false);
+      setConfirmReplace(false);
+    }
+  };
+
+  const handleSubmit = () => {
+    setError(null);
+    if (!accountName.trim()) return setError("Account name is required");
+
+    if (tab === "import") {
+      const words = seedPhrase.trim().split(/\s+/).filter(Boolean);
+      if (words.length !== 24) return setError("Seed phrase must be 24 words");
+    }
+
+    if (team.wallet && !confirmReplace) {
+      setConfirmReplace(true);
+      return;
+    }
+
+    doSubmit();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-lg rounded-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            {team.wallet ? "Replace" : "Add"} Team Wallet for {team.name}
+          </DialogTitle>
+        </DialogHeader>
+
+        {team.wallet && confirmReplace ? (
+          <div className="space-y-4 py-2">
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <p className="text-sm text-destructive">
+                This will permanently delete the current wallet (
+                <strong>{team.wallet.accountName}</strong>) and its transaction
+                data, then {tab === "import" ? "import" : "create"} the new one.
+                This can't be undone.
+              </p>
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
+        ) : (
+          <div className="space-y-4 py-2">
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              {(["new", "import"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    tab === t
+                      ? "bg-background shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t === "new" ? "New Wallet" : "Import Seed"}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Account Name *</Label>
+                <Input
+                  placeholder="e.g. Team Main"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Chain</Label>
+                  <Select
+                    value={chain}
+                    onValueChange={(v) => {
+                      setChain(v);
+                      setServerUrl(
+                        v === "mainnet"
+                          ? "https://zec.rocks:443"
+                          : "https://testnet.zec.rocks:443",
+                      );
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mainnet">Mainnet</SelectItem>
+                      <SelectItem value="testnet">Testnet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Server URL</Label>
+                  <Input
+                    value={serverUrl}
+                    onChange={(e) => setServerUrl(e.target.value)}
+                    placeholder="https://zec.rocks:443"
+                  />
+                </div>
+              </div>
+
+              {tab === "import" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label>Seed Phrase (24 words) *</Label>
+                    <div className="relative">
+                      {!showSeed && seedPhrase && (
+                        <div className="absolute inset-0 z-10 flex items-center px-3 py-2 pointer-events-none">
+                          <span className="text-sm tracking-[0.3em] text-foreground select-none break-all leading-relaxed">
+                            {"•".repeat(
+                              seedPhrase.trim().split(/\s+/).filter(Boolean)
+                                .length * 4,
+                            )}
+                          </span>
+                        </div>
+                      )}
+                      <Textarea
+                        rows={3}
+                        placeholder={
+                          showSeed ? "Enter your 24-word seed phrase..." : ""
+                        }
+                        value={seedPhrase}
+                        onChange={(e) => setSeedPhrase(e.target.value)}
+                        className={`font-mono text-sm resize-none pr-10 ${
+                          !showSeed && seedPhrase
+                            ? "text-transparent caret-foreground"
+                            : ""
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSeed((v) => !v)}
+                        className="absolute top-2 right-2 p-1 rounded text-muted-foreground hover:text-foreground transition-colors z-20"
+                      >
+                        {showSeed ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Your seed phrase is never stored.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Birthday Height (optional)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 1500000"
+                      value={birthdayHeight}
+                      onChange={(e) => setBirthdayHeight(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+              {error && <p className="text-xs text-destructive">{error}</p>}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-2 flex justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              confirmReplace ? setConfirmReplace(false) : onOpenChange(false)
+            }
+            disabled={loading}
+          >
+            {confirmReplace ? "Back" : "Cancel"}
+          </Button>
+          <Button
+            variant={confirmReplace ? "destructive" : "default"}
+            onClick={handleSubmit}
+            disabled={loading}
+          >
+            {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {confirmReplace
+              ? "Delete & Replace"
+              : tab === "import"
+                ? "Import Wallet"
+                : "Create Wallet"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TeamSyncStatusBadge({ status }: { status: SyncStatus | null }) {
+  if (!status) return null;
+  const pct =
+    status.percentage_total_blocks_scanned ||
+    status.percentage_total_outputs_scanned;
+  const done = pct === 100 || status.in_progress === false;
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono">
+      {done ? (
+        <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+      ) : (
+        <Activity className="h-3 w-3 text-amber-400 animate-pulse shrink-0" />
+      )}
+      <span className="text-muted-foreground">Sync</span>
+      <span className={done ? "text-emerald-500" : "text-amber-400"}>
+        {pct != null
+          ? `${Number(pct).toFixed(2)}%`
+          : status.in_progress
+            ? "…"
+            : "—"}
+      </span>
+      {status.synced_blocks != null && status.total_blocks != null && (
+        <span className="text-muted-foreground/60">
+          ({status.synced_blocks}/{status.total_blocks})
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TreasuryTab({
   team,
   teamBounties,
@@ -1627,7 +1980,7 @@ function TreasuryTab({
 }) {
   const {
     fetchTeamWalletBalance,
-    createTeamWallet,
+    deleteTeamWallet,
     fetchTeamTransactionHashes,
     teamPaymentIDs,
     teamPaymentChain,
@@ -1635,12 +1988,19 @@ function TreasuryTab({
     rescanTeamWallet,
     teamRescanLoading,
     teamRescanStatus,
+    teamSyncStatus,
+    teamSyncStatusLoading,
+    teamSyncStatusError,
+    fetchTeamSyncStatus,
   } = useBounty();
   const [balance, setBalance] = useState<any>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
-  const [settingUp, setSettingUp] = useState(false);
-  const [accountName, setAccountName] = useState("");
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [deletingWallet, setDeletingWallet] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const syncStatus = teamSyncStatus[team.id] ?? null;
 
   const loadBalance = () => {
     if (!team.wallet) return;
@@ -1667,6 +2027,31 @@ function TreasuryTab({
     await rescanTeamWallet(team.id);
   };
 
+  const handleSyncStatus = async () => {
+    setIsSyncing(true);
+    try {
+      await fetchTeamSyncStatus(team.id);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteWallet = async () => {
+    if (
+      !confirm(
+        `Remove the wallet for ${team.name}? This permanently deletes its data and can't be undone.`,
+      )
+    )
+      return;
+    setDeletingWallet(true);
+    try {
+      await deleteTeamWallet(team.id);
+      setBalance(null);
+    } finally {
+      setDeletingWallet(false);
+    }
+  };
+
   if (!team.wallet) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-muted/20 px-8 py-14 text-center">
@@ -1677,28 +2062,17 @@ function TreasuryTab({
           Set up a shared wallet so bounty payouts for this team can be
           authorized on completion.
         </p>
-        {canManage &&
-          (settingUp ? (
-            <div className="mt-2 flex w-full max-w-xs flex-col gap-3">
-              <input
-                type="text"
-                placeholder="Account name"
-                value={accountName}
-                onChange={(e) => setAccountName(e.target.value)}
-                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
-              />
-              <Button
-                onClick={() => createTeamWallet(team.id, { accountName })}
-                disabled={!accountName.trim()}
-              >
-                Create wallet
-              </Button>
-            </div>
-          ) : (
-            <Button className="mt-1" onClick={() => setSettingUp(true)}>
-              Set up wallet
-            </Button>
-          ))}
+        {canManage && (
+          <Button className="mt-1" onClick={() => setWalletModalOpen(true)}>
+            Set up wallet
+          </Button>
+        )}
+
+        <TeamWalletModal
+          open={walletModalOpen}
+          onOpenChange={setWalletModalOpen}
+          team={team}
+        />
       </div>
     );
   }
@@ -1709,17 +2083,44 @@ function TreasuryTab({
   return (
     <div className="space-y-6">
       <div className="rounded-xl border bg-card p-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="text-xs text-muted-foreground">Account</div>
             <div className="mt-1 text-sm font-medium">
               {team.wallet.accountName}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="text-[11px]">
               {team.wallet.chain}
             </Badge>
+
+            {syncStatus || teamSyncStatusError ? (
+              teamSyncStatusError ? (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono text-destructive">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  <span>Error</span>
+                </div>
+              ) : (
+                <TeamSyncStatusBadge status={syncStatus} />
+              )
+            ) : null}
+
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={handleSyncStatus}
+              disabled={isSyncing}
+              title="Refresh sync status"
+            >
+              {isSyncing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Activity className="h-3.5 w-3.5" />
+              )}
+            </Button>
+
             <Button
               size="icon"
               variant="ghost"
@@ -1733,20 +2134,43 @@ function TreasuryTab({
               />
             </Button>
             {canManage && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={handleRescan}
-                disabled={teamRescanLoading}
-                title="Rescan wallet"
-              >
-                {teamRescanLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <FolderSync className="h-3.5 w-3.5" />
-                )}
-              </Button>
+              <>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={handleRescan}
+                  disabled={teamRescanLoading}
+                  title="Rescan wallet"
+                >
+                  {teamRescanLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FolderSync className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setWalletModalOpen(true)}
+                >
+                  Replace
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
+                  onClick={handleDeleteWallet}
+                  disabled={deletingWallet}
+                >
+                  {deletingWallet ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    "Remove"
+                  )}
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1822,6 +2246,12 @@ function TreasuryTab({
           </div>
         )}
       </div>
+
+      <TeamWalletModal
+        open={walletModalOpen}
+        onOpenChange={setWalletModalOpen}
+        team={team}
+      />
     </div>
   );
 }

@@ -67,7 +67,7 @@ export function FavoriteTeamsSidebar({
           </Link>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
           <button
             type="button"
             onClick={() => onSelectTeam(null)}
@@ -87,7 +87,7 @@ export function FavoriteTeamsSidebar({
               onClick={() =>
                 onSelectTeam(activeTeamId === team.id ? null : team.id)
               }
-              className={`flex items-center gap-2 rounded-md px-3 h-9 text-sm transition ${
+              className={`flex items-center gap-2 rounded-md px-3 py-6 h-9 text-sm transition ${
                 activeTeamId === team.id
                   ? "bg-secondary font-bold text-primary"
                   : "text-muted-foreground hover:text-primary hover:bg-muted/50"
