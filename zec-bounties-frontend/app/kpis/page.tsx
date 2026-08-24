@@ -89,11 +89,24 @@ const CHART_PALETTE = [
 ];
 
 const BADGE_LABELS: Record<string, string> = {
+  admin: "Admin",
   "dao-member": "DAO Member",
   "node-runner": "Node Runner",
-  miner: "Miner",
   researcher: "Researcher",
-  admin: "Admin",
+  designer: "Designer",
+  developer: "Developer",
+  translator: "Translator",
+  writer: "Writer",
+  "hackathon-participant": "Hackathon Participant",
+  "hackathon-winner": "Hackathon Winner",
+  "1-task": "1 Task",
+  "5-tasks": "5 Tasks",
+  "10-tasks": "10 Tasks",
+  "15-tasks": "15 Tasks",
+  "25-tasks": "25 Tasks",
+  "50-tasks": "50 Tasks",
+  // keep legacy if any users still have it
+  miner: "Miner",
 };
 
 const getBadgeTooltip = (badges?: string[]) =>
@@ -262,122 +275,84 @@ export default function KpisDashboard() {
   const [isSavingBadges, setIsSavingBadges] = useState(false);
 
   const availableBadges = [
-    { key: "dao-member", label: "DAO Member" },
-    { key: "node-runner", label: "Node Runner" },
-    { key: "miner", label: "Miner" },
-    { key: "researcher", label: "Researcher" },
-  ];
+  { key: "admin", label: "Admin" },
+  { key: "dao-member", label: "DAO Member" },
+  { key: "node-runner", label: "Node Runner" },
+  { key: "researcher", label: "Researcher" },
+  { key: "designer", label: "Designer" },
+  { key: "developer", label: "Developer" },
+  { key: "translator", label: "Translator" },
+  { key: "writer", label: "Writer" },
+  { key: "hackathon-participant", label: "Hackathon Participant" },
+  { key: "hackathon-winner", label: "Hackathon Winner" },
+];
 
-  const getBadgeIcons = (
-    completed: number,
-    badges?: string[],
-    role?: string,
-  ) => {
-    const icons = [];
-    const list = Array.isArray(badges) ? badges : [];
+const getBadgeIcons = (
+  completed: number,
+  badges?: string[],
+  role?: string,
+) => {
+  const icons: React.ReactNode[] = [];
+  const list = Array.isArray(badges) ? badges : [];
 
-    let badgeClass = "text-muted-foreground";
+  const svg = (key: string, title: string) => (
+    <div key={key} title={title}>
+      <img
+        src={`/badges/${key}.svg`}
+        alt={title}
+        className="w-5 h-5 object-contain"
+      />
+    </div>
+  );
 
-    const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-    if (avatarOverride) {
-      switch (avatarOverride) {
-        case "avatar:red":
-          badgeClass = "text-red-500";
-          break;
-        case "avatar:blue":
-          badgeClass = "text-blue-500";
-          break;
-        case "avatar:purple":
-          badgeClass = "text-purple-500";
-          break;
-        case "avatar:gold":
-          badgeClass = "text-yellow-500";
-          break;
-        case "avatar:pink":
-          badgeClass = "text-pink-500";
-          break;
-        default:
-          break;
-      }
+  // Manual override forces a specific star
+  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
+  let starKey: string | null = null;
+
+  if (avatarOverride) {
+    switch (avatarOverride) {
+      case "avatar:red":    starKey = "1-task"; break;
+      case "avatar:blue":   starKey = "5-tasks"; break;
+      case "avatar:purple": starKey = "10-tasks"; break;
+      case "avatar:gold":   starKey = "15-tasks"; break;
+      case "avatar:pink":   starKey = "50-tasks"; break;
     }
+  }
 
-    if (!avatarOverride || avatarOverride === "avatar:default") {
-      if (completed >= 60) badgeClass = "text-pink-500";
-      else if (completed >= 20) badgeClass = "text-yellow-500";
-      else if (completed >= 10) badgeClass = "text-purple-500";
-      else if (completed >= 5) badgeClass = "text-blue-500";
-      else if (completed >= 1) badgeClass = "text-red-500";
-      else badgeClass = "text-muted-foreground";
-    }
+  // No override → use completed count
+  if (!starKey) {
+    if (completed >= 50)      starKey = "50-tasks";
+    else if (completed >= 25) starKey = "25-tasks";
+    else if (completed >= 15) starKey = "15-tasks";
+    else if (completed >= 10) starKey = "10-tasks";
+    else if (completed >= 5)  starKey = "5-tasks";
+    else                      starKey = "1-task";
+  }
 
+  icons.push(svg(starKey, BADGE_LABELS[starKey] || starKey));
+
+  // Specialty badges
+  if (role === "ADMIN" || list.includes("admin")) icons.push(svg("admin", "Admin"));
+  if (list.includes("dao-member")) icons.push(svg("dao-member", "DAO Member"));
+  if (list.includes("node-runner")) icons.push(svg("node-runner", "Node Runner"));
+  if (list.includes("researcher")) icons.push(svg("researcher", "Researcher"));
+  if (list.includes("designer")) icons.push(svg("designer", "Designer"));
+  if (list.includes("developer")) icons.push(svg("developer", "Developer"));
+  if (list.includes("translator")) icons.push(svg("translator", "Translator"));
+  if (list.includes("writer")) icons.push(svg("writer", "Writer"));
+  if (list.includes("hackathon-participant")) icons.push(svg("hackathon-participant", "Hackathon Participant"));
+  if (list.includes("hackathon-winner")) icons.push(svg("hackathon-winner", "Hackathon Winner"));
+
+  if (list.includes("miner")) {
     icons.push(
-      <div key="member" title="Member">
-        <Users className={`w-4 h-4 ${badgeClass}`} />
-      </div>,
+      <div key="miner" title="Miner" className="text-orange-500">
+        <Pickaxe className="w-4 h-4" />
+      </div>
     );
+  }
 
-    if (role === "ADMIN" || list.includes("admin")) {
-      icons.push(
-        <div
-          key="admin"
-          title="Admin"
-          className="text-purple-500 dark:text-purple-400"
-        >
-          <Shield className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    if (list.includes("dao-member")) {
-      icons.push(
-        <div
-          key="dao-member"
-          title="DAO Member"
-          className="text-teal-500 dark:text-teal-400"
-        >
-          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    if (list.includes("node-runner")) {
-      icons.push(
-        <div
-          key="node-runner"
-          title="Node Runner"
-          className="text-blue-500 dark:text-blue-400"
-        >
-          <Server className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    if (list.includes("miner")) {
-      icons.push(
-        <div
-          key="miner"
-          title="Miner"
-          className="text-orange-500 dark:text-orange-400"
-        >
-          <Pickaxe className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    if (list.includes("researcher")) {
-      icons.push(
-        <div
-          key="researcher"
-          title="Researcher"
-          className="text-emerald-500 dark:text-emerald-400"
-        >
-          <BookOpen className="w-4 h-4" />
-        </div>,
-      );
-    }
-
-    return icons;
-  };
+  return icons;
+};
 
   const getDefaultAvatarClasses = (
     completed: number,
@@ -991,12 +966,23 @@ export default function KpisDashboard() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted-foreground">Badges</span>
                 {[
-                  { key: "admin", label: "Admin" },
-                  { key: "dao-member", label: "DAO" },
-                  { key: "node-runner", label: "Node" },
-                  { key: "miner", label: "Miner" },
-                  { key: "researcher", label: "Research" },
-                ].map((b) => {
+		  { key: "admin", label: "Admin" },
+		  { key: "dao-member", label: "DAO" },
+		  { key: "node-runner", label: "Node" },
+		  { key: "researcher", label: "Research" },
+		  { key: "designer", label: "Designer" },
+		  { key: "developer", label: "Developer" },
+		  { key: "translator", label: "Translator" },
+		  { key: "writer", label: "Writer" },
+		  { key: "hackathon-participant", label: "Hackathon" },
+		  { key: "hackathon-winner", label: "Winner" },
+		  { key: "1-task", label: "1T" },
+		  { key: "5-tasks", label: "5T" },
+		  { key: "10-tasks", label: "10T" },
+		  { key: "15-tasks", label: "15T" },
+		  { key: "25-tasks", label: "25T" },
+		  { key: "50-tasks", label: "50T" },
+		].map((b) => {
                   const active = badgeFilter.includes(b.key);
                   return (
                     <Button
@@ -1271,15 +1257,6 @@ export default function KpisDashboard() {
                             <TableCell>{user.completed}</TableCell>
                             <TableCell className="text-muted-foreground">
                               {user.submitted}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1.5">
-                                {getBadgeIcons(
-                                  user.completed,
-                                  user.badges,
-                                  user.role,
-                                )}
-                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5">
@@ -1704,159 +1681,100 @@ export default function KpisDashboard() {
                     <p className="text-sm text-muted-foreground mb-2">Badges</p>
                     <div className="space-y-2">
                       {availableBadges.map((badge) => {
-                        const getBadgeIcon = (key: string) => {
-                          if (key === "dao-member") {
-                            return (
-                              <img
-                                src="/ZecHubBlue.png"
-                                alt="ZecHub"
-                                className="w-4 h-4"
-                              />
-                            );
-                          }
-                          if (key === "node-runner") {
-                            return (
-                              <Server className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                            );
-                          }
-                          if (key === "miner") {
-                            return (
-                              <Pickaxe className="w-4 h-4 text-orange-500 dark:text-orange-400" />
-                            );
-                          }
-                          if (key === "researcher") {
-                            return (
-                              <BookOpen className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                            );
-                          }
-                          return null;
-                        };
-
-                        return (
-                          <label
-                            key={badge.key}
-                            className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedBadges.includes(badge.key)}
-                              onChange={() => toggleBadge(badge.key)}
-                              className="h-4 w-4 accent-primary"
-                            />
-                            <div className="flex items-center gap-2">
-                              {getBadgeIcon(badge.key)}
-                              <span>{badge.label}</span>
-                            </div>
-                          </label>
-                        );
-                      })}
+			  return (
+			    <label
+			      key={badge.key}
+			      className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted cursor-pointer"
+			    >
+			      <input
+				type="checkbox"
+				checked={selectedBadges.includes(badge.key)}
+				onChange={() => toggleBadge(badge.key)}
+				className="h-4 w-4 accent-primary"
+			      />
+			      <div className="flex items-center gap-2">
+				<img
+				  src={`/badges/${badge.key}.svg`}
+				  alt={badge.key}
+				  className="w-4 h-4"
+				/>
+				<span>{badge.label}</span>
+			      </div>
+			    </label>
+			  );
+			})}
                     </div>
                   </div>
                 )}
 
-                {selectedUserForBadges && (
-                  <div className="mb-6 border-t border-border pt-4">
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Avatar Color Override
-                    </p>
-                    <div className="space-y-1">
-                      {[
-                        {
-                          value: "avatar:default",
-                          label: "Default (based on completed bounties)",
-                          minCompleted: 0,
-                          colorClass: "bg-muted text-muted-foreground",
-                        },
-                        {
-                          value: "avatar:red",
-                          label: "Red",
-                          minCompleted: 1,
-                          colorClass: "bg-red-500 text-white",
-                        },
-                        {
-                          value: "avatar:blue",
-                          label: "Blue",
-                          minCompleted: 5,
-                          colorClass: "bg-blue-500 text-white",
-                        },
-                        {
-                          value: "avatar:purple",
-                          label: "Purple",
-                          minCompleted: 10,
-                          colorClass: "bg-purple-500 text-white",
-                        },
-                        {
-                          value: "avatar:gold",
-                          label: "Gold",
-                          minCompleted: 20,
-                          colorClass: "bg-yellow-500 text-black",
-                        },
-                        {
-                          value: "avatar:pink",
-                          label: "Pink",
-                          minCompleted: 60,
-                          colorClass: "bg-pink-500 text-white",
-                        },
-                      ].map((option) => {
-                        const isSelected =
-                          selectedBadges.includes(option.value) ||
-                          (option.value === "avatar:default" &&
-                            !selectedBadges.some((b) =>
-                              b.startsWith("avatar:"),
-                            ));
+                {/* Star Override */}
+{selectedUserForBadges && (
+  <div className="mb-6 border-t border-border pt-4">
+    <p className="text-sm text-muted-foreground mb-3">
+      Star Override
+    </p>
+    <div className="space-y-1">
+      {[
+        { value: "avatar:default", label: "Default (based on completed bounties)", star: null },
+        { value: "avatar:1", label: "1 Task", star: "1-task" },
+        { value: "avatar:5", label: "5 Tasks", star: "5-tasks" },
+        { value: "avatar:10", label: "10 Tasks", star: "10-tasks" },
+        { value: "avatar:15", label: "15 Tasks", star: "15-tasks" },
+        { value: "avatar:25", label: "25 Tasks", star: "25-tasks" },
+        { value: "avatar:50", label: "50 Tasks", star: "50-tasks" },
+      ].map((option) => {
+        const isSelected =
+          selectedBadges.includes(option.value) ||
+          (option.value === "avatar:default" &&
+            !selectedBadges.some((b) => b.startsWith("avatar:")));
 
-                        return (
-                          <button
-                            key={option.value}
-                            onClick={() => {
-                              const filtered = selectedBadges.filter(
-                                (b) => !b.startsWith("avatar:"),
-                              );
-                              if (option.value !== "avatar:default") {
-                                setSelectedBadges([...filtered, option.value]);
-                              } else {
-                                setSelectedBadges(filtered);
-                              }
-                            }}
-                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-                              isSelected
-                                ? "bg-muted border border-primary"
-                                : "hover:bg-muted/50 border border-transparent"
-                            }`}
-                          >
-                            <div
-                              className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${option.colorClass}`}
-                            >
-                              <Users className="w-3.5 h-3.5" />
-                            </div>
+        return (
+          <button
+            key={option.value}
+            onClick={() => {
+              const filtered = selectedBadges.filter(
+                (b) => !b.startsWith("avatar:"),
+              );
+              if (option.value !== "avatar:default") {
+                setSelectedBadges([...filtered, option.value]);
+              } else {
+                setSelectedBadges(filtered);
+              }
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+              isSelected
+                ? "bg-muted border border-primary"
+                : "hover:bg-muted/50 border border-transparent"
+            }`}
+          >
+            {option.star ? (
+              <img
+                src={`/badges/${option.star}.svg`}
+                alt={option.label}
+                className="w-5 h-5 object-contain"
+              />
+            ) : (
+              <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
+                <Users className="w-3.5 h-3.5 text-muted-foreground" />
+              </div>
+            )}
 
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium">
-                                {option.label}
-                              </div>
-                              {option.minCompleted > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  Requires {option.minCompleted}+ completed
-                                  bounties
-                                </div>
-                              )}
-                            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">{option.label}</div>
+            </div>
 
-                            {isSelected && (
-                              <div className="text-primary text-sm flex-shrink-0">
-                                ✓
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <p className="text-xs text-muted-foreground mt-2">
-                      This overrides the automatic avatar color.
-                    </p>
-                  </div>
-                )}
+            {isSelected && (
+              <div className="text-primary text-sm flex-shrink-0">✓</div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+    <p className="text-xs text-muted-foreground mt-2">
+      This overrides the automatic star based on completed bounties.
+    </p>
+  </div>
+)}
 
                 <div className="flex justify-end gap-3">
                   <Button
