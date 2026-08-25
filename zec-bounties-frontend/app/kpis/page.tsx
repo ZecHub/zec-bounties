@@ -1,5 +1,6 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { useState, useMemo, useEffect } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
@@ -243,6 +244,9 @@ export default function KpisDashboard() {
     setDefaultWallet,
   } = useBounty();
 
+  const { resolvedTheme } = useTheme();
+const badgeFolder = resolvedTheme === "dark" ? "Dark-Mode" : "Light-Mode";
+
   const isAdmin = currentUser?.role === "ADMIN";
 
   const [viewMode, setViewMode] = useState<"public" | "admin">(
@@ -298,7 +302,7 @@ const getBadgeIcons = (
   const svg = (key: string, title: string) => (
     <div key={key} title={title}>
       <img
-        src={`/badges/${key}.svg`}
+        src={`/badges/${badgeFolder}/${key}.svg`}
         alt={title}
         className="w-5 h-5 object-contain"
       />
@@ -311,11 +315,12 @@ const getBadgeIcons = (
 
   if (avatarOverride) {
     switch (avatarOverride) {
-      case "avatar:red":    starKey = "1-task"; break;
-      case "avatar:blue":   starKey = "5-tasks"; break;
-      case "avatar:purple": starKey = "10-tasks"; break;
-      case "avatar:gold":   starKey = "15-tasks"; break;
-      case "avatar:pink":   starKey = "50-tasks"; break;
+      case "avatar:1":  starKey = "1-task"; break;
+      case "avatar:5":  starKey = "5-tasks"; break;
+      case "avatar:10": starKey = "10-tasks"; break;
+      case "avatar:15": starKey = "15-tasks"; break;
+      case "avatar:25": starKey = "25-tasks"; break;
+      case "avatar:50": starKey = "50-tasks"; break;
     }
   }
 

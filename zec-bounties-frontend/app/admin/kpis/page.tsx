@@ -1,5 +1,6 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
@@ -183,6 +184,10 @@ export default function KpisDashboard() {
     setDefaultWallet,
   } = useBounty();
 
+
+  const { resolvedTheme } = useTheme();
+  const badgeFolder = resolvedTheme === "dark" ? "Dark-Mode" : "Light-Mode";
+
   const isAdmin = currentUser?.role === "ADMIN";
 
   const [viewMode, setViewMode] = useState<"public" | "admin">(
@@ -243,7 +248,7 @@ const getBadgeIcons = (
   const svg = (key: string, title: string) => (
     <div key={key} title={title}>
       <img
-        src={`/badges/${key}.svg`}
+        src={`/badges/${badgeFolder}/${key}.svg`}
         alt={title}
         className="w-5 h-5 object-contain"
       />
@@ -251,29 +256,19 @@ const getBadgeIcons = (
   );
 
   // Manual override forces a specific star
-const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-let starKey: string | null = null;
+  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
+  let starKey: string | null = null;
 
-if (avatarOverride) {
-  switch (avatarOverride) {
-    case "avatar:1":  starKey = "1-task"; break;
-    case "avatar:5":  starKey = "5-tasks"; break;
-    case "avatar:10": starKey = "10-tasks"; break;
-    case "avatar:15": starKey = "15-tasks"; break;
-    case "avatar:25": starKey = "25-tasks"; break;
-    case "avatar:50": starKey = "50-tasks"; break;
+  if (avatarOverride) {
+    switch (avatarOverride) {
+      case "avatar:1":  starKey = "1-task"; break;
+      case "avatar:5":  starKey = "5-tasks"; break;
+      case "avatar:10": starKey = "10-tasks"; break;
+      case "avatar:15": starKey = "15-tasks"; break;
+      case "avatar:25": starKey = "25-tasks"; break;
+      case "avatar:50": starKey = "50-tasks"; break;
+    }
   }
-}
-
-// No override → use completed count
-if (!starKey) {
-  if (completed >= 50)      starKey = "50-tasks";
-  else if (completed >= 25) starKey = "25-tasks";
-  else if (completed >= 15) starKey = "15-tasks";
-  else if (completed >= 10) starKey = "10-tasks";
-  else if (completed >= 5)  starKey = "5-tasks";
-  else                      starKey = "1-task";
-}
 
   // No override → use completed count
   if (!starKey) {
