@@ -66,6 +66,11 @@ export default function DocsOverviewPage() {
               title: "Creators",
               desc: "Propose bounties, review work, pay out",
             },
+            {
+		  href: "/docs/badges",
+		  title: "Badges",
+		  desc: "Task stars and specialty role badges"
+	    },
           ].map((item) => (
             <li key={item.href}>
               <Link
