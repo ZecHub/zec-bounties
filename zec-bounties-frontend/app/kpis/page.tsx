@@ -347,14 +347,7 @@ const getBadgeIcons = (
   if (list.includes("writer")) icons.push(svg("writer", "Writer"));
   if (list.includes("hackathon-participant")) icons.push(svg("hackathon-participant", "Hackathon Participant"));
   if (list.includes("hackathon-winner")) icons.push(svg("hackathon-winner", "Hackathon Winner"));
-
-  if (list.includes("miner")) {
-    icons.push(
-      <div key="miner" title="Miner" className="text-orange-500">
-        <Pickaxe className="w-4 h-4" />
-      </div>
-    );
-  }
+  if (list.includes("miner")) icons.push(svg("miner", "Miner"));
 
   return icons;
 };
