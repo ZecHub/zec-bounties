@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
+"use client";
+
 import Link from "next/link";
+import { useTheme } from "next-themes";
 
 export const metadata: Metadata = {
   title: "Badges | ZEC Bounties Docs",
@@ -100,6 +102,9 @@ const SPECIALTY_BADGES = [
 ];
 
 export default function BadgesPage() {
+  const { resolvedTheme } = useTheme();
+  const folder = resolvedTheme === "dark" ? "Dark-Mode" : "Light-Mode";
+
   return (
     <div className="space-y-10">
       <div>
@@ -135,7 +140,7 @@ export default function BadgesPage() {
                 <tr key={b.key} className="border-b last:border-0">
                   <td className="px-4 py-3">
                     <img
-                      src={`/badges/Light-Mode/${b.key}.svg`}
+                      src={`/badges/${folder}/${b.key}.svg`}
                       alt={b.name}
                       className="w-6 h-6 object-contain"
                     />
@@ -179,7 +184,7 @@ export default function BadgesPage() {
                 <tr key={b.key} className="border-b last:border-0">
                   <td className="px-4 py-3">
                     <img
-                      src={`/badges/Light-Mode/${b.key}.svg`}
+                      src={`/badges/${folder}/${b.key}.svg`}
                       alt={b.name}
                       className="w-6 h-6 object-contain"
                     />
