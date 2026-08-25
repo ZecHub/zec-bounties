@@ -1465,8 +1465,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       body: formData,
     });
 
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Failed to upload logo");
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(json?.error || `Failed to upload logo (${res.status})`);
+    }
 
     setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
     return json.team;
@@ -3273,8 +3275,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       body: formData,
     });
 
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Failed to upload banner");
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(json?.error || `Failed to upload banner (${res.status})`);
+    }
 
     setTeams((prev) => prev.map((t) => (t.id === teamId ? json.team : t)));
     return json.team;
