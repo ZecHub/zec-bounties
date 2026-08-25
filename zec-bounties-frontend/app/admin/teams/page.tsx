@@ -949,12 +949,32 @@ function TeamDetailPanel({
         </div>
       )}
 
+      {/* Banner */}
+      {team.banner && (
+        <div className="relative mb-8 h-40 overflow-hidden border sm:h-56 ">
+          <img
+            src={team.banner}
+            alt={`${team.name} banner`}
+            className="h-full w-full object-cover"
+          />
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between p-4 sm:p-6 border-b">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-lg sm:text-xl font-bold text-primary shrink-0">
-            {team.name[0]}
-          </div>
+          <Avatar className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl border border-primary/20 shrink-0">
+            {team.logo && (
+              <AvatarImage
+                src={team.logo}
+                alt={team.name}
+                className="object-cover"
+              />
+            )}
+            <AvatarFallback className="rounded-xl bg-primary/10 text-lg sm:text-xl font-bold text-primary">
+              {team.name[0]}
+            </AvatarFallback>
+          </Avatar>
           <div>
             <h2 className="text-base sm:text-lg font-bold leading-tight">
               {team.name}
@@ -1423,9 +1443,18 @@ export default function AdminTeamsPage() {
                           : "hover:bg-muted/50 active:bg-muted/70"
                       }`}
                     >
-                      <div className="h-9 w-9 rounded-lg bg-muted border flex items-center justify-center text-sm font-bold shrink-0">
-                        {team.name[0]}
-                      </div>
+                      <Avatar className="h-9 w-9 rounded-lg border shrink-0">
+                        {team.logo && (
+                          <AvatarImage
+                            src={team.logo}
+                            alt={team.name}
+                            className="object-cover"
+                          />
+                        )}
+                        <AvatarFallback className="rounded-lg bg-muted text-sm font-bold">
+                          {team.name[0]}
+                        </AvatarFallback>
+                      </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">
                           {team.name}
