@@ -450,7 +450,7 @@ export function TeamNavbar({
           </div>
 
           {/* Mobile Right Side */}
-          <div className="flex xl:hidden items-center gap-2 ml-auto">
+          <div className="flex xl:hidden items-center gap-1 ml-auto">
             <Button
               variant="ghost"
               size="icon"
@@ -461,6 +461,8 @@ export function TeamNavbar({
               <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
               <span className="sr-only">Toggle theme</span>
             </Button>
+
+            <ThemePicker />
 
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
