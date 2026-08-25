@@ -93,6 +93,11 @@ const SPECIALTY_BADGES = [
     name: "Hackathon Winner",
     how: "Placed or won in a Zcash-related hackathon",
   },
+  {
+    key: "miner",
+    name: "Miner",
+    how: "Zcash miner",
+  },
 ];
 
 export default function BadgesPage() {
