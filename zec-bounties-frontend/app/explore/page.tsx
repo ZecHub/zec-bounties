@@ -10,6 +10,7 @@ import { Star, Search, Users, ArrowRight, Loader2 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { backendUrl } from "@/lib/configENV";
+import { MobileNavShell } from "@/components/layout/mobile-nav-shell";
 
 function initials(name: string) {
   return name
@@ -238,7 +239,9 @@ function ExploreContent() {
 export default function ExplorePage() {
   return (
     <ProtectedRoute blockAdmin blockTeam>
-      <ExploreContent />
+      <MobileNavShell>
+        <ExploreContent />
+      </MobileNavShell>
     </ProtectedRoute>
   );
 }
