@@ -18,7 +18,7 @@ model BountyCategory {
 model User {
   id                   String              @id @default(cuid())
   name                 String
-  email                String              @unique
+  email                String?              @unique
   emailNotifications   Boolean             @default(true)
   password             String?
   nickname             String?             @unique
@@ -45,6 +45,10 @@ model User {
   badges               Json                @default("[]")
   pushNotifications    Boolean @default(true)
   pushSubscriptions    PushSubscription[]
+  favoriteTeams        TeamFavorite[]      @relation("UserFavoriteTeams")
+  communities          CommunityMember[] @relation("UserCommunities")
+  teamVerifications    TeamVerification[] @relation("TeamVerificationsByAdmin")
+
 }
 
 model Bounty {
@@ -66,21 +70,26 @@ model Bounty {
   assignee          String?
   chain             Chain               @default(MAIN)
   difficulty        Difficulty          @default(EASY)
+  teamId            String?
   assigneeUser      User?               @relation("AssignedBounties", fields: [assignee], references: [id])
   createdByUser     User                @relation("CreatedBounties", fields: [createdBy], references: [id])
   category          BountyCategory?     @relation("BountyCategory", fields: [categoryId], references: [name])
+  team              Team?               @relation("TeamBounties", fields: [teamId], references: [id])
   applications      BountyApplication[]
   workSubmissions   WorkSubmission[]
   assignees         BountyAssignee[]
   completedAt       DateTime?
   updatedAt         DateTime  @updatedAt @default(now())
-  
+  isPrivate         Boolean             @default(false)
+
   @@index([status])
   @@index([createdBy])
   @@index([assignee])
   @@index([dateCreated])
   @@index([isPaid, paidAt])
   @@index([completedAt])
+  @@index([teamId])
+  @@index([isPrivate])
 }
 
 model BountyAssignee {
@@ -150,6 +159,7 @@ model WorkSubmission {
 
 model ZcashParams {
   id          Int      @id @default(autoincrement())
+  walletId    String?   @default(uuid())
   chain       String   @default("mainnet")
   serverUrl   String   @default("https://zec.rocks:443")
   accountName String
@@ -171,12 +181,54 @@ model Team {
   id          String       @id @default(cuid())
   name        String       @unique
   description String?
+  logo        String?
+  banner      String?
+  isPrivate   Boolean      @default(false)
+  twitterUrl      String?
+  discordUrl      String?
+  additionalLinks Json     @default("[]")
+  isVerified      Boolean  @default(false)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   members     TeamMember[]
   wallet      TeamWallet?
+  bounties    Bounty[]     @relation("TeamBounties")
+  favoritedBy TeamFavorite[] @relation("TeamFavoritedBy")
+  communityMembers CommunityMember[] @relation("TeamCommunity")
+  verifications TeamVerification[] @relation("TeamVerifications")
+
 
   @@map("teams")
+}
+
+model TeamVerification {
+  id          String   @id @default(cuid())
+  teamId      String
+  adminUserId String
+  verifiedAt  DateTime @default(now())
+
+  team  Team @relation("TeamVerifications", fields: [teamId], references: [id], onDelete: Cascade)
+  admin User @relation("TeamVerificationsByAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, adminUserId])
+  @@map("team_verifications")
+  @@index([teamId])
+}
+
+model TeamFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now())
+
+  user User @relation("UserFavoriteTeams", fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation("TeamFavoritedBy", fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_favorites")
+
+  @@index([userId])
+  @@index([teamId])
 }
 
 model TeamMember {
@@ -217,6 +269,22 @@ model PushSubscription {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  }
+  
+model CommunityMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  team Team @relation("TeamCommunity", fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation("UserCommunities", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("community_members")
+
+  @@index([teamId])
+  @@index([userId])
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -225,6 +293,7 @@ enum UserRole {
   CLIENT
   ADMIN
   TEAM
+  HUNTER
 }
 
 enum Chain {

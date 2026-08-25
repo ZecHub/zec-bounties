@@ -7,8 +7,7 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 const { verifyZaddress, verifyUaddress } = require("../helpers/db-query.js");
 const {
   getLatestZcashParams,
-  getVerificationZcashParams,
-  getWalletDataDir,
+  getSystemWalletParams,
 } = require("../helpers/zcash/zcashHelper.js");
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
@@ -239,10 +238,9 @@ router.patch("/update-email-notifications", authenticate, async (req, res) => {
 router.post("/verify-zaddress", authenticate, async (req, res) => {
   try {
     const { z_address } = req.body;
+    const params = getSystemWalletParams();
 
-    const params = getVerificationZcashParams();
     const result = await verifyZaddress(z_address, params);
-
     return res.json({ isVerified: result });
   } catch (err) {
     console.error("Error verifying Z-address:", err);
@@ -253,10 +251,9 @@ router.post("/verify-zaddress", authenticate, async (req, res) => {
 router.post("/verify-uaddress", authenticate, async (req, res) => {
   try {
     const { z_address } = req.body;
+    const params = getSystemWalletParams();
 
-    const params = getVerificationZcashParams();
     const result = await verifyUaddress(z_address, params);
-
     return res.json({ isVerified: result });
   } catch (err) {
     console.error("Error verifying U-address:", err);

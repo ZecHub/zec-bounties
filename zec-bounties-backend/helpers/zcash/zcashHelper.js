@@ -1,13 +1,20 @@
 const { PrismaClient } = require("@prisma/client");
-const path = require("path");
 const prisma = new PrismaClient();
+const path = require("path");
+
+function getWalletDataDir(walletId) {
+  if (!walletId) {
+    throw new Error("walletId is required");
+  }
+
+  return path.join(process.cwd(), "wallets", walletId);
+}
 
 /**
- * Fetch latest Zcash params for a given user.
- * Returns null if the user has no params yet (caller should run initZcashOnce).
+ * Fetch the latest Zcash wallet params for a user.
  *
  * @param {string} ownerId
- * @returns {Promise<{ serverUrl: string, chain: string, accountName: string, dataDir: string } | null>}
+ * @returns {Promise<Object|null>}
  */
 async function getLatestZcashParams(ownerId) {
   if (!ownerId) throw new Error("ownerId is required");
@@ -16,6 +23,7 @@ async function getLatestZcashParams(ownerId) {
     where: { ownerId },
     orderBy: { createdAt: "desc" },
     select: {
+      walletId: true,
       serverUrl: true,
       chain: true,
       accountName: true,
@@ -24,98 +32,52 @@ async function getLatestZcashParams(ownerId) {
 
   if (!params) return null;
 
-  // Path structure: wallets/{ownerId}/{accountName}/{chain}
-  // This must match the path used in initZcashOnce.
-  params.dataDir = path.join(
-    process.cwd(),
-    "wallets",
-    ownerId,
-    params.accountName,
-    params.chain,
-  );
-
-  return params; // { serverUrl, chain, accountName, dataDir }
+  return {
+    ...params,
+    dataDir: getWalletDataDir(params.walletId),
+  };
 }
 
 /**
- * Fetch latest Zcash params for the authenticated client user.
- * Returns null if the user has no params yet (caller should run initZcashOnce).
+ * Get the server-side verification wallet.
  *
- * Note: This function assumes the ownerId is obtained from the authenticated session/context.
- * It does NOT include dataDir as that is server-side only.
- *
- * @param {Object} context - Authentication context (e.g., req.user, session, etc.)
- * @returns {Promise<{ serverUrl: string, chain: string, accountName: string } | null>}
+ * This wallet is owned by the application, not a user.
  */
-async function getLatestZcashParamsForClient() {
-  const params = await prisma.zcashParams.findFirst({
-    orderBy: { createdAt: "desc" },
-    select: {
-      serverUrl: true,
-      chain: true,
-      accountName: true,
-      ownerId: true,
-    },
-  });
+function getVerificationZcashParams() {
+  const {
+    ZCASH_VERIFICATION_WALLET_PATH,
+    ZCASH_VERIFICATION_CHAIN,
+    ZCASH_VERIFICATION_SERVER,
+  } = process.env;
 
-  if (!params) return null;
+  if (!ZCASH_VERIFICATION_WALLET_PATH) {
+    throw new Error("Verification wallet is not configured");
+  }
 
-  params.dataDir = path.join(
-    process.cwd(),
-    "wallets",
-    params.ownerId,
-    params.accountName,
-    params.chain,
-  );
-
-  return params; // { serverUrl, chain, accountName, ownerId, dataDir }
+  return {
+    dataDir: ZCASH_VERIFICATION_WALLET_PATH,
+    chain: ZCASH_VERIFICATION_CHAIN || "mainnet",
+    serverUrl: ZCASH_VERIFICATION_SERVER || "https://zec.rocks:443",
+  };
 }
 
 /**
- * Fetch latest Zcash params where isTeam is false.
- * Returns null if no individual (non-team) params exist.
- *
- * @returns {Promise<{ serverUrl: string, chain: string, accountName: string, ownerId: string, dataDir: string } | null>}
- */
-async function getLatestZcashParamsForClientUser() {
-  const params = await prisma.zcashParams.findFirst({
-    where: { isTeam: false },
-    orderBy: { createdAt: "desc" },
-    select: {
-      serverUrl: true,
-      chain: true,
-      accountName: true,
-      ownerId: true,
-    },
-  });
-
-  if (!params) return null;
-
-  params.dataDir = path.join(
-    process.cwd(),
-    "wallets",
-    params.ownerId,
-    params.accountName,
-    params.chain,
-  );
-
-  return params; // { serverUrl, chain, accountName, ownerId, dataDir }
-}
-
-/**
- * Fetch the default Zcash wallet params for a given user.
- * Falls back to the most recently created params if no default is set.
- * Returns null if the user has no params at all.
+ * Get the default Zcash wallet for a user.
+ * Falls back to their most recently created wallet.
  *
  * @param {string} ownerId
- * @returns {Promise<{ serverUrl: string, chain: string, accountName: string, dataDir: string, isDefault: boolean } | null>}
+ * @returns {Promise<Object|null>}
  */
 async function getDefaultZcashParams(ownerId) {
   if (!ownerId) throw new Error("ownerId is required");
 
   let params = await prisma.zcashParams.findFirst({
-    where: { ownerId, isDefault: true },
+    where: {
+      ownerId,
+      isDefault: true,
+    },
     select: {
+      walletId: true,
       serverUrl: true,
       chain: true,
       accountName: true,
@@ -130,6 +92,7 @@ async function getDefaultZcashParams(ownerId) {
       where: { ownerId },
       orderBy: { createdAt: "desc" },
       select: {
+        walletId: true,
         serverUrl: true,
         chain: true,
         accountName: true,
@@ -142,29 +105,33 @@ async function getDefaultZcashParams(ownerId) {
 
   if (!params) return null;
 
-  params.dataDir =
-    params.isTeam && params.teamId
-      ? path.join(
-          process.cwd(),
-          "wallets",
-          `team:${params.teamId}`,
-          params.accountName,
-          params.chain,
-        )
-      : path.join(
-          process.cwd(),
-          "wallets",
-          ownerId,
-          params.accountName,
-          params.chain,
-        );
+  return {
+    ...params,
+    dataDir: getWalletDataDir(params.walletId),
+  };
+}
 
-  return params;
+function getSystemWalletParams() {
+  const { LOGIN_WALLET_CHAIN, ZCASH_SERVER_URL, LOGIN_WALLET_DATA_DIR } =
+    process.env;
+
+  if (!LOGIN_WALLET_CHAIN || !ZCASH_SERVER_URL || !LOGIN_WALLET_DATA_DIR) {
+    throw new Error(
+      "System wallet not configured: set LOGIN_WALLET_CHAIN, ZCASH_SERVER_URL, LOGIN_WALLET_DATA_DIR",
+    );
+  }
+
+  return {
+    chain: LOGIN_WALLET_CHAIN,
+    serverUrl: ZCASH_SERVER_URL,
+    dataDir: LOGIN_WALLET_DATA_DIR,
+  };
 }
 
 module.exports = {
   getLatestZcashParams,
-  getLatestZcashParamsForClient,
-  getLatestZcashParamsForClientUser,
   getDefaultZcashParams,
+  getVerificationZcashParams,
+  getWalletDataDir,
+  getSystemWalletParams,
 };
