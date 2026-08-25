@@ -1,14 +1,7 @@
 "use client";
 
-import type { Metadata } from "next";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-
-export const metadata: Metadata = {
-  title: "Badges | ZEC Bounties Docs",
-  description:
-    "Task stars and specialty role badges on the ZEC Bounties leaderboard.",
-};
 
 const STAR_BADGES = [
   {
