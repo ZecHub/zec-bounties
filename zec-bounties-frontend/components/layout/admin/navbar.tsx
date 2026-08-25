@@ -604,8 +604,8 @@ export function AdminNavbar({
           </div>
 
           {/* Mobile right side */}
-          <div className="flex xl:hidden items-center gap-2 ml-auto">
-            {activeWallet && (
+          <div className="flex xl:hidden items-center gap-1 ml-auto">
+            {/* {activeWallet && (
               <div
                 className={cn(
                   "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-semibold",
@@ -623,7 +623,7 @@ export function AdminNavbar({
                   {activeIsTeam ? "Team" : "Personal"}
                 </span>
               </div>
-            )}
+            )} */}
             <Button
               variant="ghost"
               size="icon"
@@ -634,6 +634,9 @@ export function AdminNavbar({
               <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
               <span className="sr-only">Toggle theme</span>
             </Button>
+
+            <ThemePicker />
+
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-9 w-9">
