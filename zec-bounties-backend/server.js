@@ -3,7 +3,6 @@ const cron = require("node-cron");
 const express = require("express");
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
-const path = require("path");
 const { createServer } = require("http");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");

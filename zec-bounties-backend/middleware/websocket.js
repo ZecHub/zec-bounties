@@ -11,6 +11,19 @@ function broadcast(data, excludeWs) {
   });
 }
 
+// Broadcast only to a specific set of userIds — used for private-bounty
+// events so the payload never reaches sockets outside that team's community.
+function broadcastToUsers(data, userIds, excludeWs) {
+  const message = JSON.stringify(data);
+  const idSet = new Set(userIds);
+  clients.forEach((client, userId) => {
+    if (!idSet.has(userId)) return;
+    if (client.ws !== excludeWs && client.ws.readyState === 1) {
+      client.ws.send(message);
+    }
+  });
+}
+
 // Get WebSocket connection by userId
 function getClientByUserId(userId) {
   const client = clients.get(userId);
@@ -131,9 +144,18 @@ function handleWebSocket(ws, prisma, user) {
 }
 
 // Broadcast to all clients except the sender (for shared events like new bounties)
-function sendRealtimeUpdate(type, payload, excludeUserId = null) {
+function sendRealtimeUpdate(
+  type,
+  payload,
+  excludeUserId = null,
+  recipientUserIds = null,
+) {
   const excludeWs = excludeUserId ? getClientByUserId(excludeUserId) : null;
-  broadcast({ type, payload }, excludeWs);
+  if (recipientUserIds) {
+    broadcastToUsers({ type, payload }, recipientUserIds, excludeWs);
+  } else {
+    broadcast({ type, payload }, excludeWs);
+  }
 }
 
 module.exports = {

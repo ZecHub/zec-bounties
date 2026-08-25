@@ -7,7 +7,10 @@ const { authenticate, isAdmin } = require("../middleware/auth");
 const { initZcashOnce } = require("../zcash/init");
 const { zcashParams } = require("../prisma/client");
 const executeZingoCliSeed = require("../utils/zingo/zingoLibSeed");
-const { getLatestZcashParams } = require("../helpers/zcash/zcashHelper.js");
+const {
+  getWalletDataDir,
+  getDefaultZcashParams,
+} = require("../helpers/zcash/zcashHelper.js");
 const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 
 const { sendRealtimeUpdate } = require("../middleware/websocket");
@@ -105,8 +108,12 @@ router.post("/import-wallet", authenticate, async (req, res) => {
       });
     }
 
-    const newParams = await getLatestZcashParams(userId);
-    await executeZingoCliSeed(newParams, seedPhrase, birthdayHeight);
+    const zingoParams = {
+      ...params,
+      dataDir: getWalletDataDir(params.walletId),
+    };
+
+    await executeZingoCliSeed(zingoParams, seedPhrase, birthdayHeight);
 
     await prisma.$transaction(
       async (tx) => {
@@ -509,22 +516,7 @@ router.delete("/params/:accountName", authenticate, async (req, res) => {
 
     const chain = existing.chain || "mainnet";
     const serverUrl = existing.serverUrl || "http://127.0.0.1:8137";
-
-    const dataDir = existing.isTeam
-      ? path.join(
-          process.cwd(),
-          "wallets",
-          `team:${existing.teamId}`,
-          existing.accountName,
-          chain,
-        )
-      : path.join(
-          process.cwd(),
-          "wallets",
-          userId,
-          existing.accountName,
-          chain,
-        );
+    const dataDir = getWalletDataDir(existing.walletId);
 
     invalidateZingo({ chain, serverUrl, dataDir });
 
@@ -693,13 +685,34 @@ router.post("/test-connection/:accountName", authenticate, async (req, res) => {
 });
 
 router.get("/info", authenticate, isAdmin, async (req, res) => {
-  const params = await getDefaultZcashParams(req.user.id);
-  if (!params) {
-    await initZcashOnce((ownerId = req.user.id), (accountName = "Main"));
-  }
-  const info = await executeZingoCliInfo("rescan", params);
+  try {
+    let params = await getDefaultZcashParams(req.user.id);
 
-  res.json(info);
+    if (!params) {
+      await initZcashOnce(req.user.id, "Main");
+
+      params = await getDefaultZcashParams(req.user.id);
+    }
+
+    if (!params) {
+      return res.status(404).json({
+        success: false,
+        message: "No Zcash wallet available",
+      });
+    }
+
+    const info = await executeZingoCliInfo("rescan", params);
+
+    res.json(info);
+  } catch (error) {
+    console.error("Error getting Zcash info:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to get Zcash information",
+      error: error.message,
+    });
+  }
 });
 
 // Error handling middleware for this router
