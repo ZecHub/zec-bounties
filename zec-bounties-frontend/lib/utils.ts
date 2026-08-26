@@ -40,10 +40,14 @@ export function parseDateInputValue(value: string): Date {
   return new Date(year, month - 1, day);
 }
 
-export const confirmedTotal = (b: Balance) =>
-  ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
-    (b.confirmed_sapling_balance ?? 0) +
-    (b.confirmed_transparent_balance ?? 0)) /
-  1e8;
+export const confirmedTotal = (b: Balance | undefined) => {
+  return (
+    ((b?.confirmed_ironwood_balance ?? 0) +
+      (b?.confirmed_orchard_balance ?? 0) +
+      (b?.confirmed_sapling_balance ?? 0) +
+      (b?.confirmed_transparent_balance ?? 0)) /
+    1e8
+  );
+};
 
 export const fmt = (n: number) => n.toFixed(4);
