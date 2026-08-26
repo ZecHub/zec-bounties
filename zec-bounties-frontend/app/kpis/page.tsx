@@ -1672,7 +1672,7 @@ const getBadgeIcons = (
 			      />
 			      <div className="flex items-center gap-2">
 				<img
-				  src={`/badges/${badge.key}.svg`}
+				  src={`/badges/${badgeFolder}/${badge.key}.svg`}
 				  alt={badge.key}
 				  className="w-4 h-4"
 				/>
@@ -1727,7 +1727,7 @@ const getBadgeIcons = (
           >
             {option.star ? (
               <img
-                src={`/badges/${option.star}.svg`}
+                src={`/badges/${badgeFolder}/${option.star}.svg`}
                 alt={option.label}
                 className="w-5 h-5 object-contain"
               />
