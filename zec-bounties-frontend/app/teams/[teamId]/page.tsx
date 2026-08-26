@@ -106,7 +106,6 @@ const TABS: Tab[] = [
 ];
 
 function formatZec(amount: number) {
-  console.log(amount);
   return `${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} ZEC`;
 }
 
@@ -2192,11 +2191,7 @@ function TreasuryTab({
         </div>
 
         <div className="mt-6 text-3xl font-bold text-primary">
-          {balanceLoading
-            ? "…"
-            : balance
-              ? formatZec(confirmedTotal(balance))
-              : "—"}
+          {balanceLoading ? "…" : balance ? fmt(confirmedTotal(balance)) : "—"}
         </div>
         {teamRescanStatus && (
           <p className="mt-2 text-xs text-muted-foreground">
