@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -35,6 +34,7 @@ import {
 import { useBounty } from "@/lib/bounty-context";
 import { Bounty } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
+import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -50,25 +50,19 @@ export function EditBountyModal({
   defaultSection = "details",
 }: EditBountyModalProps) {
   const { updateBounty, nonAdminUsers } = useBounty();
-
   const [isSaving, setIsSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<"details" | "assignees">(
     defaultSection,
   );
-
-  // Form fields
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [bountyAmount, setBountyAmount] = useState("");
   const [timeToComplete, setTimeToComplete] = useState("");
   const [chain, setChain] = useState<"MAIN" | "TEST">("TEST");
-
-  // Assignee picker
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notifyUsers, setNotifyUsers] = useState(false);
 
-  // Populate form when bounty changes; also respect defaultSection on re-open
   useEffect(() => {
     if (!bounty) return;
     setTitle(bounty.title ?? "");
@@ -76,16 +70,14 @@ export function EditBountyModal({
     setBountyAmount(String(bounty.bountyAmount ?? ""));
     setTimeToComplete(
       bounty.timeToComplete
-        ? new Date(bounty.timeToComplete).toISOString().slice(0, 10)
+        ? toDateInputValue(new Date(bounty.timeToComplete))
         : "",
     );
     setChain(bounty.chain ?? "TEST");
-    // Pre-select existing assignees
     const existingIds = bounty.assignees?.map((a) => a.userId) ?? [];
     setSelectedUserIds(existingIds);
     setAssigneeSearch("");
     setNotifyUsers(false);
-    // Always honour the defaultSection when the modal (re-)opens
     setActiveSection(defaultSection);
   }, [bounty, open, defaultSection]);
 
@@ -107,11 +99,9 @@ export function EditBountyModal({
       const aSelected = selectedUserIds.includes(a.id);
       const bSelected = selectedUserIds.includes(b.id);
       if (aSelected !== bSelected) return aSelected ? -1 : 1;
-
       const aHasUA = !!a.UA_address;
       const bHasUA = !!b.UA_address;
       if (aHasUA !== bHasUA) return aHasUA ? -1 : 1;
-
       return 0;
     });
 
@@ -123,17 +113,15 @@ export function EditBountyModal({
       const assigneesChanged =
         selectedUserIds.length !== existingIds.length ||
         selectedUserIds.some((id) => !existingIds.includes(id));
-
       await updateBounty(bounty.id, {
         title,
         description,
         bountyAmount: parseFloat(bountyAmount),
         timeToComplete: timeToComplete
-          ? new Date(timeToComplete).toISOString()
+          ? parseDateInputValue(timeToComplete)
           : undefined,
         chain,
         notifyUsers,
-        // Pass userIds for assignees — handled in updateBounty
         ...(assigneesChanged && { userIds: selectedUserIds }),
       } as any);
       onOpenChange(false);
@@ -149,7 +137,6 @@ export function EditBountyModal({
   const selectedUsers = nonAdminUsers.filter((u) =>
     selectedUserIds.includes(u.id),
   );
-
   const selectedUsersWithoutAddress = selectedUsers.filter((u) =>
     chain === "MAIN" ? !u.UA_address : !u.z_address,
   );
@@ -158,7 +145,6 @@ export function EditBountyModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-4">
-        {/* Header */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <FileText className="w-5 h-5 text-muted-foreground" />
@@ -169,7 +155,6 @@ export function EditBountyModal({
           </p>
         </DialogHeader>
 
-        {/* Tab bar */}
         <div className="flex border-b shrink-0">
           {(["details", "assignees"] as const).map((tab) => (
             <button
@@ -196,11 +181,9 @@ export function EditBountyModal({
           ))}
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {activeSection === "details" && (
             <div className="space-y-5">
-              {/* Title */}
               <div className="space-y-1.5">
                 <Label
                   htmlFor="edit-title"
@@ -218,7 +201,6 @@ export function EditBountyModal({
                 />
               </div>
 
-              {/* Description */}
               <div className="space-y-1.5">
                 <Label
                   htmlFor="edit-desc"
@@ -237,7 +219,6 @@ export function EditBountyModal({
                 />
               </div>
 
-              {/* Amount + Deadline side by side */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label
@@ -257,7 +238,6 @@ export function EditBountyModal({
                     placeholder="0.000"
                   />
                 </div>
-
                 <div className="space-y-1.5">
                   <Label
                     htmlFor="edit-chain"
@@ -279,7 +259,6 @@ export function EditBountyModal({
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-1.5">
                   <Label
                     htmlFor="edit-deadline"
@@ -301,7 +280,6 @@ export function EditBountyModal({
 
           {activeSection === "assignees" && (
             <div className="space-y-4">
-              {/* Selected chips */}
               {selectedUsers.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 p-3 bg-muted/40 rounded-lg border border-dashed">
                   {selectedUsers.map((u) => (
@@ -354,7 +332,6 @@ export function EditBountyModal({
                 </div>
               )}
 
-              {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
@@ -365,7 +342,6 @@ export function EditBountyModal({
                 />
               </div>
 
-              {/* User list */}
               <div className="border rounded-lg overflow-hidden divide-y">
                 {filteredUsers.length === 0 ? (
                   <div className="py-10 text-center text-sm text-muted-foreground">
@@ -436,7 +412,6 @@ export function EditBountyModal({
                   })
                 )}
               </div>
-
               {selectedUserIds.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center">
                   No assignees selected — bounty will be open to applications
@@ -446,7 +421,6 @@ export function EditBountyModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t flex flex-col gap-3 shrink-0 bg-muted/20">
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input
