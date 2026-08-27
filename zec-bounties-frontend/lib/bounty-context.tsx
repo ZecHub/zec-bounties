@@ -100,7 +100,7 @@ interface BountyContextType {
   selectRole: (role: "HUNTER" | "TEAM") => Promise<boolean>;
 
   // Role switching (isRobin users only)
-  switchRole: () => Promise<void>;
+  switchRole: (role: "ADMIN" | "CLIENT" | "HUNTER" | "TEAM") => Promise<void>;
   isSwitchingRole: boolean;
 
   // Categories
@@ -477,17 +477,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   // ==================== Role Switching ====================
 
-  const switchRole = async (): Promise<void> => {
+  const switchRole = async (
+    role: "ADMIN" | "CLIENT" | "HUNTER" | "TEAM",
+  ): Promise<void> => {
     if (!currentUser || !currentUser.isRobin) return;
-
-    const newRole = currentUser.role === "ADMIN" ? "CLIENT" : "ADMIN";
+    if (role === currentUser.role) return;
 
     setIsSwitchingRole(true);
     try {
       const res = await fetch(`${backendUrl}/api/bounties/switch-role`, {
         method: "PATCH",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ role: newRole }),
+        body: JSON.stringify({ role }),
       });
 
       if (!res.ok) {
