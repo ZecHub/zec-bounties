@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
+import { AdminNavbar } from "@/components/layout/admin/navbar";
 
 type RoleChoice = "HUNTER" | "TEAM";
 
@@ -83,98 +84,102 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-16 text-foreground">
-      <div className="mb-12 max-w-xl text-center">
-        <img
-          src="/ZecHubBlue.png"
-          alt="ZecBounties"
-          className="mx-auto mb-6 h-30 w-auto"
-        />
-        <span className="mb-4 block text-xs font-semibold uppercase tracking-widest text-primary">
-          Account setup
-        </span>
-        <h1 className="mb-3 text-3xl font-extrabold tracking-tight md:text-4xl">
-          Choose how you work the board
-        </h1>
-        <p className="text-muted-foreground text-lg">
-          This sets your role on ZEC Bounties. You'll act as one from here on.
-        </p>
-      </div>
+    <>
+      {currentUser.isRobin && <AdminNavbar />}
 
-      <div className="grid w-full max-w-3xl grid-cols-1 gap-5 md:grid-cols-2">
-        {(Object.keys(ROLE_COPY) as RoleChoice[]).map((role) => {
-          const copy = ROLE_COPY[role];
-          const isSealing = sealing === role;
-          const isOtherSealing = sealing !== null && !isSealing;
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-16 text-foreground">
+        <div className="mb-12 max-w-xl text-center">
+          <img
+            src="/ZecHubBlue.png"
+            alt="ZecBounties"
+            className="mx-auto mb-6 h-30 w-auto"
+          />
+          <span className="mb-4 block text-xs font-semibold uppercase tracking-widest text-primary">
+            Account setup
+          </span>
+          <h1 className="mb-3 text-3xl font-extrabold tracking-tight md:text-4xl">
+            Choose how you work the board
+          </h1>
+          <p className="text-muted-foreground text-lg">
+            This sets your role on ZEC Bounties. You'll act as one from here on.
+          </p>
+        </div>
 
-          return (
-            <button
-              key={role}
-              type="button"
-              onClick={() => handleChoose(role)}
-              disabled={sealing !== null}
-              aria-busy={isSealing}
-              className={`group relative flex flex-col gap-4 overflow-hidden rounded-xl border bg-card p-7 text-left shadow-sm transition motion-reduce:transition-none ${
-                isSealing
-                  ? "border-primary"
-                  : "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              } ${isOtherSealing ? "cursor-default opacity-45" : "cursor-pointer"}`}
-            >
-              <div className="flex items-baseline gap-2.5">
-                <span className="text-xs text-muted-foreground">
-                  {role === "HUNTER" ? "01" : "02"}
-                </span>
-                <span className="text-xl font-semibold">{copy.title}</span>
-              </div>
+        <div className="grid w-full max-w-3xl grid-cols-1 gap-5 md:grid-cols-2">
+          {(Object.keys(ROLE_COPY) as RoleChoice[]).map((role) => {
+            const copy = ROLE_COPY[role];
+            const isSealing = sealing === role;
+            const isOtherSealing = sealing !== null && !isSealing;
 
-              <p className="text-sm text-muted-foreground">{copy.tagline}</p>
+            return (
+              <button
+                key={role}
+                type="button"
+                onClick={() => handleChoose(role)}
+                disabled={sealing !== null}
+                aria-busy={isSealing}
+                className={`group relative flex flex-col gap-4 overflow-hidden rounded-xl border bg-card p-7 text-left shadow-sm transition motion-reduce:transition-none ${
+                  isSealing
+                    ? "border-primary"
+                    : "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                } ${isOtherSealing ? "cursor-default opacity-45" : "cursor-pointer"}`}
+              >
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-xs text-muted-foreground">
+                    {role === "HUNTER" ? "01" : "02"}
+                  </span>
+                  <span className="text-xl font-semibold">{copy.title}</span>
+                </div>
 
-              <ul className="flex flex-col gap-2">
-                {copy.points.map((point) => (
-                  <li
-                    key={point}
-                    className="relative pl-4 text-xs leading-relaxed text-muted-foreground before:absolute before:left-0 before:content-['—'] before:text-primary"
+                <p className="text-sm text-muted-foreground">{copy.tagline}</p>
+
+                <ul className="flex flex-col gap-2">
+                  {copy.points.map((point) => (
+                    <li
+                      key={point}
+                      className="relative pl-4 text-xs leading-relaxed text-muted-foreground before:absolute before:left-0 before:content-['—'] before:text-primary"
+                    >
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-auto flex items-center justify-between border-t pt-3 text-sm font-medium">
+                  <span className="text-primary">
+                    {isSealing ? "Sealing…" : copy.cta}
+                  </span>
+                  <span
+                    className="text-primary transition-transform motion-reduce:transition-none group-hover:translate-x-1"
+                    aria-hidden="true"
                   >
-                    {point}
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-auto flex items-center justify-between border-t pt-3 text-sm font-medium">
-                <span className="text-primary">
-                  {isSealing ? "Sealing…" : copy.cta}
-                </span>
-                <span
-                  className="text-primary transition-transform motion-reduce:transition-none group-hover:translate-x-1"
-                  aria-hidden="true"
-                >
-                  →
-                </span>
-              </div>
-
-              {isSealing && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-background/95 motion-reduce:animate-none [animation:seal-in_0.25s_ease]">
-                  <div className="flex h-[84px] w-[84px] -rotate-[8deg] items-center justify-center rounded-full border-2 border-primary motion-reduce:animate-none [animation:seal-stamp_0.35s_cubic-bezier(0.2,1.4,0.4,1)]">
-                    <span className="text-[11px] font-semibold tracking-widest text-primary">
-                      SEALED
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">
-                    {new Date().toISOString().split("T")[1].slice(0, 8)} UTC
+                    →
                   </span>
                 </div>
-              )}
-            </button>
-          );
-        })}
+
+                {isSealing && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-background/95 motion-reduce:animate-none [animation:seal-in_0.25s_ease]">
+                    <div className="flex h-[84px] w-[84px] -rotate-[8deg] items-center justify-center rounded-full border-2 border-primary motion-reduce:animate-none [animation:seal-stamp_0.35s_cubic-bezier(0.2,1.4,0.4,1)]">
+                      <span className="text-[11px] font-semibold tracking-widest text-primary">
+                        SEALED
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      {new Date().toISOString().split("T")[1].slice(0, 8)} UTC
+                    </span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {error && <p className="mt-5 text-xs text-destructive">{error}</p>}
+
+        <p className="mt-8 max-w-xl text-center text-xs text-muted-foreground">
+          This choice sets your account type. Contact an admin if you need it
+          changed later.
+        </p>
       </div>
-
-      {error && <p className="mt-5 text-xs text-destructive">{error}</p>}
-
-      <p className="mt-8 max-w-xl text-center text-xs text-muted-foreground">
-        This choice sets your account type. Contact an admin if you need it
-        changed later.
-      </p>
-    </div>
+    </>
   );
 }
