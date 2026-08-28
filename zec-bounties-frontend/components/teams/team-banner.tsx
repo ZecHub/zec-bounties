@@ -164,7 +164,7 @@ export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
   return (
     <>
       <div
-        className={`relative mb-8 h-40 overflow-hidden rounded-2xl border sm:h-56 ${
+        className={`relative mb-8 h-40 overflow-hidden rounded-2xl border imd:h-56 ${
           hasRealImage ? "" : `bg-gradient-to-br ${gradient.className}`
         }`}
       >
@@ -172,7 +172,7 @@ export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
           <img
             src={bannerUrl!}
             alt="Team banner"
-            className="h-full w-full object-cover"
+            className="h-full w-full object-fill imd:object-cover"
           />
         )}
 

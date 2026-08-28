@@ -295,7 +295,7 @@ export default function TeamConsolePage() {
           canManage={canManage}
         />
 
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-8 flex flex-col gap-4 imd:flex-row imd:items-center imd:justify-between">
           <div className="flex items-center gap-4">
             <Avatar className="h-14 w-14 border">
               {team.logo && (
@@ -329,7 +329,13 @@ export default function TeamConsolePage() {
           </Badge>
         </div>
 
-        <div className="mb-8 flex gap-1 overflow-x-auto border-b">
+        <div
+          className="mb-8 flex gap-1 overflow-x-auto border-b"
+          style={{
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          }}
+        >
           {TABS.map((tab) => (
             <button
               key={tab}
