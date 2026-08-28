@@ -951,7 +951,7 @@ function TeamDetailPanel({
       )}
 
       {/* Banner */}
-      <div className="w-full h-full">
+      <div className="w-full h-fit">
         <TeamBanner
           teamId={team.id}
           bannerUrl={team.banner}
