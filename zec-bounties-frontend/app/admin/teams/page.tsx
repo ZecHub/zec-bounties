@@ -931,10 +931,10 @@ function TeamDetailPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-y-auto">
       {/* Mobile-only back bar — sticky so it's always reachable */}
       {onBack && (
-        <div className="sticky top-0 z-20 flex items-center justify-between gap-2 px-2 py-2 border-b bg-card/95 backdrop-blur md:hidden">
+        <div className="sticky top-0 z-20 shrink-0 flex items-center justify-between gap-2 px-2 py-2 border-b bg-card/95 backdrop-blur md:hidden">
           <Button
             variant="ghost"
             size="sm"
@@ -1148,7 +1148,7 @@ function TeamDetailPanel({
       )}
 
       {/* Members list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="">
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <h3 className="text-sm font-semibold">
             Members ({team.members.length})
