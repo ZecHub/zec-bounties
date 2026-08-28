@@ -53,7 +53,7 @@ function defaultGradientFor(teamId: string) {
 // of that is wasted since the banner only ever renders at h-40/h-56.
 // SVGs are skipped — they're vector and already small.
 const BANNER_MAX_WIDTH = 1920;
-const BANNER_MAX_HEIGHT = 800;
+const BANNER_MAX_HEIGHT = 640;
 const BANNER_JPEG_QUALITY = 0.85;
 
 async function downscaleImageIfNeeded(file: File): Promise<File> {
@@ -164,10 +164,15 @@ export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
   return (
     <>
       <div
+        className={`relative mb-8 aspect-3/1 w-full overflow-hidden rounded-2xl border imd:h-56 ${
+          hasRealImage ? "" : `bg-linear-to-br ${gradient.className}`
+        }`}
+      >
+        {/* <div
         className={`relative mb-8 h-40 overflow-hidden rounded-2xl border imd:h-56 ${
           hasRealImage ? "" : `bg-gradient-to-br ${gradient.className}`
         }`}
-      >
+      > */}
         {hasRealImage && (
           <img
             src={bannerUrl!}

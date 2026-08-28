@@ -1477,8 +1477,7 @@ function TeamActivityFeed({
 }
 
 function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
-  const { addTeamMembers, removeTeamMember, nonAdminUsers, fetchUsers } =
-    useBounty();
+  const { addTeamMembers, removeTeamMember, users, fetchUsers } = useBounty();
   const [showInvite, setShowInvite] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [inviteRole, setInviteRole] = useState<"ADMIN" | "MEMBER">("MEMBER");
@@ -1489,7 +1488,9 @@ function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
   }, []);
 
   const memberIds = new Set(team.members.map((m) => m.userId));
-  const candidates = nonAdminUsers.filter((u) => !memberIds.has(u.id));
+  const candidates = users.filter(
+    (u) => (u.role === "TEAM" || u.role === "ADMIN") && !memberIds.has(u.id),
+  );
 
   const handleInvite = async () => {
     if (!selectedUserId) return;
