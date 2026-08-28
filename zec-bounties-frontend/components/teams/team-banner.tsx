@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil, Image as ImageIcon, Check, Loader2, X } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
+import { cn } from "@/lib/utils";
 
 // Preset gradients — used as a fallback when the team has no uploaded banner.
 // Reuses the same chart-token palette as the homepage hero carousel so
@@ -116,9 +117,15 @@ interface TeamBannerProps {
   teamId: string;
   bannerUrl?: string | null; // full gateway URL now, or null
   canManage: boolean;
+  className?: string;
 }
 
-export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
+export function TeamBanner({
+  teamId,
+  bannerUrl,
+  canManage,
+  className,
+}: TeamBannerProps) {
   const { uploadTeamBanner, removeTeamBanner } = useBounty();
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -164,9 +171,12 @@ export function TeamBanner({ teamId, bannerUrl, canManage }: TeamBannerProps) {
   return (
     <>
       <div
-        className={`relative mb-8 aspect-3/1 w-full overflow-hidden rounded-2xl border imd:h-56 ${
-          hasRealImage ? "" : `bg-linear-to-br ${gradient.className}`
-        }`}
+        className={cn(
+          `relative mb-8 aspect-3/1 w-full shrink-0 overflow-hidden rounded-2xl border ${
+            hasRealImage ? "" : `bg-linear-to-br ${gradient.className}`
+          }`,
+          className,
+        )}
       >
         {/* <div
         className={`relative mb-8 h-40 overflow-hidden rounded-2xl border imd:h-56 ${
