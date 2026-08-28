@@ -581,7 +581,13 @@ export default function AdminDashboard() {
             </div>
 
             {/* Tabs sit inside the same bar so they scroll with context */}
-            <div className="-mb-px flex items-center gap-1 overflow-x-auto">
+            <div
+              className="-mb-px flex items-center gap-1 overflow-x-auto"
+              style={{
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+              }}
+            >
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const active = activeTab === tab.id;
@@ -741,7 +747,13 @@ export default function AdminDashboard() {
                   </div>
 
                   {/* Inline status chips — one click instead of two */}
-                  <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5">
+                  <div
+                    className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
+                    style={{
+                      scrollbarWidth: "none",
+                      msOverflowStyle: "none",
+                    }}
+                  >
                     {STATUS_FILTERS.map((f) => {
                       const active = bountyStatusFilter === f.status;
                       return (
