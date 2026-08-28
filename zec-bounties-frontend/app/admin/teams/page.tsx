@@ -70,6 +70,7 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { TeamBanner } from "@/components/teams/team-banner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -950,15 +951,14 @@ function TeamDetailPanel({
       )}
 
       {/* Banner */}
-      {team.banner && (
-        <div className="relative mb-8 h-40 overflow-hidden border sm:h-56 ">
-          <img
-            src={team.banner}
-            alt={`${team.name} banner`}
-            className="h-full w-full object-cover"
-          />
-        </div>
-      )}
+      <div className="w-full h-full">
+        <TeamBanner
+          teamId={team.id}
+          bannerUrl={team.banner}
+          canManage
+          className="rounded-none"
+        />
+      </div>
 
       {/* Header */}
       <div className="flex items-start justify-between p-4 sm:p-6 border-b">
