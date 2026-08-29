@@ -35,13 +35,19 @@ export function ThemePicker() {
                 type="button"
                 onClick={() => setColorTheme(t.id)}
                 className={`flex flex-col gap-1.5 rounded-md border p-2 text-left transition ${
-                  active ? "border-primary" : "hover:border-primary/40"
+                  active
+                    ? "border-foreground ring-2 ring-foreground/20"
+                    : "hover:border-foreground/40"
                 }`}
               >
-                <div className="flex h-6 overflow-hidden rounded">
+                <div className="flex h-8 overflow-hidden rounded-sm ring-1 ring-foreground/15">
                   <span
                     className="flex-1"
                     style={{ backgroundColor: t.swatch.light }}
+                  />
+                  <span
+                    className="flex-1"
+                    style={{ backgroundColor: t.swatch.accent }}
                   />
                   <span
                     className="flex-1"
@@ -50,7 +56,7 @@ export function ThemePicker() {
                 </div>
                 <span className="flex items-center justify-between text-xs font-medium">
                   {t.name}
-                  {active && <Check className="h-3 w-3 text-primary" />}
+                  {active && <Check className="h-3 w-3" />}
                 </span>
               </button>
             );
