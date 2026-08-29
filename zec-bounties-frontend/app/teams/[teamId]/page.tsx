@@ -71,7 +71,10 @@ import {
   AlertTriangle,
   Activity,
   AlertCircle,
+  XIcon,
 } from "lucide-react";
+import { RxDiscordLogo } from "react-icons/rx";
+import { FaXTwitter } from "react-icons/fa6";
 import { formatStatus } from "@/lib/utils";
 import { displayName } from "@/lib/displayName";
 import { format } from "date-fns";
@@ -2300,6 +2303,104 @@ function SettingsTab({
   const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  type SaveState = "idle" | "saving" | "success" | "error";
+
+  // ── Twitter link ──────────────────────────────────────────────────────
+  const [twitterUrl, setTwitterUrl] = useState(team.twitterUrl || "");
+  const [twitterSaveState, setTwitterSaveState] = useState<SaveState>("idle");
+  const [twitterError, setTwitterError] = useState<string | null>(null);
+  const twitterDirty = twitterUrl !== (team.twitterUrl || "");
+  const isValidTwitter =
+    !twitterUrl.trim() || /^https?:\/\/.+/.test(twitterUrl.trim());
+
+  const handleSaveTwitter = async () => {
+    if (!isValidTwitter) return;
+    setTwitterSaveState("saving");
+    setTwitterError(null);
+    try {
+      await updateTeam(team.id, { twitterUrl: twitterUrl.trim() });
+      setTwitterSaveState("success");
+      setTimeout(() => setTwitterSaveState("idle"), 3000);
+    } catch (err: any) {
+      setTwitterSaveState("error");
+      setTwitterError(err.message ?? "Failed to save link");
+    }
+  };
+
+  // ── Discord link ──────────────────────────────────────────────────────
+  const [discordUrl, setDiscordUrl] = useState(team.discordUrl || "");
+  const [discordSaveState, setDiscordSaveState] = useState<SaveState>("idle");
+  const [discordError, setDiscordError] = useState<string | null>(null);
+  const discordDirty = discordUrl !== (team.discordUrl || "");
+  const isValidDiscord =
+    !discordUrl.trim() || /^https?:\/\/.+/.test(discordUrl.trim());
+
+  const handleSaveDiscord = async () => {
+    if (!isValidDiscord) return;
+    setDiscordSaveState("saving");
+    setDiscordError(null);
+    try {
+      await updateTeam(team.id, { discordUrl: discordUrl.trim() });
+      setDiscordSaveState("success");
+      setTimeout(() => setDiscordSaveState("idle"), 3000);
+    } catch (err: any) {
+      setDiscordSaveState("error");
+      setDiscordError(err.message ?? "Failed to save link");
+    }
+  };
+
+  // ── Additional links ─────────────────────────────────────────────────
+  const [additionalLinks, setAdditionalLinks] = useState<string[]>(
+    team.additionalLinks?.length ? team.additionalLinks : [""],
+  );
+  const [linksSaveState, setLinksSaveState] = useState<SaveState>("idle");
+  const [linksError, setLinksError] = useState<string | null>(null);
+
+  const savedLinks = team.additionalLinks?.length ? team.additionalLinks : [""];
+  const linksDirty =
+    JSON.stringify(additionalLinks.map((l) => l.trim()).filter(Boolean)) !==
+    JSON.stringify(savedLinks.map((l) => l.trim()).filter(Boolean));
+  const linksAllValid = additionalLinks.every(
+    (l) => !l.trim() || /^https?:\/\/.+/.test(l.trim()),
+  );
+  const filledLinksCount = additionalLinks
+    .map((l) => l.trim())
+    .filter(Boolean).length;
+
+  const handleAdditionalLinkChange = (index: number, value: string) => {
+    setAdditionalLinks((prev) => prev.map((l, i) => (i === index ? value : l)));
+    setLinksSaveState("idle");
+    setLinksError(null);
+  };
+
+  const handleAddLinkField = () => {
+    if (additionalLinks.length >= 10) return;
+    setAdditionalLinks((prev) => [...prev, ""]);
+  };
+
+  const handleRemoveLinkField = (index: number) => {
+    setAdditionalLinks((prev) =>
+      prev.length === 1 ? [""] : prev.filter((_, i) => i !== index),
+    );
+    setLinksSaveState("idle");
+  };
+
+  const handleSaveAdditionalLinks = async () => {
+    if (!linksAllValid) return;
+    setLinksSaveState("saving");
+    setLinksError(null);
+    try {
+      const cleaned = additionalLinks.map((l) => l.trim()).filter(Boolean);
+      await updateTeam(team.id, { additionalLinks: cleaned });
+      setAdditionalLinks(cleaned.length ? cleaned : [""]);
+      setLinksSaveState("success");
+      setTimeout(() => setLinksSaveState("idle"), 3000);
+    } catch (err: any) {
+      setLinksSaveState("error");
+      setLinksError(err.message ?? "Failed to save links");
+    }
+  };
+
   const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2348,13 +2449,42 @@ function SettingsTab({
     }
   };
 
+  // Small helper for the inline status row under a link field
+  const LinkStatus = ({
+    error,
+    saved,
+  }: {
+    error: string | null;
+    saved: boolean;
+  }) =>
+    error ? (
+      <p className="text-xs text-destructive flex items-center gap-1">
+        <XCircle className="h-3.5 w-3.5" />
+        {error}
+      </p>
+    ) : saved ? (
+      <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Link saved
+      </p>
+    ) : null;
+
   return (
-    <div className="max-w-lg space-y-6">
-      {canManage && (
-        <div>
-          <Label className="mb-1.5 block text-xs text-muted-foreground">
-            Team logo
-          </Label>
+    <div className="max-w-2xl space-y-6 m-auto">
+      <div>
+        <h2 className="text-base font-semibold">Team settings</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Manage how {team.name} appears and who can act on its behalf.
+        </p>
+      </div>
+
+      {/* ── Identity ── */}
+      <section className="rounded-xl border bg-card p-5 space-y-5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Identity
+        </h3>
+
+        {canManage && (
           <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16 border rounded-lg">
               {team.logo && (
@@ -2368,99 +2498,352 @@ function SettingsTab({
                 {initials(team.name)}
               </AvatarFallback>
             </Avatar>
-            <div className="flex gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                onChange={handleLogoSelect}
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={logoUploading}
-              >
-                {logoUploading
-                  ? "Uploading..."
-                  : team.logo
-                    ? "Replace"
-                    : "Upload"}
-              </Button>
-              {team.logo && (
+            <div className="flex-1">
+              <div className="flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={handleLogoSelect}
+                  className="hidden"
+                />
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={handleLogoRemove}
+                  onClick={() => fileInputRef.current?.click()}
                   disabled={logoUploading}
-                  className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
                 >
-                  <X className="mr-1 h-3.5 w-3.5" /> Remove
+                  {logoUploading
+                    ? "Uploading..."
+                    : team.logo
+                      ? "Replace logo"
+                      : "Upload logo"}
                 </Button>
-              )}
+                {team.logo && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLogoRemove}
+                    disabled={logoUploading}
+                    className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
+                  >
+                    <FaXTwitter className="mr-1 h-3.5 w-3.5" /> Remove
+                  </Button>
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                PNG, JPEG, WEBP, or SVG. Max 5MB.
+              </p>
             </div>
           </div>
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            PNG, JPEG, WEBP, or SVG. Max 5MB.
-          </p>
+        )}
+
+        <div>
+          <Label className="mb-1.5 block text-xs text-muted-foreground">
+            Team name
+          </Label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!canManage}
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary disabled:opacity-50"
+          />
         </div>
+        <div>
+          <Label className="mb-1.5 block text-xs text-muted-foreground">
+            Description
+          </Label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={!canManage}
+            rows={3}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
+          />
+        </div>
+
+        {canManage ? (
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {saving ? "Saving..." : "Save changes"}
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Only owners and admins can edit team settings.
+          </p>
+        )}
+      </section>
+
+      {/* ── Social links ── */}
+      {canManage && (
+        <section className="rounded-xl border bg-card p-5 space-y-5">
+          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Social links
+          </h3>
+
+          {/* X / Twitter */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-foreground/5">
+                <FaXTwitter className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">X (Twitter)</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Shown on the team's public profile.
+                </p>
+              </div>
+            </div>
+            <Input
+              value={twitterUrl}
+              onChange={(e) => {
+                setTwitterUrl(e.target.value);
+                setTwitterSaveState("idle");
+                setTwitterError(null);
+              }}
+              placeholder="https://x.com/yourteam"
+              className={
+                twitterSaveState === "success"
+                  ? "border-green-500 focus-visible:ring-green-500"
+                  : twitterSaveState === "error" ||
+                      (twitterUrl && !isValidTwitter)
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
+              }
+            />
+            {twitterUrl && !isValidTwitter && (
+              <p className="text-xs text-destructive flex items-center gap-1">
+                <XCircle className="h-3.5 w-3.5" />
+                Must be a valid URL starting with http(s)://
+              </p>
+            )}
+            <LinkStatus
+              error={twitterError}
+              saved={twitterSaveState === "success"}
+            />
+            {twitterDirty && (
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setTwitterUrl(team.twitterUrl || "");
+                    setTwitterSaveState("idle");
+                    setTwitterError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={twitterSaveState === "saving" || !isValidTwitter}
+                  onClick={handleSaveTwitter}
+                >
+                  {twitterSaveState === "saving" && (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  )}
+                  Save
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t" />
+
+          {/* Discord */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#5865F2]/30 bg-[#5865F2]/10 text-[#5865F2]">
+                <RxDiscordLogo className="h-4 w-4" />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Discord</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Invite link shown on the team's public profile.
+                </p>
+              </div>
+            </div>
+            <Input
+              value={discordUrl}
+              onChange={(e) => {
+                setDiscordUrl(e.target.value);
+                setDiscordSaveState("idle");
+                setDiscordError(null);
+              }}
+              placeholder="https://discord.gg/yourteam"
+              className={
+                discordSaveState === "success"
+                  ? "border-green-500 focus-visible:ring-green-500"
+                  : discordSaveState === "error" ||
+                      (discordUrl && !isValidDiscord)
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
+              }
+            />
+            {discordUrl && !isValidDiscord && (
+              <p className="text-xs text-destructive flex items-center gap-1">
+                <XCircle className="h-3.5 w-3.5" />
+                Must be a valid URL starting with http(s)://
+              </p>
+            )}
+            <LinkStatus
+              error={discordError}
+              saved={discordSaveState === "success"}
+            />
+            {discordDirty && (
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDiscordUrl(team.discordUrl || "");
+                    setDiscordSaveState("idle");
+                    setDiscordError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={discordSaveState === "saving" || !isValidDiscord}
+                  onClick={handleSaveDiscord}
+                >
+                  {discordSaveState === "saving" && (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  )}
+                  Save
+                </Button>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
-      <div>
-        <Label className="mb-1.5 block text-xs text-muted-foreground">
-          Team name
-        </Label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!canManage}
-          className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary disabled:opacity-50"
-        />
-      </div>
-      <div>
-        <Label className="mb-1.5 block text-xs text-muted-foreground">
-          Description
-        </Label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={!canManage}
-          rows={3}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
-        />
-      </div>
-      <div className="flex items-center justify-between rounded-lg border p-3">
-        <div className="pr-4">
-          <Label className="text-sm">Private team</Label>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            When private, only {team.name}'s community (members and favoriters)
-            can see and apply to its bounties. Flipping this updates every
-            existing bounty under this team.
-          </p>
-        </div>
-        <Switch
-          checked={isPrivate}
-          onCheckedChange={setIsPrivate}
-          disabled={!canManage}
-        />
-      </div>
+      {/* ── Additional links ── */}
+      {canManage && (
+        <section className="rounded-xl border bg-card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Additional links
+              </h3>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Website, GitHub, or anything else.
+              </p>
+            </div>
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {filledLinksCount}/10
+            </span>
+          </div>
 
-      {canManage ? (
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save changes"}
-        </Button>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Only owners and admins can edit team settings.
+          <div className="space-y-2">
+            {additionalLinks.map((link, i) => (
+              <div key={i} className="flex gap-2">
+                <Input
+                  value={link}
+                  onChange={(e) =>
+                    handleAdditionalLinkChange(i, e.target.value)
+                  }
+                  placeholder="https://example.com"
+                  className={
+                    link && !/^https?:\/\/.+/.test(link.trim())
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => handleRemoveLinkField(i)}
+                >
+                  <XIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {additionalLinks.length < 10 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddLinkField}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add link
+            </Button>
+          )}
+
+          {!linksAllValid && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <XCircle className="h-3.5 w-3.5" />
+              Each link must be a valid URL starting with http(s)://
+            </p>
+          )}
+          <LinkStatus error={linksError} saved={linksSaveState === "success"} />
+          {linksDirty && (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAdditionalLinks(savedLinks);
+                  setLinksSaveState("idle");
+                  setLinksError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={linksSaveState === "saving" || !linksAllValid}
+                onClick={handleSaveAdditionalLinks}
+              >
+                {linksSaveState === "saving" && (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                )}
+                Save
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── Visibility ── */}
+      <section className="rounded-xl border bg-card p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="pr-4">
+            <Label className="text-sm">Private team</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              When private, only {team.name}'s community (members and
+              favoriters) can see and apply to its bounties. Flipping this
+              updates every existing bounty under this team.
+            </p>
+          </div>
+          <Switch
+            checked={isPrivate}
+            onCheckedChange={setIsPrivate}
+            disabled={!canManage}
+          />
+        </div>
+      </section>
+
+      {/* ── Danger zone ── */}
+      <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-destructive">
+          Danger zone
+        </h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {isOwner
+            ? `Permanently delete ${team.name} and all of its data.`
+            : `Leave ${team.name}. You can be re-invited later.`}
         </p>
-      )}
-
-      <div className="border-t pt-6">
-        <h3 className="mb-2 text-xs font-semibold text-red-500">Danger zone</h3>
         <Button
           variant="outline"
           size="sm"
@@ -2469,7 +2852,7 @@ function SettingsTab({
         >
           {isOwner ? "Delete team" : "Leave team"}
         </Button>
-      </div>
+      </section>
     </div>
   );
 }

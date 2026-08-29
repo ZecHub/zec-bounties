@@ -51,16 +51,16 @@ export const COLOR_THEMES: ColorTheme[] = [
       gold: "oklch(0.8 0.16 80)",
     },
   },
-  //   {
-  //     id: "zcash",
-  //     name: "Zcash",
-  //     swatch: {
-  //       light: "oklch(1 0 0)",
-  //       dark: "oklch(0.14 0 0)",
-  //       accent: "oklch(0.78 0.17 75)",
-  //       gold: "oklch(0.78 0.17 75)",
-  //     },
-  //   },
+  {
+    id: "zcash",
+    name: "Zcash",
+    swatch: {
+      light: "oklch(1 0 0)",
+      dark: "#000000",
+      accent: "#f4b728",
+      gold: "#f4b728",
+    },
+  },
 ];
 
 export const DEFAULT_COLOR_THEME = "default";

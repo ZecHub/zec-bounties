@@ -164,19 +164,44 @@ async function removeWalletFromMembers(teamId, wallet, userIds) {
 
 const multer = require("multer");
 
+const imageFileFilter = (req, file, cb) => {
+  if (!/^image\/(png|jpe?g|webp|svg\+xml)$/.test(file.mimetype)) {
+    return cb(new Error("Only PNG, JPEG, WEBP, or SVG images are allowed"));
+  }
+  cb(null, true);
+};
+
+// Square avatars — people already have small, pre-cropped files for these.
 const imageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-  },
-  fileFilter: (req, file, cb) => {
-    if (!/^image\/(png|jpe?g|webp|svg\+xml)$/.test(file.mimetype)) {
-      return cb(new Error("Only PNG, JPEG, WEBP, or SVG images are allowed"));
-    }
-
-    cb(null, true);
-  },
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: imageFileFilter,
 });
+
+// Wide cover images — screenshots/phone photos routinely exceed 5MB,
+// especially as uncompressed PNG. Give banners real headroom.
+const bannerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: imageFileFilter,
+});
+
+// Multer (and our fileFilter) reject by calling next(err) — without this,
+// that error falls through to Express's default handler and returns HTML,
+// which breaks `res.json()` on the frontend. Catch it here as real JSON.
+function handleUploadError(err, req, res, next) {
+  if (err) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({
+        error: "Image is too large.",
+      });
+    }
+    return res.status(400).json({
+      error: err.message || "Invalid file upload",
+    });
+  }
+  next();
+}
 
 function requireGlobalAdmin(req, res) {
   if (req.user.role !== "ADMIN") {
@@ -922,6 +947,21 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
     if (!["ADMIN", "MEMBER"].includes(role)) {
       return res.status(400).json({
         error: "Role must be ADMIN or MEMBER",
+      });
+    }
+
+    const invitedUsers = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, role: true },
+    });
+
+    const ineligible = invitedUsers.filter(
+      (u) => u.role !== "TEAM" && u.role !== "ADMIN",
+    );
+
+    if (ineligible.length > 0 || invitedUsers.length !== userIds.length) {
+      return res.status(400).json({
+        error: "Only users with the TEAM or ADMIN role can be added to a team",
       });
     }
 
@@ -1869,6 +1909,7 @@ router.post(
   "/:teamId/logo",
   authenticate,
   imageUpload.single("logo"),
+  handleUploadError,
   async (req, res) => {
     try {
       const { teamId } = req.params;
@@ -1985,7 +2026,8 @@ router.delete("/:teamId/logo", authenticate, async (req, res) => {
 router.post(
   "/:teamId/banner",
   authenticate,
-  imageUpload.single("banner"),
+  bannerUpload.single("banner"),
+  handleUploadError,
   async (req, res) => {
     try {
       const { teamId } = req.params;
