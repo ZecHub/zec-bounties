@@ -582,7 +582,10 @@ export function GlobalSettingsModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex flex-col w-full sm:max-w-lg max-h-[92vh] overflow-y-auto p-0">
+        <DialogContent
+          showCloseButton={false}
+          className="flex flex-col w-full sm:max-w-lg imd:max-h-[92vh] overflow-y-auto p-0 max-h-[70vh]"
+        >
           {/* Header */}
           <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4 border-b border-border">
             <div>

@@ -365,7 +365,7 @@ export function BountyDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl imd:max-h-[90vh] overflow-y-auto max-h-[70vh]">
         <DialogHeader className="pb-3 border-b border-border">
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
             <Badge
