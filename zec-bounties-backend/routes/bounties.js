@@ -1556,7 +1556,7 @@ router.get("/users", authenticate, async (req, res) => {
 router.patch("/switch-role", authenticate, async (req, res) => {
   try {
     const { role } = req.body;
-    if (!["ADMIN", "CLIENT"].includes(role)) {
+    if (!["ADMIN", "CLIENT", "HUNTER", "TEAM"].includes(role)) {
       return res.status(400).json({ error: "Invalid role" });
     }
 

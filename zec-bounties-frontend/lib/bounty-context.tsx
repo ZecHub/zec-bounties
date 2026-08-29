@@ -300,7 +300,14 @@ interface BountyContextType {
   }) => Promise<Team>;
   updateTeam: (
     id: string,
-    data: { name?: string; description?: string; isPrivate?: boolean },
+    data: {
+      name?: string;
+      description?: string;
+      isPrivate?: boolean;
+      twitterUrl?: string;
+      discordUrl?: string;
+      additionalLinks?: string[];
+    },
   ) => Promise<Team>;
   deleteTeam: (id: string) => Promise<void>;
   addTeamMembers: (

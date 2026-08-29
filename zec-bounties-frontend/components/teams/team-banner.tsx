@@ -172,7 +172,7 @@ export function TeamBanner({
     <>
       <div
         className={cn(
-          `relative mb-8 aspect-3/1 w-full shrink-0 overflow-hidden rounded-2xl border imd:h-56 ${
+          `relative mb-8 aspect-3/1 w-full shrink-0 overflow-hidden rounded-2xl border border-accent imd:h-56 ${
             hasRealImage ? "" : `bg-linear-to-br ${gradient.className}`
           }`,
           className,
