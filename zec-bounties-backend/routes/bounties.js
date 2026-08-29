@@ -843,11 +843,10 @@ router.put(
 
       const updated = await prisma.bounty.update({
         where: { id: req.params.id },
+        // paymentAuthorizedAt is not a column on Bounty, so writing it made
+        // every call to this route throw.
         data: {
-          ...(paymentAuthorized !== undefined && {
-            paymentAuthorized,
-            paymentAuthorizedAt: paymentAuthorized ? new Date() : null,
-          }),
+          ...(paymentAuthorized !== undefined && { paymentAuthorized }),
         },
       });
 
@@ -867,7 +866,8 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
   try {
     const updated = await prisma.bounty.update({
       where: { id: req.params.id },
-      data: { approved: true },
+      // The column is isApproved; writing `approved` threw on every call.
+      data: { isApproved: true },
     });
     sendRealtimeUpdate("bounty_approved", updated, req.user.id);
     await invalidateBounty(req.params.id);
