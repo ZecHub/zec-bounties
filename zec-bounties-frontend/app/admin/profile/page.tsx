@@ -6,6 +6,7 @@ import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardContent,
@@ -31,15 +32,22 @@ import {
   AlertCircle,
   Globe,
   FlaskConical,
+  ChevronDown,
+  Settings2,
 } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { cn } from "@/lib/utils";
-import { PrivacySettingsCard } from "@/components/profile/privacy-settings-card";
+import { backendUrl } from "@/lib/configENV";
+import { ProfileVisibility } from "@/lib/types";
+import {
+  PrivacySettingsCard,
+  DEFAULT_VISIBILITY,
+} from "@/components/profile/privacy-settings-card";
 
 type SaveState = "idle" | "saving" | "success" | "error";
 
-export default function ProfilePage() {
+export default function AdminProfilePage() {
   const router = useRouter();
   const {
     currentUser,
@@ -51,6 +59,77 @@ export default function ProfilePage() {
     nicknameUpdate,
     emailNotificationsUpdate,
   } = useBounty();
+
+  // ── Additional settings visibility ─────────────────────────────────────────
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // ── Public profile settings: bio + visibility, fetched once here ─────────
+  // (shared with PrivacySettingsCard — both edit the same backend record,
+  // so this lives in the parent to avoid two components independently
+  // fetching/saving the same record and clobbering each other's writes)
+  const [bio, setBio] = useState("");
+  const [savedBio, setSavedBio] = useState("");
+  const [visibility, setVisibility] =
+    useState<Required<ProfileVisibility>>(DEFAULT_VISIBILITY);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setSettingsLoading(true);
+      try {
+        const token = localStorage.getItem("authToken");
+        const res = await fetch(`${backendUrl}/api/users/me/profile-settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to load settings");
+        const data = await res.json();
+        if (cancelled) return;
+        setBio(data.bio || "");
+        setSavedBio(data.bio || "");
+        setVisibility({ ...DEFAULT_VISIBILITY, ...data.profileVisibility });
+      } catch (e: any) {
+        if (!cancelled)
+          setSettingsLoadError(e.message || "Failed to load settings");
+      } finally {
+        if (!cancelled) setSettingsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Shared save call — used by the privacy card (visibility toggles), since
+  // the backend persists bio + visibility together. Always sends the
+  // parent's current bio so a visibility-only change can't overwrite it.
+  const savePublicProfile = async (
+    nextBio: string,
+    nextVisibility: Required<ProfileVisibility>,
+  ) => {
+    const token = localStorage.getItem("authToken");
+    const res = await fetch(`${backendUrl}/api/users/me/profile`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ bio: nextBio, profileVisibility: nextVisibility }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || "Save failed");
+    }
+    const data = await res.json();
+    setBio(data.bio || "");
+    setSavedBio(data.bio || "");
+    setVisibility({ ...DEFAULT_VISIBILITY, ...data.profileVisibility });
+    return data;
+  };
 
   // ── Testnet Z-address state ──────────────────────────────────────────────
   const [zAddress, setZAddress] = useState(currentUser?.z_address ?? "");
@@ -65,12 +144,12 @@ export default function ProfilePage() {
   const [uaVerified, setUaVerified] = useState<boolean | null>(null);
   const [uaVerifying, setUaVerifying] = useState(false);
   const [uaError, setUaError] = useState<string | null>(null);
+
+  // ── Nickname + bio state (saved together) ─────────────────────────────────
   const [nickname, setNickname] = useState(currentUser?.nickname ?? "");
   const [nicknameDirty, setNicknameDirty] = useState(false);
-  const [nicknameSaveState, setNicknameSaveState] = useState<
-    "idle" | "saving" | "success" | "error"
-  >("idle");
-  const [nicknameError, setNicknameError] = useState<string | null>(null);
+  const [profileSaveState, setProfileSaveState] = useState<SaveState>("idle");
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Debounce ref for UA inline verification
   const uaDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -222,27 +301,59 @@ export default function ProfilePage() {
     }
   };
 
+  // ── Profile (nickname + bio) handlers ─────────────────────────────────────
+
+  const profileDirty =
+    nickname !== (currentUser?.nickname ?? "") || bio !== savedBio;
+
   const handleNicknameChange = (value: string) => {
     setNickname(value);
     setNicknameDirty(value !== (currentUser?.nickname ?? ""));
-    setNicknameSaveState("idle");
-    setNicknameError(null);
+    setProfileSaveState("idle");
+    setProfileError(null);
   };
 
-  const handleSaveNickname = async () => {
-    setNicknameSaveState("saving");
-    setNicknameError(null);
+  const handleBioChange = (value: string) => {
+    setBio(value.slice(0, 500));
+    setProfileSaveState("idle");
+    setProfileError(null);
+  };
+
+  const handleCancelProfile = () => {
+    setNickname(currentUser?.nickname ?? "");
+    setNicknameDirty(false);
+    setBio(savedBio);
+    setProfileSaveState("idle");
+    setProfileError(null);
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileSaveState("saving");
+    setProfileError(null);
     try {
-      const ok = await nicknameUpdate(nickname);
-      if (ok) {
-        setNicknameSaveState("success");
-        setNicknameDirty(false);
+      const nicknameChanged = nickname !== (currentUser?.nickname ?? "");
+      const bioChanged = bio !== savedBio;
+
+      const tasks: Promise<any>[] = [];
+      if (nicknameChanged) tasks.push(nicknameUpdate(nickname));
+      if (bioChanged) tasks.push(savePublicProfile(bio, visibility));
+
+      const results = await Promise.allSettled(tasks);
+      const failed = results.some(
+        (r) => r.status === "rejected" || r.value === false,
+      );
+
+      if (failed) {
+        setProfileSaveState("error");
+        setProfileError("Some changes couldn't be saved. Please try again.");
       } else {
-        setNicknameSaveState("error");
+        setProfileSaveState("success");
+        setNicknameDirty(false);
+        setTimeout(() => setProfileSaveState("idle"), 3000);
       }
     } catch (err: any) {
-      setNicknameError(err.message ?? "Something went wrong");
-      setNicknameSaveState("error");
+      setProfileSaveState("error");
+      setProfileError(err.message ?? "Something went wrong");
     }
   };
 
@@ -316,18 +427,13 @@ export default function ProfilePage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-base font-medium flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    Nickname
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    A short display name shown alongside your profile. Max 32
-                    characters.
-                  </CardDescription>
-                </div>
-              </div>
+              <CardTitle className="text-base font-medium flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Profile
+              </CardTitle>
+              <CardDescription>
+                Your nickname and bio, shown on your public page.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-1.5">
@@ -343,67 +449,91 @@ export default function ProfilePage() {
                   onChange={(e) => handleNicknameChange(e.target.value)}
                   placeholder="e.g. zechunter42"
                   maxLength={32}
-                  className={cn(
-                    nicknameSaveState === "success" &&
-                      "border-green-500 focus-visible:ring-green-500",
-                    nicknameSaveState === "error" &&
-                      "border-destructive focus-visible:ring-destructive",
-                  )}
                 />
                 <p className="text-xs text-muted-foreground text-right">
                   {nickname.length}/32
                 </p>
               </div>
 
-              {nicknameError && (
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor="bio"
+                  className="text-xs text-muted-foreground flex items-center gap-1.5"
+                >
+                  Bio
+                  {settingsLoading && (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  )}
+                </Label>
+                <Textarea
+                  id="bio"
+                  value={bio}
+                  onChange={(e) => handleBioChange(e.target.value)}
+                  placeholder="Tell the community a bit about yourself…"
+                  maxLength={500}
+                  rows={3}
+                  disabled={settingsLoading}
+                  className="resize-none"
+                />
+                <p className="text-xs text-muted-foreground text-right">
+                  {bio.length}/500 — visible only if "Bio" is enabled in
+                  Additional settings → Public profile & privacy
+                </p>
+              </div>
+
+              {settingsLoadError && (
                 <Alert variant="destructive" className="py-2">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription className="text-xs">
-                    {nicknameError}
+                    {settingsLoadError}
                   </AlertDescription>
                 </Alert>
               )}
 
-              {nicknameSaveState === "success" && (
+              {profileError && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    {profileError}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {profileSaveState === "success" && (
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Nickname saved</p>
+                    <p className="text-sm font-medium">Profile saved</p>
                     <p className="text-xs text-muted-foreground">
-                      Your nickname has been updated.
+                      Your nickname and bio have been updated.
                     </p>
                   </div>
                 </div>
               )}
 
-              {nicknameDirty && (
+              {profileDirty && (
                 <div className="flex justify-end gap-2 pt-1">
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      setNickname(currentUser?.nickname ?? "");
-                      setNicknameDirty(false);
-                      setNicknameSaveState("idle");
-                      setNicknameError(null);
-                    }}
+                    onClick={handleCancelProfile}
                   >
                     Cancel
                   </Button>
                   <Button
                     size="sm"
-                    disabled={nicknameSaveState === "saving"}
-                    onClick={handleSaveNickname}
+                    disabled={profileSaveState === "saving"}
+                    onClick={handleSaveProfile}
                     className="gap-1.5"
                   >
-                    {nicknameSaveState === "saving" ? (
+                    {profileSaveState === "saving" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Save className="h-4 w-4" />
                     )}
-                    Save nickname
+                    Save profile
                   </Button>
                 </div>
               )}
@@ -502,8 +632,6 @@ export default function ProfilePage() {
               </div>
             </CardContent> */}
           </Card>
-
-          <PrivacySettingsCard userId={currentUser?.id} />
 
           {/* ── Mainnet UA address ───────────────────────────────────────────── */}
           <Card>
@@ -651,152 +779,190 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* ── Testnet Z-address ────────────────────────────────────────────── */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-base font-medium flex items-center gap-2">
-                    <FlaskConical className="h-4 w-4" />
-                    Testnet payment address
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Your shielded or unified address on the Zcash testnet. Used
-                    for development bounties. Must start with{" "}
-                    <code className="font-mono text-xs">u</code> or{" "}
-                    <code className="font-mono text-xs">z</code>.
-                  </CardDescription>
-                </div>
-                <Badge className="shrink-0 text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-0">
-                  Testnet
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-1.5">
-                <Label
-                  htmlFor="z-address"
-                  className="text-xs text-muted-foreground"
-                >
-                  Z-address
-                </Label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      id="z-address"
-                      value={zAddress}
-                      onChange={(e) => {
-                        setZAddress(e.target.value);
-                        setZVerified(null);
-                        setZError(null);
-                      }}
-                      placeholder="u1… or zs1…"
-                      className={cn(
-                        "pr-8 font-mono text-sm",
-                        zVerified === true &&
-                          "border-green-500 focus-visible:ring-green-500",
-                        zVerified === false &&
-                          "border-destructive focus-visible:ring-destructive",
-                      )}
-                    />
-                    {zVerified === true && (
-                      <CheckCircle2 className="absolute right-2.5 top-2.5 h-4 w-4 text-green-500" />
-                    )}
-                    {zVerified === false && (
-                      <XCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    disabled={!zAddress.trim() || zVerifying || !isZcashAddress}
-                    onClick={handleVerifyZA}
-                  >
-                    {zVerifying ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Verify"
-                    )}
-                  </Button>
-                </div>
-
-                {zAddress && !isZcashAddress && (
-                  <p className="text-xs text-muted-foreground">
-                    Address must start with <code className="font-mono">u</code>{" "}
-                    (unified) or <code className="font-mono">z</code>{" "}
-                    (shielded).
-                  </p>
+          {/* ── Additional settings (collapsed by default) ────────────────────── */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Additional settings
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform",
+                  advancedOpen && "rotate-180",
                 )}
+              />
+            </button>
 
-                {zVerified === true && (
-                  <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Address is valid
-                  </p>
-                )}
-
-                {zVerified === false && !zError && (
-                  <p className="text-xs text-destructive flex items-center gap-1">
-                    <XCircle className="h-3.5 w-3.5" />
-                    Address could not be verified
-                  </p>
-                )}
-              </div>
-
-              {zError && (
-                <Alert variant="destructive" className="py-2">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="text-xs">
-                    {zError}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {zSaveState === "success" && (
-                <Alert className="py-2 border-green-500 bg-green-50 dark:bg-green-950/20">
-                  <CheckCircle2 className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-xs text-green-700 dark:text-green-400">
-                    Testnet address saved successfully.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* <div className="flex justify-end gap-2 pt-1">
-                {zAddressDirty && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setZAddress(currentUser?.z_address ?? "");
-                      setZVerified(null);
-                      setZError(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  disabled={
-                    !zAddressDirty ||
-                    !zAddress.trim() ||
-                    zSaveState === "saving" ||
-                    !isZcashAddress
+            {advancedOpen && (
+              <div className="space-y-6 pt-2">
+                {/* ── Public profile & privacy ─────────────────────────────── */}
+                <PrivacySettingsCard
+                  userId={currentUser?.id}
+                  bio={bio}
+                  visibility={visibility}
+                  onVisibilityChange={setVisibility}
+                  loading={settingsLoading}
+                  onSave={(nextVisibility) =>
+                    savePublicProfile(bio, nextVisibility)
                   }
-                  onClick={handleSaveZAddress}
-                  className="gap-1.5"
-                >
-                  {zSaveState === "saving" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  Save address
-                </Button>
-              </div> */}
-            </CardContent>
-          </Card>
+                />
+
+                {/* ── Testnet Z-address ────────────────────────────────────── */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-base font-medium flex items-center gap-2">
+                          <FlaskConical className="h-4 w-4" />
+                          Testnet payment address
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          Your shielded or unified address on the Zcash testnet.
+                          Used for development bounties. Must start with{" "}
+                          <code className="font-mono text-xs">u</code> or{" "}
+                          <code className="font-mono text-xs">z</code>.
+                        </CardDescription>
+                      </div>
+                      <Badge className="shrink-0 text-xs bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-0">
+                        Testnet
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-1.5">
+                      <Label
+                        htmlFor="z-address"
+                        className="text-xs text-muted-foreground"
+                      >
+                        Z-address
+                      </Label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            id="z-address"
+                            value={zAddress}
+                            onChange={(e) => {
+                              setZAddress(e.target.value);
+                              setZVerified(null);
+                              setZError(null);
+                            }}
+                            placeholder="u1… or zs1…"
+                            className={cn(
+                              "pr-8 font-mono text-sm",
+                              zVerified === true &&
+                                "border-green-500 focus-visible:ring-green-500",
+                              zVerified === false &&
+                                "border-destructive focus-visible:ring-destructive",
+                            )}
+                          />
+                          {zVerified === true && (
+                            <CheckCircle2 className="absolute right-2.5 top-2.5 h-4 w-4 text-green-500" />
+                          )}
+                          {zVerified === false && (
+                            <XCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          disabled={
+                            !zAddress.trim() || zVerifying || !isZcashAddress
+                          }
+                          onClick={handleVerifyZA}
+                        >
+                          {zVerifying ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Verify"
+                          )}
+                        </Button>
+                      </div>
+
+                      {zAddress && !isZcashAddress && (
+                        <p className="text-xs text-muted-foreground">
+                          Address must start with{" "}
+                          <code className="font-mono">u</code> (unified) or{" "}
+                          <code className="font-mono">z</code> (shielded).
+                        </p>
+                      )}
+
+                      {zVerified === true && (
+                        <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Address is valid
+                        </p>
+                      )}
+
+                      {zVerified === false && !zError && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <XCircle className="h-3.5 w-3.5" />
+                          Address could not be verified
+                        </p>
+                      )}
+                    </div>
+
+                    {zError && (
+                      <Alert variant="destructive" className="py-2">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="text-xs">
+                          {zError}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {zSaveState === "success" && (
+                      <Alert className="py-2 border-green-500 bg-green-50 dark:bg-green-950/20">
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <AlertDescription className="text-xs text-green-700 dark:text-green-400">
+                          Testnet address saved successfully.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {/* <div className="flex justify-end gap-2 pt-1">
+                      {zAddressDirty && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setZAddress(currentUser?.z_address ?? "");
+                            setZVerified(null);
+                            setZError(null);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        disabled={
+                          !zAddressDirty ||
+                          !zAddress.trim() ||
+                          zSaveState === "saving" ||
+                          !isZcashAddress
+                        }
+                        onClick={handleSaveZAddress}
+                        className="gap-1.5"
+                      >
+                        {zSaveState === "saving" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        Save address
+                      </Button>
+                    </div> */}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
         </main>
       </div>
     </ProtectedRoute>

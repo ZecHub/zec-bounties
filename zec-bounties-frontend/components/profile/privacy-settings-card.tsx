@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { backendUrl } from "@/lib/configENV";
 import { ProfileVisibility } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,9 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Loader2,
@@ -26,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const DEFAULT_VISIBILITY: Required<ProfileVisibility> = {
+export const DEFAULT_VISIBILITY: Required<ProfileVisibility> = {
   showAvatar: true,
   showDisplayName: true,
   showBio: false,
@@ -49,21 +46,13 @@ const TOGGLE_GROUPS: {
   {
     title: "Identity",
     items: [
-      {
-        key: "showAvatar",
-        label: "Avatar",
-        hint: "Your profile photo",
-      },
+      { key: "showAvatar", label: "Avatar", hint: "Your profile photo" },
       {
         key: "showDisplayName",
         label: "Display name",
         hint: "Nickname or name on your public page",
       },
-      {
-        key: "showRole",
-        label: "Role",
-        hint: "ADMIN / CLIENT badge",
-      },
+      { key: "showRole", label: "Role", hint: "ADMIN / CLIENT badge" },
       {
         key: "showGithub",
         label: "GitHub link",
@@ -79,11 +68,7 @@ const TOGGLE_GROUPS: {
   {
     title: "About",
     items: [
-      {
-        key: "showBio",
-        label: "Bio",
-        hint: "Your custom info box",
-      },
+      { key: "showBio", label: "Bio", hint: "Your custom info box" },
       {
         key: "showBadges",
         label: "Badges",
@@ -133,50 +118,42 @@ const TOGGLE_GROUPS: {
   },
 ];
 
-export function PrivacySettingsCard({ userId }: { userId?: string }) {
-  const [bio, setBio] = useState("");
-  const [visibility, setVisibility] =
-    useState<Required<ProfileVisibility>>(DEFAULT_VISIBILITY);
-  const [loading, setLoading] = useState(true);
+interface PrivacySettingsCardProps {
+  userId?: string;
+  bio: string;
+  visibility: Required<ProfileVisibility>;
+  loading: boolean;
+  onVisibilityChange: (next: Required<ProfileVisibility>) => void;
+  onSave: (visibility: Required<ProfileVisibility>) => Promise<unknown>;
+}
+
+export function PrivacySettingsCard({
+  userId,
+  bio,
+  visibility,
+  loading,
+  onVisibilityChange,
+  onSave,
+}: PrivacySettingsCardProps) {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const token = localStorage.getItem("authToken");
-        const res = await fetch(`${backendUrl}/api/users/me/profile-settings`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to load settings");
-        const data = await res.json();
-        if (cancelled) return;
-        setBio(data.bio || "");
-        setVisibility({ ...DEFAULT_VISIBILITY, ...data.profileVisibility });
-      } catch (e: any) {
-        if (!cancelled) setError(e.message || "Failed to load");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const toggle = (key: keyof ProfileVisibility, value: boolean) => {
-    setVisibility((prev) => ({ ...prev, [key]: value }));
+    onVisibilityChange({ ...visibility, [key]: value });
     setDirty(true);
     setSuccess(false);
   };
 
-  const handleBioChange = (value: string) => {
-    setBio(value.slice(0, 500));
+  const setAll = (value: boolean) => {
+    const next = { ...visibility };
+    (Object.keys(DEFAULT_VISIBILITY) as (keyof ProfileVisibility)[]).forEach(
+      (k) => {
+        next[k] = value;
+      },
+    );
+    onVisibilityChange(next);
     setDirty(true);
     setSuccess(false);
   };
@@ -186,25 +163,7 @@ export function PrivacySettingsCard({ userId }: { userId?: string }) {
     setError(null);
     setSuccess(false);
     try {
-      const token = localStorage.getItem("authToken");
-      const res = await fetch(`${backendUrl}/api/users/me/profile`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          bio,
-          profileVisibility: visibility,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Save failed");
-      }
-      const data = await res.json();
-      setBio(data.bio || "");
-      setVisibility({ ...DEFAULT_VISIBILITY, ...data.profileVisibility });
+      await onSave(visibility);
       setDirty(false);
       setSuccess(true);
       toast.success("Privacy settings saved");
@@ -216,18 +175,6 @@ export function PrivacySettingsCard({ userId }: { userId?: string }) {
     }
   };
 
-  const setAll = (value: boolean) => {
-    const next = { ...visibility };
-    (Object.keys(DEFAULT_VISIBILITY) as (keyof ProfileVisibility)[]).forEach(
-      (k) => {
-        next[k] = value;
-      },
-    );
-    setVisibility(next);
-    setDirty(true);
-    setSuccess(false);
-  };
-
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -237,7 +184,9 @@ export function PrivacySettingsCard({ userId }: { userId?: string }) {
         </CardTitle>
         <CardDescription>
           Privacy-first by default. Only fields you enable appear on your public
-          page. Wallet addresses are never shown publicly.
+          page. Wallet addresses are never shown publicly. Your bio is set at
+          the top of this page — the toggle below just controls whether it's
+          public.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -247,22 +196,6 @@ export function PrivacySettingsCard({ userId }: { userId?: string }) {
           </div>
         ) : (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="public-bio">Public bio</Label>
-              <Textarea
-                id="public-bio"
-                value={bio}
-                onChange={(e) => handleBioChange(e.target.value)}
-                placeholder="Short intro for other contributors (optional)"
-                rows={3}
-                maxLength={500}
-                className="resize-none"
-              />
-              <p className="text-xs text-muted-foreground text-right">
-                {bio.length}/500 — only visible if “Bio” is enabled below
-              </p>
-            </div>
-
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
