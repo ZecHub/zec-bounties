@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 type SaveState = "idle" | "saving" | "success" | "error";
 
-export default function ProfilePage() {
+export default function TeamProfilePage() {
   const router = useRouter();
   const {
     currentUser,
