@@ -62,6 +62,7 @@ import {
   LifeBuoy,
   Settings2,
   ArrowLeft,
+  ArrowRightLeft,
   Lock,
   Unlock,
   AlertCircle,
@@ -84,6 +85,7 @@ import { ImportWalletModal } from "@/components/settings/import-modal";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
+import { displayName } from "@/lib/displayName";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -323,18 +325,31 @@ function EmptyState({
 // Nav
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Section = "wallets" | "recovery" | "network" | "sync" | "danger";
+type Section =
+  | "wallets"
+  | "recovery"
+  | "network"
+  | "sync"
+  | "team-hunter"
+  | "danger";
 
 const NAV: {
   id: Section;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
-  group: "config" | "advanced";
+  group: "config" | "teams" | "advanced";
 }[] = [
   { id: "wallets", label: "Wallets", icon: Wallet, group: "config" },
   { id: "recovery", label: "Recovery", icon: KeyRound, group: "config" },
   { id: "network", label: "Network", icon: Globe, group: "config" },
+  {
+    id: "team-hunter",
+    label: "Team → Hunter",
+    icon: ArrowRightLeft,
+    adminOnly: true,
+    group: "teams",
+  },
   {
     id: "sync",
     label: "Sync & Rescan",
@@ -871,6 +886,169 @@ function SyncPanel() {
         />
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Team → Hunter panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TeamToHunterPanel() {
+  const { currentUser, users, usersLoading, convertUserToHunter } = useBounty();
+  const { toast } = useToast();
+
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<any | null>(null);
+
+  if (currentUser?.role !== "ADMIN") {
+    return (
+      <EmptyState
+        icon={Shield}
+        title="Admin access required"
+        hint="You don't have permission to convert team users."
+      />
+    );
+  }
+
+  const teamUsers = (users ?? []).filter((u: any) => u.role === "TEAM");
+
+  const handleConvert = async () => {
+    if (!confirmTarget) return;
+    setPendingId(confirmTarget.id);
+    try {
+      await convertUserToHunter(confirmTarget.id);
+      toast({
+        title: "Converted",
+        description: `${displayName(confirmTarget)} is now a Hunter.`,
+      });
+      setConfirmTarget(null);
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Conversion failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  if (usersLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (teamUsers.length === 0) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="No team users"
+        hint="No users currently have the Team role."
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
+        {teamUsers.map((user: any) => (
+          <div
+            key={user.id}
+            className="flex items-center justify-between gap-3 px-4 py-3.5 flex-wrap"
+          >
+            <div className="min-w-0 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-violet-100 dark:bg-violet-950/50 flex items-center justify-center text-xs font-bold text-violet-700 dark:text-violet-300 shrink-0">
+                {initials(displayName(user))}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold truncate">
+                    {displayName(user)}
+                  </p>
+                  {user.isRobin && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 px-1.5 py-0.5 rounded-full">
+                      <Info className="w-2.5 h-2.5" />
+                      isRobin · team kept
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5 shrink-0"
+              onClick={() => setConfirmTarget(user)}
+              disabled={pendingId === user.id}
+            >
+              {pendingId === user.id ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+              )}
+              Convert to Hunter
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <AlertDialog
+        open={!!confirmTarget}
+        onOpenChange={(open) => !open && setConfirmTarget(null)}
+      >
+        <AlertDialogContent className="w-full max-w-sm p-5">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-sm">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+              Convert to Hunter
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs">
+              {confirmTarget?.isRobin ? (
+                <>
+                  Convert{" "}
+                  <span className="font-semibold text-foreground">
+                    {confirmTarget ? displayName(confirmTarget) : ""}
+                  </span>{" "}
+                  to Hunter? They're marked{" "}
+                  <span className="font-mono">isRobin</span>, so their team will{" "}
+                  <strong>not</strong> be deleted.
+                </>
+              ) : (
+                <>
+                  Convert{" "}
+                  <span className="font-semibold text-foreground">
+                    {confirmTarget ? displayName(confirmTarget) : ""}
+                  </span>{" "}
+                  to Hunter? Any team they created will be{" "}
+                  <strong>permanently deleted</strong>, including its wallet.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 mt-2">
+            <AlertDialogCancel
+              disabled={pendingId === confirmTarget?.id}
+              className="h-8 text-xs"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConvert}
+              disabled={pendingId === confirmTarget?.id}
+              className="h-8 text-xs"
+            >
+              {pendingId === confirmTarget?.id ? "Converting…" : "Convert"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -1579,6 +1757,19 @@ export default function SettingsPage() {
     );
   }
 
+  function renderTeamHunter() {
+    return (
+      <div>
+        <PageHeader
+          icon={ArrowRightLeft}
+          title="Convert team users to hunter"
+          description="Change a user's role from Team to Hunter. Converting deletes any team they created and its wallet, unless they're marked isRobin."
+        />
+        <TeamToHunterPanel />
+      </div>
+    );
+  }
+
   function renderDanger() {
     const deletable = allWallets.filter((w) => !w.isTeam);
     return (
@@ -1643,6 +1834,7 @@ export default function SettingsPage() {
     recovery: renderRecovery,
     network: renderNetwork,
     sync: renderSync,
+    "team-hunter": renderTeamHunter,
     danger: renderDanger,
   };
 
@@ -1650,6 +1842,7 @@ export default function SettingsPage() {
     currentUser?.role === "ADMIN" ? NAV : NAV.filter((n) => !n.adminOnly);
 
   const configNav = visibleNav.filter((n) => n.group === "config");
+  const teamsNav = visibleNav.filter((n) => n.group === "teams");
   const advancedNav = visibleNav.filter((n) => n.group === "advanced");
 
   // ── Layout ───────────────────────────────────────────────────────────────
@@ -1657,48 +1850,6 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-background">
       <AdminNavbar isAdmin={true} />
-
-      {/* Top bar with breadcrumb */}
-      {/* <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link
-              href="/"
-              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-            <div className="h-5 w-px bg-border" />
-            <div className="flex items-center gap-2 min-w-0">
-              <Settings2 className="w-4 h-4 text-muted-foreground shrink-0" />
-              <span className="text-sm font-semibold">Settings</span>
-              <span className="text-muted-foreground/40 text-xs">/</span>
-              <span className="text-sm text-muted-foreground capitalize truncate">
-                {visibleNav.find((n) => n.id === section)?.label ?? section}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {activeConfig && (
-              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 truncate max-w-[140px]">
-                  {activeConfig.accountName}
-                </span>
-              </div>
-            )}
-            <Button
-              size="sm"
-              className="h-8 text-xs gap-1.5"
-              onClick={() => setImportOpen(true)}
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Import wallet</span>
-              <span className="sm:hidden">Import</span>
-            </Button>
-          </div>
-        </div>
-      </header> */}
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="flex flex-col imd:flex-row gap-8">
@@ -1720,6 +1871,23 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
+              {teamsNav.length > 0 && (
+                <div>
+                  <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+                    Teams
+                  </p>
+                  <div className="space-y-0.5">
+                    {teamsNav.map((item) => (
+                      <NavButton
+                        key={item.id}
+                        item={item}
+                        active={section === item.id}
+                        onClick={() => setSection(item.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
               {advancedNav.length > 0 && (
                 <div>
                   <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
@@ -1775,6 +1943,21 @@ export default function SettingsPage() {
                       Configuration
                     </div>
                     {configNav.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        <span className="flex items-center gap-2">
+                          <item.icon className="w-3.5 h-3.5 text-muted-foreground" />
+                          {item.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+                {teamsNav.length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">
+                      Teams
+                    </div>
+                    {teamsNav.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
                         <span className="flex items-center gap-2">
                           <item.icon className="w-3.5 h-3.5 text-muted-foreground" />
