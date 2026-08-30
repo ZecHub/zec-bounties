@@ -610,13 +610,6 @@ export function AdminNavbar({
               Teams
             </Link>
             <Link
-              href="/admin/team-to-hunter"
-              prefetch
-              className="transition-colors hover:text-primary"
-            >
-              Convert
-            </Link>
-            <Link
               href="/admin/profile"
               prefetch
               className="transition-colors hover:text-primary"
@@ -903,7 +896,6 @@ export function AdminNavbar({
                       { href: "/admin/bounties", label: "Bounties" },
                       { href: "/admin/export", label: "Export" },
                       { href: "/admin/teams", label: "Teams" },
-                      { href: "/admin/team-to-hunter", label: "Convert" },
                       { href: "/admin/profile", label: "Profile" },
                       { href: "/admin/kpis", label: "KPIs" },
                       { href: "/admin/settings", label: "Settings" },
