@@ -366,6 +366,9 @@ interface BountyContextType {
   teamSyncStatusLoading: boolean;
   teamSyncStatusError: string | null;
   fetchTeamSyncStatus: (teamId: string) => Promise<void>;
+  convertUserToHunter: (
+    userId: string,
+  ) => Promise<{ success: boolean; deletedTeamIds: string[] }>;
 
   // Favorites
   favoriteTeamIds: Set<string>;
@@ -3406,6 +3409,32 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const convertUserToHunter = async (
+    userId: string,
+  ): Promise<{ success: boolean; deletedTeamIds: string[] }> => {
+    if (!currentUser || currentUser.role !== "ADMIN") {
+      throw new Error("Unauthorized");
+    }
+
+    const res = await fetch(
+      `${backendUrl}/api/teams/convert-to-hunter/${userId}`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+      },
+    );
+
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Failed to convert user to hunter");
+    }
+
+    setTeams((prev) => prev.filter((t) => !json.deletedTeamIds.includes(t.id)));
+    await fetchUsers();
+
+    return { success: true, deletedTeamIds: json.deletedTeamIds ?? [] };
+  };
+
   return (
     <BountyContext.Provider
       value={{
@@ -3561,6 +3590,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         teamSyncStatusLoading,
         teamSyncStatusError,
         fetchTeamSyncStatus,
+        convertUserToHunter,
       }}
     >
       {children}
