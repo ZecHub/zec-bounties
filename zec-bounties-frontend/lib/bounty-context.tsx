@@ -2798,12 +2798,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           description: data.description,
           bountyAmount: data.bountyAmount,
           timeToComplete: data.timeToComplete,
-          assignee:
-            data.assignee === "none"
-              ? currentUser.role === "ADMIN" || data.teamId
-                ? null
-                : currentUser.id
-              : data.assignee,
+          // "none" must mean unassigned for everyone: falling back to
+          // currentUser.id self-assigned every personal bounty at creation,
+          // so /apply rejected all applicants with "Bounty already assigned".
+          assignee: data.assignee === "none" ? null : data.assignee,
           createdBy: currentUser.id,
           isApproved:
             currentUser.role === "ADMIN" || !!data.teamId ? true : false,
