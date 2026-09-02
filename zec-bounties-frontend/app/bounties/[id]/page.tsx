@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import type { Bounty } from "@/lib/types";
+import { getExplorerUrl } from "@/lib/explorer";
 
 /* ─── status config ─────────────────────────────────────────────────────── */
 
@@ -263,14 +264,31 @@ export default function BountyDetailPage() {
                     {bounty.category.name}
                   </span>
                 )}
-                {bounty.isPaid && (
-                  <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-medium">
-                    <Check className="w-3 h-3" />
-                    Paid
-                    {bounty.paidAt &&
-                      ` · ${fmtDate(new Date(bounty.paidAt), true)}`}
-                  </span>
-                )}
+                {bounty.isPaid &&
+                  (bounty.paymentTxId ? (
+                    // Proof, not just a claim — link the payout tx.
+                    <a
+                      href={getExplorerUrl(bounty.paymentTxId, {
+                        chain: bounty.chain,
+                      })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-medium hover:underline"
+                      title={`View transaction ${bounty.paymentTxId}`}
+                    >
+                      <Check className="w-3 h-3" />
+                      Paid
+                      {bounty.paidAt &&
+                        ` · ${fmtDate(new Date(bounty.paidAt), true)}`}
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-medium">
+                      <Check className="w-3 h-3" />
+                      Paid
+                      {bounty.paidAt &&
+                        ` · ${fmtDate(new Date(bounty.paidAt), true)}`}
+                    </span>
+                  ))}
               </div>
             </div>
 

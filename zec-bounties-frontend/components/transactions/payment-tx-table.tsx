@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Copy, ExternalLink, Shield, CheckCircle, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { getExplorerUrl } from "@/lib/explorer";
 
 interface PaymentID {
   datetime?: string;
@@ -18,22 +19,6 @@ interface PaymentTxIdsTableProps {
   isLoading?: boolean;
   chain?: string; // "mainnet" | "testnet"
   serverUrl?: string; // e.g. "https://mainnet.lightwalletd.com:9067"
-}
-
-// Derive the correct block explorer URL from chain or serverUrl
-function getExplorerUrl(
-  txId: string,
-  chain?: string,
-  serverUrl?: string,
-): string {
-  const isTestnet =
-    chain === "testnet" || serverUrl?.toLowerCase().includes("testnet");
-
-  if (isTestnet) {
-    return `https://zexplorer.app/testnet/tx/${txId}`;
-  }
-
-  return `https://blockchair.com/zcash/transaction/${txId}`;
 }
 
 export function PaymentTxIdsTable({
@@ -55,7 +40,7 @@ export function PaymentTxIdsTable({
   };
 
   const handleViewOnExplorer = (txId: string) => {
-    const url = getExplorerUrl(txId, chain, serverUrl);
+    const url = getExplorerUrl(txId, { chain, serverUrl });
     window.open(url, "_blank", "noopener,noreferrer");
   };
 

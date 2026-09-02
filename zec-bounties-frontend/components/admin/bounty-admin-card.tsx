@@ -109,7 +109,6 @@ export function BountyAdminCard({
   const {
     updateBountyStatus,
     approveBounty,
-    authorizePayment,
     editBounty,
     users,
     getAllApplicationsForBounty,
@@ -188,15 +187,6 @@ export function BountyAdminCard({
     setIsUpdating(true);
     try {
       approveBounty(bounty.id, approved);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handlePaymentAuthorization = async () => {
-    setIsUpdating(true);
-    try {
-      authorizePayment(bounty.id);
     } finally {
       setIsUpdating(false);
     }
@@ -1509,10 +1499,25 @@ export function BountyAdminCard({
                       <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
                       <div>
                         <div className="font-semibold text-green-800 dark:text-green-200">
-                          Payment Authorized
+                          {bounty.isPaid ? "Payment Sent" : "Payment Authorized"}
                         </div>
-                        <div className="text-sm text-green-600 dark:text-green-400">
-                          {bounty.bountyAmount} ZEC payment has been authorized
+                        <div className="text-sm text-green-600 dark:text-green-400 font-mono">
+                          {bounty.paymentTxId
+                            ? `${bounty.bountyAmount} ZEC — tx ${bounty.paymentTxId.slice(0, 16)}…`
+                            : `${bounty.bountyAmount} ZEC`}
+                        </div>
+                      </div>
+                    </div>
+                  ) : bounty.paymentInFlight ? (
+                    <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <Clock className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                      <div>
+                        <div className="font-semibold text-amber-800 dark:text-amber-200">
+                          Payment Settling
+                        </div>
+                        <div className="text-sm text-amber-600 dark:text-amber-400">
+                          A send is in flight or awaiting manual resolution —
+                          locked against retry
                         </div>
                       </div>
                     </div>
