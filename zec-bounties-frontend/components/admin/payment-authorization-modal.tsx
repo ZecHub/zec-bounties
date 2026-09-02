@@ -15,54 +15,60 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import type { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
-import {
-  CreditCard,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Calendar,
-} from "lucide-react";
-import { format, nextSunday, setHours, setMinutes } from "date-fns";
+import { CreditCard, AlertTriangle, CheckCircle } from "lucide-react";
+import { format } from "date-fns";
+import { toast } from "sonner";
 
 interface PaymentAuthorizationModalProps {
   bounty: Bounty;
   children: React.ReactNode;
 }
 
+// Pays a single bounty through the same endpoint as the bulk payout panel.
+// This used to offer an "instant vs Sunday batch" choice, but neither path
+// ever moved funds — instant POSTed to a route that doesn't exist and batch
+// scheduled work no job ever picked up. One real button beats two fake ones.
 export function PaymentAuthorizationModal({
   bounty,
   children,
 }: PaymentAuthorizationModalProps) {
-  const { authorizePayment, authorizeBatchPayment } = useBounty();
+  const { authorizeDuePayment } = useBounty();
   const [isOpen, setIsOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentType, setPaymentType] = useState<"instant" | "sunday_batch">(
-    "instant",
-  );
 
-  // Calculate next Sunday at 10 PM
-  const getNextSunday10PM = () => {
-    const nextSun = nextSunday(new Date());
-    return setHours(setMinutes(nextSun, 0), 22); // 10 PM
-  };
-
-  const nextBatchTime = getNextSunday10PM();
+  // Mainnet bounties pay to the unified address, testnet to the z-address —
+  // mirrors the backend's selection in authorize-payment.
+  const payoutAddress =
+    bounty.chain === "MAIN"
+      ? bounty.assigneeUser?.UA_address
+      : bounty.assigneeUser?.z_address;
+  const addressLabel = bounty.chain === "MAIN" ? "UA Address" : "Z Address";
 
   const handleAuthorizePayment = async () => {
     setIsProcessing(true);
     try {
-      if (paymentType === "instant") {
-        await authorizePayment(bounty.id);
-      } else {
-        await authorizeBatchPayment(bounty.id, nextBatchTime);
+      const result = await authorizeDuePayment([bounty.id]);
+
+      if (result.skipped.length > 0) {
+        toast.error(`Payment skipped: ${result.skipped[0].reason}`);
+        return;
       }
+
+      const txid = result.txids[0];
+      toast.success(
+        txid
+          ? `Payment sent — tx ${txid.slice(0, 12)}…`
+          : `Payment sent (${result.paidCount} bounty)`,
+        { duration: 10000 },
+      );
       setIsOpen(false);
     } catch (error) {
-      console.error("Payment authorization failed:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Payment failed",
+        { duration: 10000 },
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -78,7 +84,7 @@ export function PaymentAuthorizationModal({
             Authorize Payment
           </DialogTitle>
           <DialogDescription>
-            Choose how to authorize ZEC payment for completed bounty
+            Send the ZEC payment for this completed bounty
           </DialogDescription>
         </DialogHeader>
 
@@ -118,13 +124,13 @@ export function PaymentAuthorizationModal({
                 </span>
               </div>
 
-              {bounty.assigneeUser?.z_address && (
+              {payoutAddress && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-600 dark:text-slate-400">
-                    Z Address:
+                    {addressLabel}:
                   </span>
                   <span className="text-sm font-mono text-slate-500 truncate max-w-[150px]">
-                    {bounty.assigneeUser.z_address}
+                    {payoutAddress}
                   </span>
                 </div>
               )}
@@ -140,59 +146,12 @@ export function PaymentAuthorizationModal({
             </CardContent>
           </Card>
 
-          <div className="space-y-4">
-            <Label className="text-base font-medium">Payment Schedule</Label>
-            <RadioGroup
-              value={paymentType}
-              onValueChange={(value: "instant" | "sunday_batch") =>
-                setPaymentType(value)
-              }
-              className="space-y-3"
-            >
-              <div className="flex items-center space-x-2 rounded-lg border p-4 hover:bg-slate-50 dark:hover:bg-slate-800">
-                <RadioGroupItem value="instant" id="instant" />
-                <Label htmlFor="instant" className="flex-1 cursor-pointer">
-                  <div className="font-medium">Pay Instantly</div>
-                  <div className="text-sm text-slate-600 dark:text-slate-400">
-                    Authorize immediate payment to assignee's Z address
-                  </div>
-                </Label>
-                <CreditCard className="w-5 h-5 text-blue-600" />
-              </div>
-
-              <div className="flex items-center space-x-2 rounded-lg border p-4 hover:bg-slate-50 dark:hover:bg-slate-800">
-                <RadioGroupItem value="sunday_batch" id="sunday_batch" />
-                <Label htmlFor="sunday_batch" className="flex-1 cursor-pointer">
-                  <div className="font-medium">
-                    Batch Payment (Sunday 10 PM)
-                  </div>
-                  <div className="text-sm text-slate-600 dark:text-slate-400">
-                    Include in next batch payment on{" "}
-                    {format(nextBatchTime, "EEEE 'at' h:mm a")}
-                  </div>
-                </Label>
-                <Calendar className="w-5 h-5 text-purple-600" />
-              </div>
-            </RadioGroup>
-          </div>
-
-          {paymentType === "sunday_batch" && (
-            <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
-              <Clock className="h-4 w-4 text-blue-600" />
-              <AlertDescription className="text-blue-800 dark:text-blue-300">
-                This payment will be processed along with other completed
-                bounties on {format(nextBatchTime, "EEEE, MMMM do 'at' h:mm a")}
-                . The assignee will receive payment shortly after.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {!bounty.assigneeUser?.z_address && (
+          {!payoutAddress && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Assignee does not have a Z address configured. Please ensure the
-                assignee has a valid Z address before authorizing payment.
+                Assignee does not have a {addressLabel} configured for this
+                bounty's network. They can add one on their profile page.
               </AlertDescription>
             </Alert>
           )}
@@ -200,10 +159,8 @@ export function PaymentAuthorizationModal({
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              This action will authorize the payment of {bounty.bountyAmount}{" "}
-              ZEC to the assignee.
-              {paymentType === "sunday_batch" &&
-                " Payment will be processed in the next batch."}
+              This sends {bounty.bountyAmount} ZEC from your default wallet
+              immediately. It cannot be undone.
             </AlertDescription>
           </Alert>
 
@@ -218,14 +175,10 @@ export function PaymentAuthorizationModal({
             </Button>
             <Button
               onClick={handleAuthorizePayment}
-              disabled={isProcessing || !bounty.assigneeUser?.z_address}
+              disabled={isProcessing || !payoutAddress}
               className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
             >
-              {isProcessing
-                ? "Processing..."
-                : `Authorize ${
-                    paymentType === "instant" ? "Now" : "for Batch"
-                  }`}
+              {isProcessing ? "Sending..." : "Send Payment"}
             </Button>
           </div>
         </div>

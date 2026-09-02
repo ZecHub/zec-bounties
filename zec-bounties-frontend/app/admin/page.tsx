@@ -67,6 +67,7 @@ import { formatStatus } from "@/lib/utils";
 import { format } from "date-fns";
 import { GlobalSettingsModal } from "@/components/settings/global-settings-modal";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
+import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { AuthorizePaymentPanel } from "@/components/payments/authorize-payment-panel";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
@@ -238,6 +239,8 @@ export default function AdminDashboard() {
     paymentChain,
     paymentServerUrl,
     fetchTransactionHashes,
+    paymentRecords,
+    fetchPaymentRecords,
     allSubmissions,
     fetchAllSubmissions,
     totalActiveCount,
@@ -465,13 +468,23 @@ export default function AdminDashboard() {
   const handleFetchTransactionHashes = async () => {
     setIsFetchingTxHashes(true);
     try {
-      await fetchTransactionHashes();
+      await Promise.all([fetchTransactionHashes(), fetchPaymentRecords()]);
     } catch (error) {
       console.error("Failed to fetch transaction hashes:", error);
     } finally {
       setIsFetchingTxHashes(false);
     }
   };
+
+  // The tab used to sit empty until someone clicked Refresh, which made it
+  // useless for verifying a payout you just sent.
+  useEffect(() => {
+    if (activeTab === "txids") {
+      fetchPaymentRecords();
+      fetchTransactionHashes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const totalRewards = totalBountyAmount;
   const activeBountiesAmount = totalActiveCount;
@@ -1270,47 +1283,63 @@ export default function AdminDashboard() {
           />
 
           {activeTab === "txids" && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">
-                    Transaction History
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {paymentIDs?.length || 0} recorded transactions
-                  </p>
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold">Bounty Payouts</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {paymentRecords.length} payout record
+                      {paymentRecords.length !== 1 ? "s" : ""} — the app's own
+                      ledger, linked to bounties
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleFetchTransactionHashes}
+                    disabled={isFetchingTxHashes}
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {isFetchingTxHashes ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    {isFetchingTxHashes ? "Fetching..." : "Refresh"}
+                  </Button>
                 </div>
-                <Button
-                  onClick={handleFetchTransactionHashes}
-                  disabled={isFetchingTxHashes}
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                >
-                  {isFetchingTxHashes ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                  {isFetchingTxHashes ? "Fetching..." : "Refresh"}
-                </Button>
+
+                <PaymentRecordsTable records={paymentRecords} />
               </div>
 
-              {paymentIDs && paymentIDs.length > 0 ? (
-                <PaymentTxIdsTable
-                  paymentIDs={paymentIDs}
-                  chain={paymentChain}
-                  serverUrl={paymentServerUrl}
-                />
-              ) : (
-                <div className="flex flex-col items-center rounded-xl border border-dashed py-16 text-center">
-                  <RefreshCw className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                  <h3 className="text-sm font-medium">No payments processed</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    No transaction IDs available at this time.
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-base font-semibold">Wallet History</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {paymentIDs?.length || 0} transactions seen by your default
+                    wallet (includes receives and non-bounty sends)
                   </p>
                 </div>
-              )}
+
+                {paymentIDs && paymentIDs.length > 0 ? (
+                  <PaymentTxIdsTable
+                    paymentIDs={paymentIDs}
+                    chain={paymentChain}
+                    serverUrl={paymentServerUrl}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center rounded-xl border border-dashed py-16 text-center">
+                    <RefreshCw className="mb-3 h-9 w-9 text-muted-foreground/40" />
+                    <h3 className="text-sm font-medium">
+                      No wallet history loaded
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Refresh to query the wallet.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
