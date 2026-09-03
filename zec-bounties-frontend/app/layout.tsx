@@ -7,9 +7,9 @@ import { ZAddressProvider } from "@/components/address/zaddress-integration-hook
 import { ThemeProvider } from "@/components/theme-provider";
 import { Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { AppPromptBanner } from "@/components/app-prompt-banner";
 import "./globals.css";
 import { ColorThemeProvider } from "@/components/theme/color-theme-provider";
+import { PushNotificationInit } from "@/components/push-notification-init";
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -66,6 +66,7 @@ export default function RootLayout({
             <Suspense fallback={<div>Loading...</div>}>
               <BountyProvider>
                 {/* <ZAddressProvider> */}
+                <PushNotificationInit />
                 {children}
                 {/* </ZAddressProvider> */}
                 <Toaster position="top-right" />
