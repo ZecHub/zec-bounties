@@ -105,7 +105,7 @@ export function PaymentTxIdsTable({
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between pt-4">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             Payment Transaction IDs
           </h3>
@@ -131,7 +131,7 @@ export function PaymentTxIdsTable({
   if (!paymentIDs || paymentIDs.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between pt-4">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             Payment Transaction IDs
           </h3>
@@ -162,7 +162,7 @@ export function PaymentTxIdsTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pt-4">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
           Payment Transaction IDs
         </h3>

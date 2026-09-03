@@ -1284,103 +1284,113 @@ export default function AdminDashboard() {
           />
 
           {activeTab === "txids" && (
-            <Card className="overflow-hidden border-muted bg-card/50 gap-0">
-              <CardHeader className="flex flex-col gap-4 border-b p-4 sm:p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base">Transactions</CardTitle>
-                    <CardDescription>
-                      {txSubTab === "wallet"
-                        ? "Everything seen by your default wallet"
-                        : "The app's own ledger, linked to bounties"}
-                    </CardDescription>
-                  </div>
-
-                  {txSubTab === "payouts" && (
-                    <Button
-                      onClick={handleFetchTransactionHashes}
-                      disabled={isFetchingTxHashes}
-                      size="sm"
-                      variant="outline"
-                      className="gap-2"
-                    >
-                      {isFetchingTxHashes ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                      {isFetchingTxHashes ? "Fetching..." : "Refresh"}
-                    </Button>
-                  )}
-                </div>
-
-                {/* Sub-tabs */}
-                <div className="-mb-px flex items-center gap-1">
+            <div className="space-y-3">
+              {/* Sub-tabs: now a standalone segmented control above the card */}
+              <div className="-mx-3 overflow-x-auto px-3 sam:-mx-4 sam:px-4 imd:mx-0 imd:overflow-visible imd:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="inline-flex w-max min-w-full items-center gap-1 rounded-lg border bg-muted/40 p-1 imd:w-auto">
                   <button
                     onClick={() => setTxSubTab("wallet")}
-                    className={`relative flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sam:gap-2 imd:text-sm ${
                       txSubTab === "wallet"
-                        ? "border-primary text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <RefreshCw className="h-4 w-4" />
-                    Wallet History
-                    <span className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+                    <RefreshCw className="h-4 w-4 shrink-0" />
+                    <span>Wallet History</span>
+                    <span className="ml-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
                       {paymentIDs?.length || 0}
                     </span>
                   </button>
                   <button
                     onClick={() => setTxSubTab("payouts")}
-                    className={`relative flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sam:gap-2 imd:text-sm ${
                       txSubTab === "payouts"
-                        ? "border-primary text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <CreditCard className="h-4 w-4" />
-                    Bounty Payouts
-                    <span className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+                    <CreditCard className="h-4 w-4 shrink-0" />
+                    <span>Bounty Payouts</span>
+                    <span className="ml-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
                       {paymentRecords.length}
                     </span>
                   </button>
                 </div>
-              </CardHeader>
+              </div>
 
-              <CardContent className="p-0">
-                {txSubTab === "wallet" ? (
-                  paymentIDs && paymentIDs.length > 0 ? (
-                    <PaymentTxIdsTable
-                      paymentIDs={paymentIDs}
-                      chain={paymentChain}
-                      serverUrl={paymentServerUrl}
-                    />
+              <Card className="overflow-hidden border-muted bg-card/50 gap-0">
+                <CardHeader className="flex flex-col imd:block gap-4 border-b p-3 sam:p-4 imd:p-5">
+                  <div className="flex flex-col gap-4 imd:flex-row imd:items-start imd:justify-between">
+                    <div className="min-w-0">
+                      <CardTitle className="text-sm sam:text-base">
+                        Transactions
+                      </CardTitle>
+                      <CardDescription className="text-xs imd:text-sm">
+                        {txSubTab === "wallet"
+                          ? "Everything seen by your default wallet"
+                          : "The app's own ledger, linked to bounties"}
+                      </CardDescription>
+                    </div>
+
+                    {txSubTab === "payouts" && (
+                      <Button
+                        onClick={handleFetchTransactionHashes}
+                        disabled={isFetchingTxHashes}
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-2 sam:w-auto imd:shrink-0"
+                      >
+                        {isFetchingTxHashes ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 shrink-0" />
+                        )}
+                        {isFetchingTxHashes ? "Fetching..." : "Refresh"}
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+
+                <CardContent className="p-0">
+                  {txSubTab === "wallet" ? (
+                    paymentIDs && paymentIDs.length > 0 ? (
+                      <div className="w-full max-w-full overflow-x-auto">
+                        <PaymentTxIdsTable
+                          paymentIDs={paymentIDs}
+                          chain={paymentChain}
+                          serverUrl={paymentServerUrl}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center px-4 py-12 text-center imd:py-16">
+                        <RefreshCw className="mb-3 h-8 w-8 text-muted-foreground/40 imd:h-9 imd:w-9" />
+                        <h3 className="text-sm font-medium">
+                          No wallet history loaded
+                        </h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Refresh to query the wallet.
+                        </p>
+                      </div>
+                    )
+                  ) : paymentRecords.length > 0 ? (
+                    <div className="w-full max-w-full overflow-x-auto">
+                      <PaymentRecordsTable records={paymentRecords} />
+                    </div>
                   ) : (
-                    <div className="flex flex-col items-center py-16 text-center">
-                      <RefreshCw className="mb-3 h-9 w-9 text-muted-foreground/40" />
+                    <div className="flex flex-col items-center px-4 py-12 text-center imd:py-16">
+                      <CreditCard className="mb-3 h-8 w-8 text-muted-foreground/40 imd:h-9 imd:w-9" />
                       <h3 className="text-sm font-medium">
-                        No wallet history loaded
+                        No payout records yet
                       </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Refresh to query the wallet.
+                        Completed bounty payouts will show up here.
                       </p>
                     </div>
-                  )
-                ) : paymentRecords.length > 0 ? (
-                  <PaymentRecordsTable records={paymentRecords} />
-                ) : (
-                  <div className="flex flex-col items-center py-16 text-center">
-                    <CreditCard className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                    <h3 className="text-sm font-medium">
-                      No payout records yet
-                    </h3>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Completed bounty payouts will show up here.
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
         </div>
 
