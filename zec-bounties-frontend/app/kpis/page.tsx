@@ -1,6 +1,5 @@
 "use client";
 
-import { useTheme } from "next-themes";
 import { useState, useMemo, useEffect } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
@@ -17,16 +16,11 @@ import {
   ArrowUpDown,
   Zap,
   Users,
-  Shield,
   Pencil,
-  Server,
-  Pickaxe,
-  BookOpen,
-  Ban,
-  AlertTriangle,
-  TreeDeciduous,
-  Leaf,
 } from "lucide-react";
+import { BadgeIcons, BadgeSvg, SpecialtyFilterChips, StarFilterChips, AssignableBadgeList } from "@/components/badges/badge-icons";
+import { UaReceiverIcons } from "@/components/address/ua-receiver-icons";
+import { getBadgeTooltip, matchesBadgeFilter } from "@/lib/badges";
 import {
   ResponsiveContainer,
   BarChart,
@@ -89,32 +83,6 @@ const CHART_PALETTE = [
   "var(--chart-5)",
   "var(--primary)",
 ];
-
-const BADGE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  "dao-member": "DAO Member",
-  "node-runner": "Node Runner",
-  researcher: "Researcher",
-  designer: "Designer",
-  developer: "Developer",
-  translator: "Translator",
-  writer: "Writer",
-  "hackathon-participant": "Hackathon Participant",
-  "hackathon-winner": "Hackathon Winner",
-  "1-task": "1 Task",
-  "5-tasks": "5 Tasks",
-  "10-tasks": "10 Tasks",
-  "15-tasks": "15 Tasks",
-  "25-tasks": "25 Tasks",
-  "50-tasks": "50 Tasks",
-  // keep legacy if any users still have it
-  miner: "Miner",
-};
-
-const getBadgeTooltip = (badges?: string[]) =>
-  badges && badges.length > 0
-    ? badges.map((b) => BADGE_LABELS[b] ?? b).join(" • ")
-    : "Regular User";
 
 function UserAvatar({
   user,
@@ -245,9 +213,6 @@ export default function KpisDashboard() {
     setDefaultWallet,
   } = useBounty();
 
-  const { resolvedTheme } = useTheme();
-const badgeFolder = resolvedTheme === "dark" ? "Dark-Mode" : "Light-Mode";
-
   const isAdmin = currentUser?.role === "ADMIN";
 
   const [viewMode, setViewMode] = useState<"public" | "admin">(
@@ -279,80 +244,6 @@ const badgeFolder = resolvedTheme === "dark" ? "Dark-Mode" : "Light-Mode";
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
   const [isSavingBadges, setIsSavingBadges] = useState(false);
 
-  const availableBadges = [
-  { key: "admin", label: "Admin" },
-  { key: "dao-member", label: "DAO Member" },
-  { key: "node-runner", label: "Node Runner" },
-  { key: "researcher", label: "Researcher" },
-  { key: "designer", label: "Designer" },
-  { key: "developer", label: "Developer" },
-  { key: "translator", label: "Translator" },
-  { key: "writer", label: "Writer" },
-  { key: "hackathon-participant", label: "Hackathon Participant" },
-  { key: "hackathon-winner", label: "Hackathon Winner" },
-];
-
-const getBadgeIcons = (
-  completed: number,
-  badges?: string[],
-  role?: string,
-) => {
-  const icons: React.ReactNode[] = [];
-  const list = Array.isArray(badges) ? badges : [];
-
-  const svg = (key: string, title: string) => (
-    <div key={key} title={title}>
-      <img
-        src={`/badges/${badgeFolder}/${key}.svg`}
-        alt={title}
-        className="w-5 h-5 object-contain"
-      />
-    </div>
-  );
-
-  // Manual override forces a specific star
-  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-  let starKey: string | null = null;
-
-  if (avatarOverride) {
-    switch (avatarOverride) {
-      case "avatar:1":  starKey = "1-task"; break;
-      case "avatar:5":  starKey = "5-tasks"; break;
-      case "avatar:10": starKey = "10-tasks"; break;
-      case "avatar:15": starKey = "15-tasks"; break;
-      case "avatar:25": starKey = "25-tasks"; break;
-      case "avatar:50": starKey = "50-tasks"; break;
-    }
-  }
-
-  // No override → use completed count
-  if (!starKey) {
-    if (completed >= 50)      starKey = "50-tasks";
-    else if (completed >= 25) starKey = "25-tasks";
-    else if (completed >= 15) starKey = "15-tasks";
-    else if (completed >= 10) starKey = "10-tasks";
-    else if (completed >= 5)  starKey = "5-tasks";
-    else                      starKey = "1-task";
-  }
-
-  icons.push(svg(starKey, BADGE_LABELS[starKey] || starKey));
-
-  // Specialty badges
-  if (role === "ADMIN" || list.includes("admin")) icons.push(svg("admin", "Admin"));
-  if (list.includes("dao-member")) icons.push(svg("dao-member", "DAO Member"));
-  if (list.includes("node-runner")) icons.push(svg("node-runner", "Node Runner"));
-  if (list.includes("researcher")) icons.push(svg("researcher", "Researcher"));
-  if (list.includes("designer")) icons.push(svg("designer", "Designer"));
-  if (list.includes("developer")) icons.push(svg("developer", "Developer"));
-  if (list.includes("translator")) icons.push(svg("translator", "Translator"));
-  if (list.includes("writer")) icons.push(svg("writer", "Writer"));
-  if (list.includes("hackathon-participant")) icons.push(svg("hackathon-participant", "Hackathon Participant"));
-  if (list.includes("hackathon-winner")) icons.push(svg("hackathon-winner", "Hackathon Winner"));
-  if (list.includes("miner")) icons.push(svg("miner", "Miner"));
-
-  return icons;
-};
-
   const getDefaultAvatarClasses = (
   completed: number,
   badges: string[] = [],
@@ -364,10 +255,6 @@ const getBadgeIcons = (
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
   const [badgeFilter, setBadgeFilter] = useState<string[]>([]);
-  const [receiverFilter, setReceiverFilter] = useState<
-    ("none" | "transparent" | "sapling" | "ironwood")[]
-  >([]);
-  const [receiverMode, setReceiverMode] = useState<"all" | "any">("all");
 
   const timeRangeConfig = {
     "30d": {
@@ -565,43 +452,10 @@ const getBadgeIcons = (
   }, [topContributors, sortKey, sortDirection]);
 
   const displayedContributors = useMemo(() => {
-    return sortedContributors.filter((u) => {
-      if (badgeFilter.length) {
-        const badges = Array.isArray(u.badges) ? u.badges : [];
-        const hit = badgeFilter.some(
-          (b) =>
-            badges.includes(b) ||
-            (b === "admin" && (u as any).role === "ADMIN"),
-        );
-        if (!hit) return false;
-      }
-
-      // UA receiver filter — admin view only
-      if (viewMode === "admin" && receiverFilter.length) {
-        const r = (u as any).receivers || {};
-        const hasAny = !!(r.transparent || r.sapling || r.ironwood);
-
-        if (receiverFilter.includes("none")) {
-          if (receiverFilter.length === 1) return !hasAny;
-          return !hasAny;
-        }
-
-        const flags = receiverFilter.filter((f) => f !== "none") as (
-          | "transparent"
-          | "sapling"
-          | "ironwood"
-        )[];
-
-        if (receiverMode === "all") {
-          if (!flags.every((f) => !!r[f])) return false;
-        } else {
-          if (!flags.some((f) => !!r[f])) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [sortedContributors, badgeFilter, receiverFilter, receiverMode, viewMode]);
+    return sortedContributors.filter((u) =>
+      matchesBadgeFilter(badgeFilter, u),
+    );
+  }, [sortedContributors, badgeFilter]);
 
   // Prefer server summary; fall back for old API shape
   const totalBounties =
@@ -756,134 +610,6 @@ const getBadgeIcons = (
     }
   };
 
-  // --- Address type helpers (icons match app/admin/kpis/page.tsx) ---
-
-  const getAddressTypeIcons = (receivers?: {
-    ironwood?: boolean;
-    sapling?: boolean;
-    transparent?: boolean;
-  }) => {
-    if (
-      !receivers ||
-      (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
-    ) {
-      return [
-        <div
-          key="none"
-          title="No Address"
-          className="flex items-center justify-center"
-        >
-          <Ban className="w-5 h-5 text-red-500" />
-        </div>,
-      ];
-    }
-
-    const icons = [];
-
-    if (receivers.transparent) {
-      icons.push(
-        <div
-          key="transparent"
-          title="Transparent"
-          className="flex items-center justify-center"
-        >
-          <AlertTriangle className="w-5 h-5 text-yellow-400" />
-        </div>,
-      );
-    }
-
-    if (receivers.sapling) {
-      icons.push(
-        <div
-          key="sapling"
-          title="Sapling"
-          className="flex items-center justify-center"
-        >
-          <Leaf className="w-5 h-5 text-emerald-400" />
-        </div>,
-      );
-    }
-
-    if (receivers.ironwood) {
-      icons.push(
-        <div
-          key="ironwood"
-          title="Ironwood"
-          className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
-        >
-          <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
-        </div>,
-      );
-    }
-
-    return icons;
-  };
-
-  const getAddressTypeBadge = (type?: string) => {
-    const n = type?.toLowerCase() ?? "";
-
-    if (
-      !n ||
-      n === "none" ||
-      n === "unknown" ||
-      n === "invalid" ||
-      n === "error"
-    ) {
-      return "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30";
-    }
-
-    const hasIronwood = n.includes("ironwood") || n.includes("orchard");
-    const hasSapling = n.includes("sapling");
-    const hasTransparent = n.includes("transparent");
-
-    if (hasIronwood && hasSapling) {
-      return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
-    }
-    if (hasIronwood) {
-      return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
-    }
-    if (hasSapling) {
-      return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
-    }
-    if (hasTransparent) {
-      return "bg-gradient-to-r from-slate-500 to-slate-600 text-white";
-    }
-
-    if (n === "full" || n === "ua + z") {
-      return "bg-gradient-to-r from-emerald-500 to-zinc-500 text-white";
-    }
-    if (n === "ua only") {
-      return "bg-gradient-to-r from-zinc-500 to-zinc-700 text-white";
-    }
-
-    return "bg-muted text-muted-foreground";
-  };
-
-  const getDisplayAddressType = (type?: string) => {
-    if (!type) return "Unknown";
-
-    const n = type.toLowerCase();
-
-    if (n === "none") return "No UA";
-    if (n === "unknown" || n === "invalid" || n === "error") {
-      return type;
-    }
-
-    if (
-      n.includes("ironwood") ||
-      n.includes("orchard") ||
-      n.includes("sapling") ||
-      n.includes("transparent")
-    ) {
-      return type.replace(/orchard/gi, "Ironwood").replace(/\s*\+\s*/g, " + ");
-    }
-
-    if (n === "full" || n === "ua + z") return "Ironwood + Sapling";
-    if (n === "ua only") return "Ironwood";
-
-    return type;
-  };
-
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
@@ -940,115 +666,22 @@ const getBadgeIcons = (
                 </Select>
               </div>
 
-              {/* Badge filter — all logged-in users */}
+              {/* Badge + star filters — UA filters live on /admin/kpis only */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted-foreground">Badges</span>
-                {[
-		  { key: "admin", label: "Admin" },
-		  { key: "dao-member", label: "DAO" },
-		  { key: "node-runner", label: "Node" },
-		  { key: "researcher", label: "Research" },
-		  { key: "designer", label: "Designer" },
-		  { key: "developer", label: "Developer" },
-		  { key: "translator", label: "Translator" },
-		  { key: "writer", label: "Writer" },
-		  { key: "hackathon-participant", label: "Hackathon" },
-		  { key: "hackathon-winner", label: "Winner" },
-		  { key: "1-task", label: "1T" },
-		  { key: "5-tasks", label: "5T" },
-		  { key: "10-tasks", label: "10T" },
-		  { key: "15-tasks", label: "15T" },
-		  { key: "25-tasks", label: "25T" },
-		  { key: "50-tasks", label: "50T" },
-		].map((b) => {
-                  const active = badgeFilter.includes(b.key);
-                  return (
-                    <Button
-                      key={b.key}
-                      type="button"
-                      size="sm"
-                      variant={active ? "default" : "outline"}
-                      className="h-7 text-xs"
-                      onClick={() =>
-                        setBadgeFilter((prev) =>
-                          prev.includes(b.key)
-                            ? prev.filter((k) => k !== b.key)
-                            : [...prev, b.key],
-                        )
-                      }
-                    >
-                      {b.label}
-                    </Button>
-                  );
-                })}
+                <SpecialtyFilterChips value={badgeFilter} onChange={setBadgeFilter} />
               </div>
-
-              {/* UA receivers — admin only */}
-              {isAdmin && viewMode === "admin" && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">UA</span>
-                  {(
-                    [
-                      { key: "none", label: "None" },
-                      { key: "transparent", label: "Transparent" },
-                      { key: "sapling", label: "Sapling" },
-                      { key: "ironwood", label: "Ironwood" },
-                    ] as const
-                  ).map((b) => {
-                    const active = receiverFilter.includes(b.key);
-                    return (
-                      <Button
-                        key={b.key}
-                        type="button"
-                        size="sm"
-                        variant={active ? "default" : "outline"}
-                        className="h-7 text-xs"
-                        onClick={() =>
-                          setReceiverFilter((prev) =>
-                            prev.includes(b.key)
-                              ? prev.filter((k) => k !== b.key)
-                              : [...prev, b.key],
-                          )
-                        }
-                      >
-                        {b.label}
-                      </Button>
-                    );
-                  })}
-                  <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={receiverMode === "all" ? "default" : "ghost"}
-                      className="h-7 text-xs"
-                      onClick={() => setReceiverMode("all")}
-                    >
-                      All
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={receiverMode === "any" ? "default" : "ghost"}
-                      className="h-7 text-xs"
-                      onClick={() => setReceiverMode("any")}
-                    >
-                      Any
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {(badgeFilter.length > 0 ||
-                (viewMode === "admin" && receiverFilter.length > 0)) && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Stars</span>
+                <StarFilterChips value={badgeFilter} onChange={setBadgeFilter} />
+              </div>
+              {badgeFilter.length > 0 && (
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   className="h-7 text-xs text-muted-foreground"
-                  onClick={() => {
-                    setBadgeFilter([]);
-                    setReceiverFilter([]);
-                  }}
+                  onClick={() => setBadgeFilter([])}
                 >
                   Clear filters
                 </Button>
@@ -1238,18 +871,18 @@ const getBadgeIcons = (
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1.5">
-                                {getBadgeIcons(
-                                  user.completed,
-                                  user.badges,
-                                  user.role,
-                                )}
+                                <BadgeIcons
+                                  completed={user.completed}
+                                  badges={user.badges}
+                                  role={user.role}
+                                />
                               </div>
                             </TableCell>
 
                             {viewMode === "admin" && (
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  {getAddressTypeIcons((user as any).receivers)}
+                                  <UaReceiverIcons receivers={(user as any).receivers} />
                                 </div>
                               </TableCell>
                             )}
@@ -1657,31 +1290,10 @@ const getBadgeIcons = (
                 {selectedUserForBadges && (
                   <div className="mb-6">
                     <p className="text-sm text-muted-foreground mb-2">Badges</p>
-                    <div className="space-y-2">
-                      {availableBadges.map((badge) => {
-			  return (
-			    <label
-			      key={badge.key}
-			      className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted cursor-pointer"
-			    >
-			      <input
-				type="checkbox"
-				checked={selectedBadges.includes(badge.key)}
-				onChange={() => toggleBadge(badge.key)}
-				className="h-4 w-4 accent-primary"
-			      />
-			      <div className="flex items-center gap-2">
-				<img
-				  src={`/badges/${badgeFolder}/${badge.key}.svg`}
-				  alt={badge.key}
-				  className="w-4 h-4"
-				/>
-				<span>{badge.label}</span>
-			      </div>
-			    </label>
-			  );
-			})}
-                    </div>
+                    <AssignableBadgeList
+                      selected={selectedBadges}
+                      onToggle={toggleBadge}
+                    />
                   </div>
                 )}
 
@@ -1726,10 +1338,10 @@ const getBadgeIcons = (
             }`}
           >
             {option.star ? (
-              <img
-                src={`/badges/${badgeFolder}/${option.star}.svg`}
-                alt={option.label}
-                className="w-5 h-5 object-contain"
+              <BadgeSvg
+                badgeKey={option.star}
+                title={option.label}
+                className="w-5 h-5"
               />
             ) : (
               <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">

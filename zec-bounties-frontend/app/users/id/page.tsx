@@ -14,11 +14,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
-  Users,
-  Shield,
-  Server,
-  Pickaxe,
-  BookOpen,
   Lock,
   Github,
   ArrowLeft,
@@ -28,64 +23,8 @@ import {
   AlertTriangle,
   Settings,
 } from "lucide-react";
+import { BadgeIcons } from "@/components/badges/badge-icons";
 import { cn, fmt } from "@/lib/utils";
-
-function BadgeIcons({
-  completed = 0,
-  badges = [],
-  role,
-}: {
-  completed?: number;
-  badges?: string[];
-  role?: string;
-}) {
-  const list = Array.isArray(badges) ? badges : [];
-  let badgeClass = "text-muted-foreground";
-  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-  if (avatarOverride === "avatar:red") badgeClass = "text-red-500";
-  else if (avatarOverride === "avatar:blue") badgeClass = "text-blue-500";
-  else if (avatarOverride === "avatar:purple") badgeClass = "text-purple-500";
-  else if (avatarOverride === "avatar:gold") badgeClass = "text-yellow-500";
-  else if (avatarOverride === "avatar:pink") badgeClass = "text-pink-500";
-  else if (completed >= 60) badgeClass = "text-pink-500";
-  else if (completed >= 20) badgeClass = "text-yellow-500";
-  else if (completed >= 10) badgeClass = "text-purple-500";
-  else if (completed >= 5) badgeClass = "text-blue-500";
-  else if (completed >= 1) badgeClass = "text-red-500";
-
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span title="Member">
-        <Users className={cn("w-5 h-5", badgeClass)} />
-      </span>
-      {(role === "ADMIN" || list.includes("admin")) && (
-        <span title="Admin" className="text-purple-500">
-          <Shield className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("dao-member") && (
-        <span title="DAO Member">
-          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("node-runner") && (
-        <span title="Node Runner" className="text-blue-500">
-          <Server className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("miner") && (
-        <span title="Miner" className="text-orange-500">
-          <Pickaxe className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("researcher") && (
-        <span title="Researcher" className="text-emerald-500">
-          <BookOpen className="w-5 h-5" />
-        </span>
-      )}
-    </div>
-  );
-}
 
 function AddressTypeIcons({
   addressType,
