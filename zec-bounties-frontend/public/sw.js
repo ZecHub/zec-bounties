@@ -18,5 +18,9 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || "/"));
+  const targetUrl = new URL(
+    event.notification.data?.url || "/",
+    self.location.origin,
+  ).href;
+  event.waitUntil(clients.openWindow(targetUrl));
 });
