@@ -57,32 +57,6 @@ function AddressTypeIcons({
     );
   }
 
-
-  const chainStats = profile?.statsByChain?.[chain];
-  const completed = chainStats?.completed ?? profile?.completed ?? 0;
-  const created = chainStats?.created ?? profile?.created ?? 0;
-  const totalEarned = chainStats?.totalEarned ?? profile?.totalEarned ?? 0;
-  const completionRate =
-    chainStats?.completionRate ?? profile?.completionRate ?? null;
-  const recentCompleted =
-    chainStats?.recentCompleted ?? profile?.recentCompleted ?? [];
-  const recentCreated =
-    chainStats?.recentCreated ?? profile?.recentCreated ?? [];
-  const badgeCompleted =
-    (profile?.statsByChain?.MAIN?.completed ?? profile?.completed ?? 0) +
-    (profile?.statsByChain?.TEST?.completed ?? 0);
-
-  const roleLabel =
-    profile?.role === "HUNTER"
-      ? "Hunter"
-      : profile?.role === "TEAM"
-        ? "Team"
-        : profile?.role === "ADMIN"
-          ? "Admin"
-          : profile?.role === "CLIENT"
-            ? "Client"
-            : profile?.role;
-
   return (
     <div className="flex items-center gap-2">
       {transparent && (
@@ -167,6 +141,31 @@ export default function PublicUserProfilePage() {
     profile?.isOwner ||
     (currentUser && profile && currentUser.id === profile.id);
 
+  const chainStats = profile?.statsByChain?.[chain];
+  const completed = chainStats?.completed ?? profile?.completed ?? 0;
+  const created = chainStats?.created ?? profile?.created ?? 0;
+  const totalEarned = chainStats?.totalEarned ?? profile?.totalEarned ?? 0;
+  const completionRate =
+    chainStats?.completionRate ?? profile?.completionRate ?? null;
+  const recentCompleted =
+    chainStats?.recentCompleted ?? profile?.recentCompleted ?? [];
+  const recentCreated =
+    chainStats?.recentCreated ?? profile?.recentCreated ?? [];
+  const badgeCompleted =
+    (profile?.statsByChain?.MAIN?.completed ?? profile?.completed ?? 0) +
+    (profile?.statsByChain?.TEST?.completed ?? 0);
+
+  const roleLabel =
+    profile?.role === "HUNTER"
+      ? "Hunter"
+      : profile?.role === "TEAM"
+        ? "Team"
+        : profile?.role === "ADMIN"
+          ? "Admin"
+          : profile?.role === "CLIENT"
+            ? "Client"
+            : profile?.role;
+
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
@@ -236,7 +235,8 @@ export default function PublicUserProfilePage() {
                         {v?.showRole && profile.role && (
                           <Badge variant="secondary">{roleLabel}</Badge>
                         )}
-                        {profile.teams && profile.teams.length > 0 &&
+                        {profile.teams &&
+                          profile.teams.length > 0 &&
                           profile.teams.map((team) => (
                             <Link
                               key={team.id}
@@ -391,9 +391,7 @@ export default function PublicUserProfilePage() {
                     </p>
                     {v?.showCompletionRate ? (
                       <p className="text-2xl font-bold tabular-nums">
-                        {completionRate != null
-                          ? `${completionRate}%`
-                          : "—"}
+                        {completionRate != null ? `${completionRate}%` : "—"}
                       </p>
                     ) : (
                       <PrivatePlaceholder label="Rate" />
@@ -442,7 +440,9 @@ export default function PublicUserProfilePage() {
                               >
                                 <span className="truncate">{b.title}</span>
                                 <span className="tabular-nums text-muted-foreground shrink-0">
-                                  {b.bountyAmount != null ? `${fmt(b.bountyAmount)} ZEC` : ""}
+                                  {b.bountyAmount != null
+                                    ? `${fmt(b.bountyAmount)} ZEC`
+                                    : ""}
                                 </span>
                               </li>
                             ))}

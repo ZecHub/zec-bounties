@@ -396,6 +396,7 @@ export interface TopContributor extends User {
     sapling?: boolean | undefined;
     transparent?: boolean | undefined;
   };
+  showEarnings: boolean;
 }
 
 export interface ContributorsOverTime {
