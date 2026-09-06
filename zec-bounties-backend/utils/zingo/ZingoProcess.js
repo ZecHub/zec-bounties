@@ -19,45 +19,6 @@ function extractJson(text) {
   return null; // incomplete JSON
 }
 
-// All complete top-level {...} blocks in the text, nesting-safe and
-// string-aware. The old non-greedy regex stopped at the first "}", which
-// sheared nested objects; a plain brace counter would also miscount on a
-// brace that appears inside a JSON string (a bounty title rides into the
-// memo), so skip anything between unescaped quotes.
-function extractJsonBlocks(text) {
-  const blocks = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === "{") {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === "}" && depth > 0) {
-      depth--;
-      if (depth === 0) {
-        blocks.push(text.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-
-  return blocks;
-}
-
 function extractJsonAddress(text) {
   let start = text.indexOf("[");
 
@@ -216,14 +177,6 @@ class ZingoProcess {
 
     this.buffer = "";
     this.waiters = [];
-
-    // Sends are serialized through this chain. The process is shared per
-    // (chain, server, dataDir), and two overlapping quicksends would each be
-    // reading the other's stdout — the first result block resolves both.
-    // For a payment that means one caller gets told "success" off someone
-    // else's send. Reads racing a send only corrupt a display, so they are
-    // left concurrent.
-    this.sendChain = Promise.resolve();
 
     this.proc.stdout.on("data", (data) => {
       const text = data.toString();
@@ -520,121 +473,69 @@ class ZingoProcess {
     });
   }
 
-  // Resolves with { txids, error, timedOut, raw, stderr }. Never rejects once
-  // the command has been written: from that point the send may be on the
-  // network, so every exit path has to hand the caller something it can
-  // persist. "timedOut" means outcome unknown — NOT "did not happen".
-  quicksend(recipients, timeout = 60000) {
-    const sanitizedRecipients = recipients.map((r) => {
-      // Defense in depth behind the route-level check: an address rides
-      // inside the single-quoted REPL command, and mutating one would
-      // redirect funds — so reject, never sanitize. Throwing here is safe:
-      // nothing has been written to the wallet yet.
-      if (!/^[a-z0-9]+$/i.test(String(r.address))) {
-        throw new Error("Refusing to send to malformed address");
-      }
-      return {
+  quicksend(recipients, timeout = 10000) {
+    return new Promise((resolve, reject) => {
+      let buffer = "";
+
+      // Ensure each recipient has amount + memo
+      const sanitizedRecipients = recipients.map((r) => ({
         address: r.address,
         amount: Math.ceil(Number(r.amount)),
-        // A quote inside a memo (bounty titles end up here) would cut the
-        // single-quoted argument short. Strip rather than fail the batch.
-        memo: (r.memo || "Sent from the ZEC bounty app!").replace(/'/g, ""),
-      };
-    });
+        memo: r.memo || "Sent from the ZEC bounty app!",
+      }));
 
-    const command = `quicksend '${JSON.stringify(sanitizedRecipients)}'`;
+      const jsonString = JSON.stringify(sanitizedRecipients);
+      const command = `quicksend '${jsonString}'`;
 
-    const run = () =>
-      new Promise((resolve) => {
-        let stdoutBuf = "";
-        let stderrBuf = "";
-        let timer;
+      const onData = (chunk) => {
+        buffer += chunk.toString();
 
-        const cleanup = () => {
-          clearTimeout(timer);
-          this.proc.stdout.off("data", onData);
-          this.proc.stderr.off("data", onError);
-        };
+        const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
 
-        const settle = (outcome) => {
+        console.log("quicksendzzy", clean);
+
+        // Extract ALL JSON blocks
+        const jsonBlocks = clean.match(/\{[\s\S]*?\}/g) || [];
+
+        if (jsonBlocks.length > 0) {
           cleanup();
-          resolve({ raw: stdoutBuf, stderr: stderrBuf, ...outcome });
-        };
 
-        const onData = (chunk) => {
-          stdoutBuf += chunk.toString();
-          const clean = stdoutBuf.replace(/\u001b\[[0-9;]*m/g, "");
+          const parsed = jsonBlocks
+            .map((block) => {
+              try {
+                return JSON.parse(block);
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean);
 
-          // Contract (zingolib ironwood, quicksend): stdout carries exactly one
-          // terminal block — {"txids":[...]} on success or {"error":...} on
-          // failure — and all progress goes to stderr. So a truthy error is
-          // terminal: no txids can follow it. Re-check this if zingo is bumped.
-          //
-          // We still scan every buffered block and let a txids block win no
-          // matter where it sits, treating only a non-null error with no txids
-          // as failure. That's defense in depth against version drift: settling
-          // on the first parsable block would let a stray error:null turn a
-          // good send into a FAILED one and reopen a bounty that actually paid.
-          let failure = null;
-          for (const block of extractJsonBlocks(clean)) {
-            let parsed;
-            try {
-              parsed = JSON.parse(block);
-            } catch {
-              continue;
-            }
+          if (parsed.length === 1) resolve(parsed[0]);
+          else resolve(parsed);
+        }
+      };
 
-            if (Array.isArray(parsed.txids)) {
-              return settle({
-                txids: parsed.txids,
-                error: null,
-                timedOut: false,
-              });
-            }
-            if (parsed.error != null && failure === null) {
-              failure =
-                typeof parsed.error === "string"
-                  ? parsed.error
-                  : JSON.stringify(parsed.error);
-            }
-          }
+      const onError = (err) => {
+        cleanup();
+        reject(err);
+      };
 
-          if (failure !== null) {
-            return settle({ txids: [], error: failure, timedOut: false });
-          }
-        };
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.proc.stdout.off("data", onData);
+        this.proc.stderr.off("data", onError);
+      };
 
-        // zingo logs to stderr in normal operation; collect it for diagnostics
-        // instead of failing the send over a log line.
-        const onError = (chunk) => {
-          stderrBuf += chunk.toString();
-        };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("Zingo quicksend timeout"));
+      }, timeout);
 
-        timer = setTimeout(() => {
-          // Outcome unknown, and this process's stdout can no longer be
-          // trusted: a late txids block from THIS send would otherwise bleed
-          // into the next send on the shared REPL and resolve it with the
-          // wrong txid. Record UNKNOWN (never FAILED — the send may have
-          // broadcast, and killing the process does not un-send it), then
-          // destroy it. getZingo drops the pool entry on exit, so the next
-          // send spawns a clean process; the abandoned tx, if real, resurfaces
-          // in wallet history for POST /records/:id/resolve.
-          settle({ txids: [], error: null, timedOut: true });
-          this.destroy();
-        }, timeout);
+      this.proc.stdout.on("data", onData);
+      this.proc.stderr.on("data", onError);
 
-        this.proc.stdout.on("data", onData);
-        this.proc.stderr.on("data", onError);
-
-        this.proc.stdin.write(command + "\n");
-      });
-
-    const send = this.sendChain.then(run);
-    this.sendChain = send.then(
-      () => undefined,
-      () => undefined,
-    );
-    return send;
+      this.proc.stdin.write(command + "\n");
+    });
   }
 
   transactions(timeout = 10000) {

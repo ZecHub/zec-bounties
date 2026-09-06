@@ -251,6 +251,46 @@ function serializeTeam(team) {
   };
 }
 
+/**
+ * Cascade-delete a team: tear down its Zcash wallet (if any) and remove
+ * the team record. Used when converting a TEAM user to HUNTER.
+ */
+async function deleteTeamCascade(teamId) {
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    include: { wallet: true },
+  });
+
+  if (!team) return;
+
+  if (team.wallet) {
+    const params = await prisma.zcashParams.findFirst({
+      where: {
+        teamId,
+        accountName: team.wallet.accountName,
+      },
+    });
+
+    if (params) {
+      const dataDir = getWalletDataDir(params.walletId);
+
+      invalidateZingo({
+        chain: team.wallet.chain,
+        serverUrl: team.wallet.serverUrl,
+        dataDir,
+      });
+
+      await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  await prisma.team.delete({ where: { id: teamId } }).catch(() => {});
+
+  await prisma.user
+    .deleteMany({ where: { email: `team+${teamId}@internal.local` } })
+    .catch(() => {});
+}
+
 // ─── Team CRUD ───────────────────────────────────────────────────────────────
 
 router.post("/", authenticate, async (req, res) => {
@@ -738,6 +778,70 @@ router.get("/:teamId/community", authenticate, async (req, res) => {
   }
 });
 
+// ─── Role Conversion (Admin) ─────────────────────────────────────────────────
+
+// Convert a TEAM-role user to HUNTER. If the user is an OWNER of a team
+// (i.e. they created it) and is NOT an isRobin user, that team is deleted
+// as part of the conversion. isRobin users keep their created team intact.
+router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
+  try {
+    if (!requireGlobalAdmin(req, res)) return;
+
+    const { userId } = req.params;
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.role !== "TEAM") {
+      return res.status(400).json({
+        error: "User must have the TEAM role to be converted to HUNTER",
+      });
+    }
+
+    const ownedTeams = await prisma.teamMember.findMany({
+      where: { userId, role: "OWNER" },
+      select: { teamId: true },
+    });
+
+    let deletedTeamIds = [];
+
+    if (!user.isRobin && ownedTeams.length > 0) {
+      deletedTeamIds = ownedTeams.map((m) => m.teamId);
+
+      for (const teamId of deletedTeamIds) {
+        await deleteTeamCascade(teamId);
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { role: "HUNTER" },
+    });
+
+    // Bust the cached "all users" list — /api/bounties/users won't
+    // reflect this role change until the TTL expires otherwise.
+    await delCache("users:all");
+
+    for (const teamId of deletedTeamIds) {
+      sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
+    }
+
+    sendRealtimeUpdate("user_updated", updatedUser, req.user.id);
+
+    res.json({
+      success: true,
+      user: updatedUser,
+      deletedTeamIds,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to convert user to hunter" });
+  }
+});
+
 // ─── Single Team ─────────────────────────────────────────────────────────────
 
 router.get("/:teamId", authenticate, async (req, res) => {
@@ -796,13 +900,30 @@ router.patch("/:teamId", authenticate, async (req, res) => {
     const { teamId } = req.params;
     if (!(await requireTeamAdmin(teamId, req, res))) return;
 
-    const { name, description, isPrivate } = req.body;
+    const {
+      name,
+      description,
+      isPrivate,
+      twitterUrl,
+      discordUrl,
+      additionalLinks,
+    } = req.body;
     const data = {};
 
     if (name !== undefined) data.name = name.trim();
     if (description !== undefined)
       data.description = description?.trim() || null;
     if (isPrivate !== undefined) data.isPrivate = !!isPrivate;
+    if (twitterUrl !== undefined) data.twitterUrl = twitterUrl?.trim() || null;
+    if (discordUrl !== undefined) data.discordUrl = discordUrl?.trim() || null;
+    if (additionalLinks !== undefined) {
+      data.additionalLinks = Array.isArray(additionalLinks)
+        ? additionalLinks
+            .map((l) => (typeof l === "string" ? l.trim() : ""))
+            .filter(Boolean)
+            .slice(0, 10)
+        : [];
+    }
 
     const team = await prisma.team.update({
       where: { id: teamId },
@@ -1686,7 +1807,11 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
       { teamId, txids: sendResult.txids },
       req.user.id,
     );
-    res.json({ success: true, txids: sendResult.txids });
+
+    res.json({
+      success: true,
+      result: sendResult[1],
+    });
   } catch (err) {
     console.error(err);
 

@@ -150,21 +150,6 @@ const ASSIGNEE_INCLUDE = {
   },
 };
 
-// The bounty's latest broadcast payout, exposed as a flat paymentTxId. Keeping
-// the include and the flatten together means the "which tx counts" rule lives
-// in one place for the exports and the single-bounty GET.
-const LATEST_PAYMENT_TX = {
-  where: { status: "BROADCAST" },
-  orderBy: { settledAt: "desc" },
-  take: 1,
-  select: { txid: true },
-};
-
-const withPaymentTxId = ({ transactions, ...bounty }) => ({
-  ...bounty,
-  paymentTxId: transactions?.[0]?.txid ?? null,
-});
-
 // Invalidates now, then invalidates again shortly after — this closes the
 // race window where a concurrent GET reads stale DB data and writes it to
 // cache *after* our invalidation already ran, silently re-poisoning it.
@@ -286,8 +271,14 @@ router.post("/", authenticate, async (req, res) => {
       }
     }
 
-    const resolvedAssignee = assignee === "none" ? null : assignee;
-    const isClient = req.user.role === "CLIENT";
+    const isHunter = req.user.role === "HUNTER";
+    const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
+
+    const resolvedAssignee = isHunter
+      ? req.user.id
+      : canAssignOthers && assignee !== "none"
+        ? assignee
+        : null;
 
     const bounty = await prisma.bounty.create({
       data: {
@@ -304,14 +295,13 @@ router.post("/", authenticate, async (req, res) => {
         // Denormalized from the team at creation time — a bounty's privacy
         // always tracks its team's current privacy setting.
         isPrivate: team?.isPrivate ?? false,
-        ...(isClient &&
-          resolvedAssignee && {
-            assignees: {
-              create: {
-                userId: resolvedAssignee,
-              },
+        ...(resolvedAssignee && {
+          assignees: {
+            create: {
+              userId: resolvedAssignee,
             },
-          }),
+          },
+        }),
       },
       include: {
         createdByUser: {
@@ -329,7 +319,7 @@ router.post("/", authenticate, async (req, res) => {
 
     const recipients = await getBroadcastRecipients(bounty);
     sendRealtimeUpdate("new_bounties", bounty, req.user.id, recipients);
-    await deleteCacheByPattern("bounties:*");
+    await bumpVersion("bounties");
 
     // Respond immediately — don't block on notifications
     res.status(201).json(bounty);
@@ -858,10 +848,11 @@ router.put(
 
       const updated = await prisma.bounty.update({
         where: { id: req.params.id },
-        // FIX: this used to also write paymentAuthorizedAt, which doesn't
-        // exist on the model — every call 500'd.
         data: {
-          ...(paymentAuthorized !== undefined && { paymentAuthorized }),
+          ...(paymentAuthorized !== undefined && {
+            paymentAuthorized,
+            paymentAuthorizedAt: paymentAuthorized ? new Date() : null,
+          }),
         },
       });
 
@@ -877,12 +868,11 @@ router.put(
 
 // ─── Approve bounty (Admin) ───────────────────────────────────────────────────
 // FIX: id was cast to Number() but schema uses cuid strings — removed the cast.
-// FIX: the field is isApproved; writing `approved` made every call 500.
 router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
   try {
     const updated = await prisma.bounty.update({
       where: { id: req.params.id },
-      data: { isApproved: true },
+      data: { approved: true },
     });
     sendRealtimeUpdate("bounty_approved", updated, req.user.id);
     await invalidateBounty(req.params.id);
@@ -1558,6 +1548,7 @@ router.get("/users", authenticate, async (req, res) => {
         avatar: true,
         emailNotifications: true,
         pushNotifications: true,
+        isRobin: true,
       },
     });
     await setCache(cacheKey, users, TTL.USERS);
@@ -2074,16 +2065,11 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
             },
           },
         },
-        transactions: LATEST_PAYMENT_TX,
       },
       orderBy: { paidAt: "desc" },
     });
 
-    // Flatten the tx relation into paymentTxId so exports can show
-    // proof-of-payment. Bounties paid before records existed stay null.
-    const data = bounties.map(withPaymentTxId);
-
-    res.json({ success: true, data });
+    res.json({ success: true, data: bounties });
   } catch (error) {
     console.error("Error fetching export data:", error);
     res
@@ -2107,14 +2093,10 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
             },
           },
         },
-        transactions: LATEST_PAYMENT_TX,
       },
       orderBy: { completedAt: "desc" },
     });
-
-    const data = bounties.map(withPaymentTxId);
-
-    res.json({ success: true, data });
+    res.json({ success: true, data: bounties });
   } catch (error) {
     console.error("Error fetching completed bounties:", error);
     res
@@ -2236,25 +2218,20 @@ router.get("/:id", optionalAuthenticate, async (req, res) => {
       ? USER_SELECT_WITH_ROLE
       : USER_SELECT_PUBLIC;
 
-    const found = await prisma.bounty.findUnique({
+    const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
       include: {
         assigneeUser: { select: userSelect },
         assignees: { include: { user: { select: userSelect } } },
         createdByUser: { select: createdByUserSelect },
         team: { select: { id: true, name: true, logo: true } },
-        transactions: LATEST_PAYMENT_TX,
       },
     });
 
-    if (!found) return res.status(404).json({ error: "Bounty not found" });
-    if (!(await canViewPrivateBounty(found, req.user))) {
+    if (!bounty) return res.status(404).json({ error: "Bounty not found" });
+    if (!(await canViewPrivateBounty(bounty, req.user))) {
       return res.status(404).json({ error: "Bounty not found" });
     }
-
-    // Expose the payout txid as a plain field; the paid badge on the bounty
-    // page links it to a block explorer.
-    const bounty = withPaymentTxId(found);
 
     await setCache(cacheKey, bounty, TTL.BOUNTY_SINGLE);
     res.json(bounty);
