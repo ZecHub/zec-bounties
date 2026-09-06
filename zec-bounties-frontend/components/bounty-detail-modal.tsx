@@ -60,9 +60,15 @@ export function BountyDetailModal({
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
+  const [applicationError, setApplicationError] = useState("");
   const [isApplying, setIsApplying] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrl, setDeliverableUrl] = useState("");
+  const [submissionErrors, setSubmissionErrors] = useState<{
+    description?: string;
+    deliverableUrl?: string;
+  }>({});
+  const [submissionErrorSummary, setSubmissionErrorSummary] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmission[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
@@ -296,7 +302,17 @@ export function BountyDetailModal({
   })();
 
   const handleApply = async () => {
-    if (!applicationMessage.trim()) return;
+    if (!applicationMessage.trim()) {
+      setApplicationError("Enter an application message.");
+
+      requestAnimationFrame(() => {
+        document.getElementById("application-message")?.focus();
+      });
+
+      return;
+    }
+
+    setApplicationError("");
     setIsApplying(true);
     try {
       await applyToBounty(bounty.id, applicationMessage);
@@ -311,7 +327,40 @@ export function BountyDetailModal({
   };
 
   const handleSubmitWork = async () => {
-    if (!submissionDescription.trim() || !deliverableUrl.trim()) return;
+    const nextErrors: {
+      description?: string;
+      deliverableUrl?: string;
+    } = {};
+
+    if (!submissionDescription.trim()) {
+      nextErrors.description = "Describe the work you completed.";
+    }
+
+    if (!deliverableUrl.trim()) {
+      nextErrors.deliverableUrl = "Enter a deliverable URL.";
+    }
+
+    setSubmissionErrors(nextErrors);
+
+    const firstInvalid = nextErrors.description
+      ? "submission-description"
+      : nextErrors.deliverableUrl
+        ? "deliverable-url"
+        : null;
+
+    if (firstInvalid) {
+      setSubmissionErrorSummary(
+        "Please correct the highlighted work submission fields.",
+      );
+
+      requestAnimationFrame(() => {
+        document.getElementById(firstInvalid)?.focus();
+      });
+
+      return;
+    }
+
+    setSubmissionErrorSummary("");
     setIsSubmitting(true);
     try {
       await submitWork(bounty.id, {
@@ -445,6 +494,15 @@ export function BountyDetailModal({
                     You are assigned to this bounty. Ready to submit your
                     completed work?
                   </p>
+                  {submissionErrorSummary && (
+                    <div
+                      role="alert"
+                      aria-live="assertive"
+                      className="text-sm text-destructive"
+                    >
+                      {submissionErrorSummary}
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label htmlFor="submission-description" className="text-xs">
                       Work Description <span className="text-red-500">*</span>
@@ -453,9 +511,30 @@ export function BountyDetailModal({
                       id="submission-description"
                       placeholder="Describe what you delivered and any important notes..."
                       value={submissionDescription}
-                      onChange={(e) => setSubmissionDescription(e.target.value)}
+                      onChange={(e) => {
+                        setSubmissionDescription(e.target.value);
+                        setSubmissionErrors((prev) => ({
+                          ...prev,
+                          description: undefined,
+                        }));
+                        setSubmissionErrorSummary("");
+                      }}
                       className="min-h-[80px] text-sm"
+                      aria-invalid={Boolean(submissionErrors.description)}
+                      aria-describedby={
+                        submissionErrors.description
+                          ? "submission-description-error"
+                          : undefined
+                      }
                     />
+                    {submissionErrors.description && (
+                      <p
+                        id="submission-description-error"
+                        className="text-sm text-destructive"
+                      >
+                        {submissionErrors.description}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="deliverable-url" className="text-xs">
@@ -466,22 +545,42 @@ export function BountyDetailModal({
                       type="url"
                       placeholder="https://github.com/username/repo"
                       value={deliverableUrl}
-                      onChange={(e) => setDeliverableUrl(e.target.value)}
+                      onChange={(e) => {
+                        setDeliverableUrl(e.target.value);
+                        setSubmissionErrors((prev) => ({
+                          ...prev,
+                          deliverableUrl: undefined,
+                        }));
+                        setSubmissionErrorSummary("");
+                      }}
                       className="w-full px-3 py-1.5 border rounded-md text-sm"
                       autoComplete="off"
+                      aria-invalid={Boolean(submissionErrors.deliverableUrl)}
+                      aria-describedby={
+                        submissionErrors.deliverableUrl
+                          ? "deliverable-url-help deliverable-url-error"
+                          : "deliverable-url-help"
+                      }
                     />
-                    <p className="text-[11px] text-muted-foreground">
+                    {submissionErrors.deliverableUrl && (
+                      <p
+                        id="deliverable-url-error"
+                        className="text-sm text-destructive"
+                      >
+                        {submissionErrors.deliverableUrl}
+                      </p>
+                    )}
+                    <p
+                      id="deliverable-url-help"
+                      className="text-[11px] text-muted-foreground"
+                    >
                       Link to your completed work (GitHub, Drive, deployed app,
                       etc.)
                     </p>
                   </div>
                   <Button
                     onClick={handleSubmitWork}
-                    disabled={
-                      !submissionDescription.trim() ||
-                      !deliverableUrl.trim() ||
-                      isSubmitting
-                    }
+                    disabled={isSubmitting}
                     size="sm"
                     className="bg-green-600 hover:bg-green-700 text-white w-full"
                   >
@@ -632,24 +731,49 @@ export function BountyDetailModal({
                       id="application-message"
                       placeholder="Tell us why you're the right person for this bounty..."
                       value={applicationMessage}
-                      onChange={(e) => setApplicationMessage(e.target.value)}
+                      onChange={(e) => {
+                        setApplicationMessage(e.target.value);
+                        setApplicationError("");
+                      }}
                       className="min-h-[90px] text-sm"
+                      aria-invalid={Boolean(applicationError)}
+                      aria-describedby={
+                        applicationError ? "application-message-error" : undefined
+                      }
                     />
+                    {applicationError && (
+                      <p
+                        id="application-message-error"
+                        role="alert"
+                        className="text-sm text-destructive"
+                      >
+                        {applicationError}
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
                       className="flex-1"
                       onClick={handleApply}
-                      disabled={!applicationMessage.trim() || isApplying}
+                      disabled={isApplying}
                     >
                       {isApplying ? "Applying..." : "Submit Application"}
                       {!isApplying && (
                         <CheckCircle2 className="ml-1.5 h-3.5 w-3.5" />
                       )}
                     </Button>
-                    <Button variant="outline" size="icon" className="h-9 w-9">
-                      <MessageSquare className="h-3.5 w-3.5" />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      aria-label="Open messages"
+                    >
+                      <MessageSquare
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
                     </Button>
                   </div>
                 </div>

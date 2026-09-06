@@ -83,6 +83,87 @@ async function openCreateBountyDialog(page: Page) {
   return { trigger, dialog };
 }
 
+
+const applicationBountyFixture = {
+  id: "a11y-application-bounty",
+  title: "Accessibility Application Fixture",
+  description: "Fixture bounty used only for keyboard accessibility testing.",
+  createdBy: "fixture-creator",
+  bountyAmount: 0.01,
+  dateCreated: "2026-09-01T12:00:00.000Z",
+  timeToComplete: "2026-12-01T12:00:00.000Z",
+  status: "TO_DO",
+  isApproved: true,
+  isPaid: false,
+  isPrivate: false,
+  paymentAuthorized: false,
+  difficulty: "Easy",
+  chain: "TEST",
+  categoryId: "Development",
+  createdByUser: {
+    id: "fixture-creator",
+    name: "Fixture Creator",
+    email: "creator@example.invalid",
+    role: "HUNTER",
+    isRobin: false,
+  },
+};
+
+const workSubmissionBountyFixture = {
+  ...applicationBountyFixture,
+  id: "a11y-work-submission-bounty",
+  title: "Accessibility Work Submission Fixture",
+  status: "IN_PROGRESS",
+  assignee: fixtureUser.id,
+};
+
+async function useBountyFixture(
+  page: Page,
+  bounty: Record<string, unknown>,
+) {
+  await page.unroute("**/api/**");
+
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.pathname === "/api/bounties/categories") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          { id: 1, name: "Development" },
+          { id: 2, name: "Design" },
+        ]),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/bounties") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([bounty]),
+      });
+      return;
+    }
+
+    if (url.pathname === `/api/bounties/${String(bounty.id)}`) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(bounty),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+}
+
 test.describe("keyboard accessibility", () => {
   test.beforeEach(async ({ page }) => {
     await mockAuthenticatedBackend(page);
@@ -181,4 +262,91 @@ test.describe("keyboard accessibility", () => {
     // Focus should return to the control that opened it.
     await expect(trigger).toBeFocused();
   });
+
+  test("Application errors are announced and focus moves to the invalid message", async ({
+    page,
+  }) => {
+    await useBountyFixture(page, applicationBountyFixture);
+
+    await page.goto("/home?bounty=a11y-application-bounty");
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+    await expect(dialog).toContainText("Accessibility Application Fixture");
+
+    const message = dialog.locator("#application-message");
+    const submit = dialog.getByRole("button", {
+      name: "Submit Application",
+    });
+
+    await expect(submit).toBeVisible();
+    await submit.focus();
+    await page.keyboard.press("Enter");
+
+    const alert = dialog.getByRole("alert");
+
+    await expect(alert).toHaveText("Enter an application message.");
+    await expect(message).toBeFocused();
+    await expect(message).toHaveAttribute("aria-invalid", "true");
+    await expect(message).toHaveAttribute(
+      "aria-describedby",
+      "application-message-error",
+    );
+    await expect(dialog.locator("#application-message-error")).toHaveText(
+      "Enter an application message.",
+    );
+  });
+
+  test("Work submission errors are announced and focus moves to the first invalid field", async ({
+    page,
+  }) => {
+    await useBountyFixture(page, workSubmissionBountyFixture);
+
+    await page.goto("/home?bounty=a11y-work-submission-bounty");
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+    await expect(dialog).toContainText(
+      "Accessibility Work Submission Fixture",
+    );
+
+    const submit = dialog.getByRole("button", {
+      name: "Submit Work",
+    });
+
+    await expect(submit).toBeVisible({ timeout: 15000 });
+    await submit.focus();
+    await page.keyboard.press("Enter");
+
+    const alert = dialog.getByRole("alert");
+
+    await expect(alert).toContainText(
+      "Please correct the highlighted work submission fields.",
+    );
+
+    const description = dialog.locator("#submission-description");
+    const deliverable = dialog.locator("#deliverable-url");
+
+    await expect(description).toBeFocused();
+    await expect(description).toHaveAttribute("aria-invalid", "true");
+    await expect(description).toHaveAttribute(
+      "aria-describedby",
+      "submission-description-error",
+    );
+
+    await expect(dialog.locator("#submission-description-error")).toHaveText(
+      "Describe the work you completed.",
+    );
+
+    await expect(deliverable).toHaveAttribute("aria-invalid", "true");
+    await expect(deliverable).toHaveAttribute(
+      "aria-describedby",
+      "deliverable-url-help deliverable-url-error",
+    );
+
+    await expect(dialog.locator("#deliverable-url-error")).toHaveText(
+      "Enter a deliverable URL.",
+    );
+  });
+
 });
