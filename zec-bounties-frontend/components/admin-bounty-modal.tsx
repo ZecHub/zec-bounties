@@ -152,7 +152,7 @@ export function AdminBountyModal({
               />
             </div>
             <div className="grid grid-cols-3 gap-4">
-              <div className="grid gap-2">
+              <div className="grid gap-2 min-w-0">
                 <Label htmlFor="admin-category">Category</Label>
                 <Select
                   value={formData.category}
@@ -161,8 +161,8 @@ export function AdminBountyModal({
                   }
                   required
                 >
-                  <SelectTrigger id="admin-category">
-                    <SelectValue placeholder="Select" />
+                  <SelectTrigger id="admin-category" className="w-full min-w-0">
+                    <SelectValue placeholder="Select" className="truncate" />
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((category) => (
@@ -173,11 +173,14 @@ export function AdminBountyModal({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
+              <div className="grid gap-2 min-w-0">
                 <Label htmlFor="admin-difficulty">Difficulty</Label>
                 <Select required>
-                  <SelectTrigger id="admin-difficulty">
-                    <SelectValue placeholder="Select" />
+                  <SelectTrigger
+                    id="admin-difficulty"
+                    className="w-full min-w-0"
+                  >
+                    <SelectValue placeholder="Select" className="truncate" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Easy">Easy</SelectItem>
@@ -186,7 +189,7 @@ export function AdminBountyModal({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
+              <div className="grid gap-2 min-w-0">
                 <Label htmlFor="admin-chain">Network</Label>
                 <Select
                   required
@@ -198,8 +201,8 @@ export function AdminBountyModal({
                     }))
                   }
                 >
-                  <SelectTrigger id="admin-chain">
-                    <SelectValue placeholder="Select" />
+                  <SelectTrigger id="admin-chain" className="w-full min-w-0">
+                    <SelectValue placeholder="Select" className="truncate" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="TEST">Testnet</SelectItem>
