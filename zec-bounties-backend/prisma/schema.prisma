@@ -78,14 +78,12 @@ model Bounty {
   applications      BountyApplication[]
   workSubmissions   WorkSubmission[]
   assignees         BountyAssignee[]
-  transactions      Transaction[]
+ transactions      Transaction[]
   completedAt       DateTime?
-  updatedAt         DateTime  @updatedAt @default(now())
+  updatedAt         DateTime            @updatedAt @default(now())
   isPrivate         Boolean             @default(false)
-  // Set while a send is in flight or its outcome is unknown. Keeps the bounty
-  // out of the payable set so an ambiguous failure can't be retried into a
-  // double-payment.
   paymentInFlight   Boolean             @default(false)
+
 
   @@index([status])
   @@index([createdBy])
@@ -106,9 +104,10 @@ model BountyAssignee {
   user       User     @relation("BountyAssignees", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([bountyId, userId])
+  @@map("bounty_assignees")
+
   @@index([bountyId])
   @@index([userId])
-  @@map("bounty_assignees")
 }
 
 model BountyApplication {
@@ -125,37 +124,32 @@ model BountyApplication {
   bounty        Bounty    @relation(fields: [bountyId], references: [id], onDelete: Cascade)
 
   @@unique([bountyId, applicantId])
+  @@map("bounty_applications")
+
   @@index([bountyId])
   @@index([applicantId])
-  @@map("bounty_applications")
 }
 
-// One row per bounty per payout attempt. Rows are created PENDING before the
-// wallet is asked to send, so a crash mid-send still leaves a trace. A whole
-// batch shares one batchKey (and, once broadcast, usually one txid — zingo
-// builds a single shielded tx for multi-recipient sends).
 model Transaction {
-  id            String    @id @default(cuid())
-  bountyId      String
-  bounty        Bounty    @relation(fields: [bountyId], references: [id])
-  txid          String? // null until we've seen it in zingo's output
-  amountZat     BigInt // integer zatoshis; Float loses satoshi precision
-  toAddress     String
-  memo          String
-  chain         Chain
-  status        TxStatus  @default(PENDING)
-  batchKey      String // idempotency key for the payout request
-  initiatedBy   String // admin user id
-  walletAccount String // ZcashParams.accountName that paid
-  rawResult     String? // zingo stdout, kept for forensics
-  errorDetail   String?
-  createdAt     DateTime  @default(now())
-  settledAt     DateTime?
+  id          String    @id @default(cuid())
+  bountyId    String
+  bounty      Bounty    @relation(fields: [bountyId], references: [id])
+  txid        String?
+  amountZat   BigInt
+  toAddress   String
+  memo        String
+  status      TxStatus  @default(PENDING)
+  batchKey    String
+  chain       Chain?
+  initiatedBy String?
+  walletAccount String?
+  errorDetail String?
+  rawResult   String?
+  createdAt   DateTime  @default(now())
+  settledAt   DateTime?
 
   @@unique([bountyId, batchKey])
-  @@index([bountyId])
-  @@index([txid])
-  @@index([status])
+  @@index([batchKey])
 }
 
 model WorkSubmission {
@@ -173,9 +167,11 @@ model WorkSubmission {
   submitterUser  User      @relation("SubmittedWork", fields: [submittedBy], references: [id])
   bounty         Bounty    @relation(fields: [bountyId], references: [id], onDelete: Cascade)
 
+  @@map("work_submissions")
+
   @@index([bountyId, status])
   @@index([submittedBy])
-  @@map("work_submissions")
+
 }
 
 model ZcashParams {
@@ -192,7 +188,7 @@ model ZcashParams {
   updatedAt   DateTime @updatedAt
   isDefault   Boolean  @default(false)
 
-  @@unique([ownerId, accountName, teamId]) // ← teamId included
+  @@unique([ownerId, accountName, teamId])  // ← teamId included
   @@map("zcash_params")
 }
 
@@ -337,8 +333,8 @@ enum Status {
 }
 
 enum TxStatus {
-  PENDING // claimed, wallet not yet asked to send
-  BROADCAST // txid seen in zingo output
-  FAILED // wallet reported an error before sending
-  UNKNOWN // send attempted, outcome unclear (e.g. timeout) — needs manual resolution
+  PENDING    // claimed, wallet not yet asked to send
+  BROADCAST  // txid seen in zingo output — confirmed sent
+  FAILED     // wallet reported an error before sending — confirmed NOT sent
+  UNKNOWN    // send attempted, outcome unclear (timeout) — needs a human
 }

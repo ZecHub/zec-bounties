@@ -1,9 +1,15 @@
 const express = require("express");
 const prisma = require("../prisma/client");
 const router = express.Router();
+const axios = require("axios");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const executeZingoQuickSend = require("../utils/zingo/zingoLibQuickSend.js");
-const { randomUUID } = require("crypto");
+const { findDueBounties } = require("../helpers/db-query.js");
+const {
+  buildPaymentList,
+  updateDueBounties,
+  storeTransactions,
+} = require("../helpers/db-query.js");
 const { initZcashOnce } = require("../zcash/init");
 const executeZingoCli = require("../utils/zingo/zingoLib.js");
 const executeZingoCliTransactions = require("../utils/zingo/zingoLibTransactions.js");
@@ -19,8 +25,11 @@ const executeZingoCliRescan = require("../utils/zingo/zingoLibRescan.js");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo.js");
 const executeZingoCliQuit = require("../utils/zingo/zingoLibQuit.js");
 const executeZingoCliBalance = require("../utils/zingo/zingoLibBalance.js");
+const { resolvePayingWallet } = require("../helpers/zcash/resolvePayingWallet");
+const { buildPaymentListGrouped } = require("../helpers/db-query");
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
+const { randomUUID } = require("crypto");
 
 const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
 
@@ -158,7 +167,7 @@ router.get("/addresses", authenticate, isAdmin, async (req, res) => {
 
 router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
   try {
-    const { bountyIds, idempotencyKey } = req.body;
+    const { bountyIds } = req.body; // array of selected bounty IDs from admin
 
     if (!bountyIds || !Array.isArray(bountyIds) || bountyIds.length === 0) {
       return res
@@ -166,38 +175,8 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         .json({ error: "No bounties selected for payment" });
     }
 
-    // A retrying client reuses its key; a fresh attempt generates a new one.
-    // The server-side fallback keeps direct API callers working, they just
-    // don't get replay protection.
-    const batchKey =
-      typeof idempotencyKey === "string" && idempotencyKey.trim()
-        ? idempotencyKey.trim()
-        : randomUUID();
-
-    // Replay guard. A live prior attempt (anything not cleanly failed) means
-    // this request already ran, possibly still in flight, so refuse it. A
-    // batch that only produced FAILED rows released its bounties cleanly, so
-    // the same key may retry; those stale rows are cleared inside the claim
-    // transaction below (scoped to FAILED) so a concurrent same-key retry can
-    // never delete the winner's fresh PENDING rows.
-    const live = await prisma.transaction.findMany({
-      where: { batchKey, status: { not: "FAILED" } },
-    });
-    if (live.length > 0) {
-      return res.status(409).json({
-        error: "This payment request was already submitted",
-        details: `Found ${live.length} recorded transaction(s) for this request (${[...new Set(live.map((r) => r.status))].join(", ")}). Check the Transactions tab before paying again.`,
-        records: live.map(serializeTxRecord),
-      });
-    }
-
     // Resolve the acting admin's default wallet
-    const adminWallet = await prisma.zcashParams.findFirst({
-      where: {
-        ownerId: req.user.id,
-        isDefault: true,
-      },
-    });
+    const adminWallet = await getDefaultZcashParams(req.user.id);
 
     if (!adminWallet) {
       return res.status(400).json({
@@ -208,22 +187,6 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
 
     const bountyChainForWallet =
       adminWallet.chain === "mainnet" ? "MAIN" : "TEST";
-
-    // Team wallets live under wallets/team:<teamId>/ — same layout
-    // getDefaultZcashParams uses. Building the path off the user id for a
-    // team-default wallet used to point zingo at an empty directory.
-    const walletOwnerDir =
-      adminWallet.isTeam && adminWallet.teamId
-        ? `team:${adminWallet.teamId}`
-        : req.user.id;
-
-    adminWallet.dataDir = path.join(
-      process.cwd(),
-      "wallets",
-      walletOwnerDir,
-      adminWallet.accountName,
-      adminWallet.chain,
-    );
 
     // Fetch the selected bounties with their assignees
     const bounties = await prisma.bounty.findMany({
@@ -281,24 +244,12 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         continue;
       }
 
-      // Addresses are user-editable profile data and end up inside a
-      // single-quoted REPL command (and address validation on the profile
-      // endpoint has historically been lax), so only canonical base58/bech32
-      // characters pass. Never "clean up" an address — skip it.
-      if (!/^[a-z0-9]+$/i.test(payoutAddress)) {
-        skipped.push({
-          id: bounty.id,
-          title: bounty.title,
-          reason: "Assignee's payout address contains invalid characters",
-        });
-        continue;
-      }
-
       paymentList.push({
         address: payoutAddress,
         amount: Math.round(bounty.bountyAmount * 1e8), // zatoshis
         memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
         bountyId: bounty.id,
+        chain: bounty.chain,
       });
     }
 
@@ -310,31 +261,19 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       });
     }
 
-    // Claim before send: flip the payable set to in-flight and write PENDING
-    // records, all in one transaction. The isPaid/paymentInFlight conditions
-    // in the where-clause are the compare-and-swap — a concurrent request for
-    // any of the same bounties claims fewer rows than it asked for and backs
-    // out here instead of paying them a second time.
+    // ── Claim before send ───────────────────────────────────────────────
+    // Flip paymentInFlight -> true and write PENDING Transaction rows, all
+    // in one DB transaction, BEFORE anything is sent. The where-clause here
+    // is the compare-and-swap: if another request already claimed any of
+    // these bounties, `count` comes back lower than expected and we throw
+    // to force a rollback (an interactive transaction commits on return,
+    // so bailing with a plain return would still commit a partial claim).
     const payableIds = paymentList.map((p) => p.bountyId);
-    const bountyById = new Map(bounties.map((b) => [b.id, b]));
-
-    // Thrown inside the claim to force a rollback. Prisma interactive
-    // transactions COMMIT on return — bailing out with a return value would
-    // commit the partially-claimed rows and wedge them in-flight with no
-    // Transaction row to resolve them through.
+    const batchKey = randomUUID();
     const claimConflict = new Error("claim-conflict");
 
     try {
       await prisma.$transaction(async (tx) => {
-        // Clear any cleanly-failed prior attempt under this key so the retry
-        // can re-create rows without hitting the [bountyId, batchKey] unique
-        // constraint. Scoped to FAILED and atomic with the claim, so a losing
-        // concurrent request rolls this back and never touches the winner's
-        // PENDING rows.
-        await tx.transaction.deleteMany({
-          where: { batchKey, status: "FAILED" },
-        });
-
         const result = await tx.bounty.updateMany({
           where: {
             id: { in: payableIds },
@@ -354,10 +293,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
             amountZat: BigInt(p.amount),
             toAddress: p.address,
             memo: p.memo,
-            chain: bountyById.get(p.bountyId).chain,
             batchKey,
-            initiatedBy: req.user.id,
-            walletAccount: adminWallet.accountName,
           })),
         });
       });
@@ -373,79 +309,74 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       `💸 Paying ${paymentList.length} bounties from wallet "${adminWallet.accountName}" (admin: ${req.user.id}, batch: ${batchKey})`,
     );
 
+    // ── Send ─────────────────────────────────────────────────────────────
     let sendResult;
     try {
       sendResult = await executeZingoQuickSend(paymentList, adminWallet);
     } catch (err) {
-      // quicksend only throws before anything is written to the wallet
-      // (missing binary, spawn failure, malformed address) — nothing was
-      // sent. 503 rather than 500: it's a service precondition, and the
-      // request is safe to retry once the wallet setup is fixed.
-      await releaseClaim(batchKey, payableIds, err.message);
-      return res.status(503).json({
-        success: false,
-        error: "Payment failed before sending",
-        details: err.message,
-      });
-    }
-
-    if (sendResult.error) {
-      console.error("❌ Zingo payment error:", sendResult.error);
-      await releaseClaim(batchKey, payableIds, sendResult.error, sendResult.raw);
-      return res.status(422).json({
-        success: false,
-        error: "Payment failed",
-        details: sendResult.error,
-      });
-    }
-
-    if (sendResult.timedOut || sendResult.txids.length === 0) {
-      // The send may or may not be on-chain. Keep the bounties in-flight so
-      // a retry can't double-pay, record what we saw, and hand the decision
-      // to a human (POST /records/:id/resolve) once the wallet history has
-      // been checked.
+      // quicksend only rejects on timeout — by then the command was
+      // already written to the wallet process, so the send may have gone
+      // through. Outcome unknown: do NOT release the claim, or a retry
+      // could double-pay. Leave paymentInFlight = true and flag for a human.
+      console.error(
+        `⚠️ UNKNOWN payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): ${err.message}`,
+      );
       await prisma.transaction.updateMany({
         where: { batchKey },
-        data: {
-          status: "UNKNOWN",
-          rawResult: sendResult.raw || null,
-          errorDetail: sendResult.timedOut
-            ? "Timed out waiting for zingo output; the transaction may still have been broadcast"
-            : "Zingo produced no recognizable outcome",
-        },
+        data: { status: "UNKNOWN" },
       });
-      await Promise.all(payableIds.map((id) => invalidateBounty(id)));
-
-      sendRealtimeUpdate(
-        "payment_authorized",
-        { outcome: "unknown", bountyIds: [], inFlightBountyIds: payableIds, batchKey },
-        req.user.id,
-      );
-
       return res.status(502).json({
         success: false,
         outcome: "unknown",
-        error: "Payment outcome unknown",
+        error: "Payment outcome unknown — the send may have completed",
         details:
-          "zingo did not confirm the send. The affected bounties are locked against retry — check the wallet's transaction history, then resolve them from the Transactions tab.",
+          "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the wallet's transaction history before taking further action.",
         batchKey,
       });
     }
 
-    // One shielded tx normally covers the whole batch, so every row gets the
-    // first txid; the full output stays in rawResult in case zingo split it.
-    const txid = sendResult.txids[0];
+    if (sendResult.timedOut) {
+      console.error(
+        `⚠️ UNKNOWN payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): send timed out`,
+      );
+      await prisma.transaction.updateMany({
+        where: { batchKey },
+        data: { status: "UNKNOWN" },
+      });
+      return res.status(502).json({
+        success: false,
+        outcome: "unknown",
+        error: "Payment outcome unknown — the send may have completed",
+        details:
+          "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the wallet's transaction history before taking further action.",
+        batchKey,
+      });
+    }
+
+    if (sendResult.error) {
+      // Structured failure from the tool — nothing was broadcast, safe to
+      // release the claim so these bounties become payable again.
+      const errorMessage = sendResult.error || "Unknown payment error";
+      console.error("❌ Zingo payment error:", errorMessage);
+
+      await releaseClaim(batchKey, payableIds, errorMessage, sendResult.raw);
+
+      return res.status(422).json({
+        success: false,
+        error: "Payment failed",
+        details: errorMessage,
+      });
+    }
+
+    // ── Clean success ────────────────────────────────────────────────────
+    const txResult = sendResult[1];
+    const txid = sendResult.txids?.[0] ?? txResult?.txid ?? null;
     const paidAt = new Date();
 
     await prisma.$transaction([
       prisma.transaction.updateMany({
         where: { batchKey },
-        data: {
-          status: "BROADCAST",
-          txid,
-          rawResult: sendResult.raw || null,
-          settledAt: paidAt,
-        },
+        data: { status: "BROADCAST", txid, settledAt: paidAt },
       }),
       prisma.bounty.updateMany({
         where: { id: { in: payableIds } },
@@ -459,23 +390,22 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     ]);
     await Promise.all(payableIds.map((id) => invalidateBounty(id)));
 
-    // ✅ Broadcast payment result to ALL admins (this is a shared event)
     sendRealtimeUpdate(
       "payment_authorized",
       {
-        bountyIds: payableIds,
-        txids: sendResult.txids,
+        result: txResult,
         paidCount: payableIds.length,
         skippedCount: skipped.length,
         skipped,
         walletAccountName: adminWallet.accountName,
+        batchKey,
       },
       req.user.id, // exclude sender since they get the HTTP response
     );
 
     res.json({
       success: true,
-      txids: sendResult.txids,
+      result: txResult,
       batchKey,
       paidCount: payableIds.length,
       skipped,
@@ -512,130 +442,499 @@ router.get("/records", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// Manual settlement for sends whose outcome we couldn't observe: UNKNOWN
-// after a timeout, or PENDING left behind by a crash mid-send. The admin
-// checks the wallet history and tells us what actually happened.
+router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
+  const { outcome, txid } = req.body; // "broadcast" or "failed"
+  const record = await prisma.transaction.findUnique({
+    where: { id: req.params.id },
+  });
+  if (record.status !== "UNKNOWN")
+    return res.status(409).json({ error: "already settled" });
+
+  if (outcome === "broadcast") {
+    await prisma.$transaction([
+      prisma.transaction.update({
+        where: { id: record.id },
+        data: { status: "BROADCAST", txid, settledAt: new Date() },
+      }),
+      prisma.bounty.update({
+        where: { id: record.bountyId },
+        data: { isPaid: true, paymentInFlight: false, paidAt: new Date() },
+      }),
+    ]);
+  } else {
+    await prisma.$transaction([
+      prisma.transaction.update({
+        where: { id: record.id },
+        data: { status: "FAILED", settledAt: new Date() },
+      }),
+      prisma.bounty.update({
+        where: { id: record.bountyId },
+        data: { paymentInFlight: false },
+      }),
+    ]);
+  }
+  res.json({ success: true });
+});
+
 router.post(
-  "/records/:id/resolve",
+  "/:id/authorize-payment",
   authenticate,
   isAdmin,
   async (req, res) => {
     try {
-      const { outcome, txid } = req.body;
+      const { id: bountyId } = req.params;
+      const { paymentAuthorized, paymentScheduled } = req.body;
+      const userRole = req.user.role;
 
-      const record = await prisma.transaction.findUnique({
-        where: { id: req.params.id },
-      });
-
-      if (!record) {
-        return res.status(404).json({ error: "Payment record not found" });
-      }
-      if (record.status !== "UNKNOWN" && record.status !== "PENDING") {
-        return res
-          .status(400)
-          .json({ error: `Record is already settled (${record.status})` });
-      }
-
-      // A PENDING row younger than the send timeout may still settle on its
-      // own — don't let a resolve race the in-flight request.
-      if (
-        record.status === "PENDING" &&
-        Date.now() - new Date(record.createdAt).getTime() < 2 * 60 * 1000
-      ) {
-        return res.status(409).json({
-          error:
-            "This send may still be in flight — wait a couple of minutes, refresh, then resolve",
+      if (userRole !== "ADMIN") {
+        return res.status(403).json({
+          error: "Only administrators can authorize payments",
         });
       }
 
-      if (outcome === "broadcast") {
-        if (typeof txid !== "string" || !/^[0-9a-f]{64}$/i.test(txid.trim())) {
-          return res.status(400).json({
-            error:
-              "A 64-character hex txid from the wallet history is required to resolve as broadcast",
-          });
-        }
+      // const dueBounties = await findDueBounties();
+      // const paymentList = await buildPaymentList(dueBounties);
 
-        const settledAt = new Date();
-        const [updatedRecord, updatedBounty] = await prisma.$transaction([
-          prisma.transaction.update({
-            where: { id: record.id },
-            data: { status: "BROADCAST", txid: txid.trim().toLowerCase(), settledAt },
-          }),
-          prisma.bounty.update({
-            where: { id: record.bountyId },
-            data: {
-              isPaid: true,
-              paymentAuthorized: true,
-              paidAt: settledAt,
-              paymentInFlight: false,
-            },
-            include: {
-              createdByUser: {
-                select: { id: true, name: true, email: true, role: true, avatar: true },
-              },
-              assigneeUser: {
-                select: { id: true, name: true, email: true, role: true, avatar: true, z_address: true },
-              },
-            },
-          }),
-        ]);
-        await invalidateBounty(record.bountyId);
+      const bounty = await prisma.bounty.findUnique({
+        where: { id: bountyId },
+        include: {
+          assigneeUser: true,
+          createdByUser: true,
+        },
+      });
 
-        // Peers full-replace their card from this payload; without the txid
-        // they would drop the explorer link until the next refetch.
-        sendRealtimeUpdate(
-          "bounty_marked_paid",
-          { ...updatedBounty, paymentTxId: updatedRecord.txid },
-          req.user.id,
-        );
-
-        return res.json({ success: true, record: serializeTxRecord(updatedRecord) });
+      if (!bounty) {
+        return res.status(404).json({ error: "Bounty not found" });
       }
 
-      if (outcome === "failed") {
-        // Resolving as failed re-opens the bounty for payment; if the send
-        // actually broadcast, the next payout is a double-pay. Make the
-        // caller say they checked.
-        if (req.body.confirm !== true) {
-          return res.status(400).json({
-            error:
-              'Resolving as failed re-opens the bounty for payment. Pass confirm: true after checking the wallet history.',
-          });
-        }
-        const [updatedRecord] = await prisma.$transaction([
-          prisma.transaction.update({
-            where: { id: record.id },
-            data: {
-              status: "FAILED",
-              settledAt: new Date(),
-              errorDetail: "Resolved manually: not found in wallet history",
-            },
-          }),
-          prisma.bounty.update({
-            where: { id: record.bountyId },
-            data: { paymentInFlight: false },
-          }),
-        ]);
-        await invalidateBounty(record.bountyId);
-
-        sendRealtimeUpdate(
-          "payment_authorized",
-          { outcome: "released", bountyIds: [], inFlightBountyIds: [record.bountyId] },
-          req.user.id,
-        );
-
-        return res.json({ success: true, record: serializeTxRecord(updatedRecord) });
+      if (bounty.status !== "DONE" || !bounty.isApproved) {
+        return res.status(400).json({
+          error:
+            "Bounty must be completed and approved before payment authorization",
+        });
       }
 
-      return res
-        .status(400)
-        .json({ error: 'outcome must be "broadcast" or "failed"' });
+      if (
+        paymentScheduled?.type === "sunday_batch" &&
+        !bounty.assigneeUser?.z_address
+      ) {
+        return res.status(400).json({
+          error: "Assignee must have a Z-address configured for batch payments",
+        });
+      }
+
+      const updatedBounty = await prisma.bounty.update({
+        where: { id: bountyId },
+        data: {
+          paymentAuthorized: paymentAuthorized || true,
+          paymentScheduled: paymentScheduled
+            ? JSON.stringify(paymentScheduled)
+            : null,
+        },
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              avatar: true,
+            },
+          },
+          assigneeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              avatar: true,
+              z_address: true,
+            },
+          },
+        },
+      });
+
+      const responseData = {
+        ...updatedBounty,
+        paymentScheduled: updatedBounty.paymentScheduled
+          ? JSON.parse(updatedBounty.paymentScheduled)
+          : null,
+      };
+      await invalidateBounty(bountyId);
+
+      // ✅ Broadcast bounty payment authorization to ALL (shared bounty state)
+      sendRealtimeUpdate(
+        "bounty_payment_authorized",
+        responseData,
+        req.user.id,
+      );
+
+      res.json(responseData);
     } catch (error) {
-      console.error("Error resolving payment record:", error);
-      res.status(500).json({ error: error.message });
+      console.error("Error authorizing payment:", error);
+      res.status(500).json({
+        error: "Failed to authorize payment",
+        details: error.message,
+      });
     }
   },
 );
+
+router.put(
+  "/:id/authorize-payment",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { id: bountyId } = req.params;
+      const { paymentAuthorized, paymentScheduled } = req.body;
+      const userRole = req.user.role;
+
+      if (userRole !== "ADMIN") {
+        return res.status(403).json({
+          error: "Only administrators can authorize payments",
+        });
+      }
+
+      const bounty = await prisma.bounty.findUnique({
+        where: { id: bountyId },
+        include: {
+          assigneeUser: true,
+          createdByUser: true,
+        },
+      });
+
+      if (!bounty) {
+        return res.status(404).json({ error: "Bounty not found" });
+      }
+
+      if (bounty.status !== "DONE" || !bounty.isApproved) {
+        return res.status(400).json({
+          error:
+            "Bounty must be completed and approved before payment authorization",
+        });
+      }
+
+      if (
+        paymentScheduled?.type === "sunday_batch" &&
+        !bounty.assigneeUser?.z_address
+      ) {
+        return res.status(400).json({
+          error: "Assignee must have a Z-address configured for batch payments",
+        });
+      }
+
+      const updatedBounty = await prisma.bounty.update({
+        where: { id: bountyId },
+        data: {
+          paymentAuthorized: paymentAuthorized || true,
+          paymentScheduled: paymentScheduled
+            ? JSON.stringify(paymentScheduled)
+            : null,
+        },
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              avatar: true,
+            },
+          },
+          assigneeUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: true,
+              avatar: true,
+              z_address: true,
+            },
+          },
+        },
+      });
+
+      const responseData = {
+        ...updatedBounty,
+        paymentScheduled: updatedBounty.paymentScheduled
+          ? JSON.parse(updatedBounty.paymentScheduled)
+          : null,
+      };
+      await invalidateBounty(bountyId);
+
+      // ✅ Broadcast bounty payment authorization to ALL (shared bounty state)
+      sendRealtimeUpdate(
+        "bounty_payment_authorized",
+        responseData,
+        req.user.id,
+      );
+
+      res.json(responseData);
+    } catch (error) {
+      console.error("Error authorizing payment:", error);
+      res.status(500).json({
+        error: "Failed to authorize payment",
+        details: error.message,
+      });
+    }
+  },
+);
+
+// Process batch payments
+router.post(
+  "/process-batch-payments",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { payments, batchTimestamp } = req.body;
+      const userRole = req.user.role;
+
+      if (userRole !== "ADMIN") {
+        return res.status(403).json({
+          error: "Only administrators can process batch payments",
+        });
+      }
+
+      if (!payments || !Array.isArray(payments)) {
+        return res.status(400).json({
+          error: "Invalid payments data",
+        });
+      }
+
+      if (payments.length === 0) {
+        return res.json({
+          success: true,
+          message: "No payments to process",
+          processedCount: 0,
+        });
+      }
+
+      const batchId = `batch_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+
+      console.log("Processing batch payment:", {
+        batchId,
+        batchTimestamp,
+        paymentCount: payments.length,
+        totalAmount: payments.reduce((sum, p) => sum + p.amount, 0),
+        payments: payments,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const processedPayments = payments.map((payment) => ({
+        ...payment,
+        status: "processed",
+        transactionId: `tx_${Math.random().toString(36).substr(2, 9)}`,
+      }));
+
+      const result = {
+        success: true,
+        batchId,
+        message: `Successfully processed ${payments.length} payments`,
+        processedCount: payments.length,
+        totalAmount: payments.reduce((sum, p) => sum + p.amount, 0),
+        payments: processedPayments,
+        zcashPayload: payments,
+      };
+
+      // ✅ Broadcast batch payment result to ALL admins (shared event)
+      sendRealtimeUpdate("batch_payment_processed", result, req.user.id);
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error processing batch payments:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to process batch payments",
+        message: error.message,
+      });
+    }
+  },
+);
+
+// Process instant payment (for immediate payments)
+router.post(
+  "/process-instant-payment",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { address, amount, memo, bountyId } = req.body;
+      const userRole = req.user.role;
+
+      if (userRole !== "ADMIN") {
+        return res.status(403).json({
+          error: "Only administrators can process payments",
+        });
+      }
+
+      if (!address || !amount || !bountyId) {
+        return res.status(400).json({
+          error: "Missing required fields: address, amount, bountyId",
+        });
+      }
+
+      console.log("Processing instant payment:", {
+        bountyId,
+        address,
+        amount,
+        memo,
+        timestamp: new Date().toISOString(),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const transactionId = `tx_instant_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+
+      const result = {
+        success: true,
+        message: "Instant payment processed successfully",
+        transactionId,
+        amount,
+        address,
+        memo,
+        bountyId,
+      };
+
+      // ✅ Broadcast instant payment result to ALL admins (shared event)
+      sendRealtimeUpdate("instant_payment_processed", result, req.user.id);
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error processing instant payment:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to process instant payment",
+        message: error.message,
+      });
+    }
+  },
+);
+
+// Mark bounty as paid (called after successful payment processing)
+router.put("/:id/mark-paid", authenticate, isAdmin, async (req, res) => {
+  try {
+    const { id: bountyId } = req.params;
+    const { isPaid, paymentBatchId, paidAt } = req.body;
+    const userRole = req.user.role;
+
+    if (userRole !== "ADMIN") {
+      return res.status(403).json({
+        error: "Only administrators can mark bounties as paid",
+      });
+    }
+
+    const updatedBounty = await prisma.bounty.update({
+      where: { id: bountyId },
+      data: {
+        isPaid: isPaid || true,
+        paymentBatchId: paymentBatchId || null,
+        paidAt: paidAt ? new Date(paidAt) : new Date(),
+      },
+      include: {
+        createdByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            avatar: true,
+          },
+        },
+        assigneeUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            avatar: true,
+            z_address: true,
+          },
+        },
+      },
+    });
+    await invalidateBounty(bountyId);
+
+    // ✅ Broadcast bounty paid status to ALL (shared bounty state)
+    sendRealtimeUpdate("bounty_marked_paid", updatedBounty, req.user.id);
+
+    res.json(updatedBounty);
+  } catch (error) {
+    console.error("Error marking bounty as paid:", error);
+    res.status(500).json({
+      error: "Failed to mark bounty as paid",
+      details: error.message,
+    });
+  }
+});
+
+// Pay bounty
+router.post("/pay/:bountyId", authenticate, isAdmin, async (req, res) => {
+  const bountyId = req.params.bountyId;
+
+  const bounty = await prisma.bounty.findUnique({
+    where: { id: bountyId },
+    include: { assignee: true },
+  });
+
+  if (!bounty.approved) {
+    return res.status(400).send("Bounty not approved");
+  }
+
+  if (!bounty.assignee?.zecAddress) {
+    return res.status(400).send("Assignee has no address");
+  }
+
+  const rpcPayload = {
+    jsonrpc: "1.0",
+    id: "pay",
+    method: "z_sendmany",
+    params: [
+      process.env.ADMIN_WALLET_ADDRESS,
+      [{ address: bounty.assignee.zecAddress, amount: bounty.bountyAmountZec }],
+    ],
+  };
+
+  try {
+    const rpcRes = await axios.post(process.env.ZCASH_RPC_URL, rpcPayload, {
+      auth: {
+        username: process.env.ZCASH_RPC_USER,
+        password: process.env.ZCASH_RPC_PASS,
+      },
+    });
+    const txHash = rpcRes.data.result;
+
+    await prisma.transaction.create({
+      data: {
+        bountyId,
+        adminId: req.user.id,
+        txHash,
+        amountZec: bounty.bountyAmountZec,
+      },
+    });
+    await invalidateBounty(bountyId);
+
+    // ✅ Broadcast bounty paid to ALL admins (shared event)
+    sendRealtimeUpdate(
+      "bounty_paid",
+      {
+        bountyId,
+        txHash,
+        amount: bounty.bountyAmountZec,
+      },
+      req.user.id,
+    );
+
+    res.json({ txHash });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
