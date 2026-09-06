@@ -940,22 +940,30 @@ export default function KpisDashboard() {
 			  </div>
 			</TableHead>
 			{viewMode === "admin" && (
-			  <TableHead>Address Type</TableHead>
-			)}
-			{viewMode === "admin" && (
-			  <TableHead
-			    className="text-right cursor-pointer"
-			    onClick={() => toggleSort("totalEarned")}
-			  >
-			    Total ZEC Earned <ArrowUpDown className="inline w-4 h-4" />
+			  <TableHead className="w-[7.5rem]">
+			    <span className="flex w-full justify-center">Address Type</span>
 			  </TableHead>
 			)}
 			{viewMode === "admin" && (
 			  <TableHead
-			    className="text-right cursor-pointer"
+			    className="cursor-pointer"
+			    onClick={() => toggleSort("totalEarned")}
+			  >
+			    <span className="flex w-full items-center justify-end gap-1">
+			      Total ZEC Earned
+			      <ArrowUpDown className="w-4 h-4" />
+			    </span>
+			  </TableHead>
+			)}
+			{viewMode === "admin" && (
+			  <TableHead
+			    className="cursor-pointer"
 			    onClick={() => toggleSort("completionRate")}
 			  >
-			    Completion % <ArrowUpDown className="inline w-4 h-4" />
+			    <span className="flex w-full items-center justify-end gap-1">
+			      Completion %
+			      <ArrowUpDown className="w-4 h-4" />
+			    </span>
 			  </TableHead>
 			)}
                     </TableRow>
@@ -1020,21 +1028,23 @@ export default function KpisDashboard() {
                             </TableCell>
                             {viewMode === "admin" && (
                               <TableCell>
-                                <div className="flex items-center justify-center gap-1.5">
+                                <div className="flex justify-center">
                                   <UaReceiverIcons receivers={user.receivers} />
                                 </div>
                               </TableCell>
-				)}
-
-				{viewMode === "admin" && (
-				  <TableCell className="text-right font-medium">
-				    {user.totalEarned ? user.totalEarned.toFixed(4) : "0.0000"}
-				  </TableCell>
-				)}
-
-				{viewMode === "admin" && (
-				  <TableCell className="text-right font-medium">{rate}%</TableCell>
-				)}
+                            )}
+                            {viewMode === "admin" && (
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {user.totalEarned
+                                  ? user.totalEarned.toFixed(4)
+                                  : "0.0000"}
+                              </TableCell>
+                            )}
+                            {viewMode === "admin" && (
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {rate}%
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })

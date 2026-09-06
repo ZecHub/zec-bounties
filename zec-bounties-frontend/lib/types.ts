@@ -40,6 +40,26 @@ export interface ProfileVisibility {
   showGithub?: boolean;
 }
 
+export type ProfileChain = "MAIN" | "TEST";
+
+export interface ProfileChainStats {
+  completed: number;
+  created: number;
+  submitted: number;
+  totalEarned: number;
+  completionRate: number | null;
+  recentCompleted?: PublicUserProfile["recentCompleted"];
+  recentCreated?: PublicUserProfile["recentCreated"];
+}
+
+export interface PublicUserTeam {
+  id: string;
+  name: string;
+  logo?: string | null;
+  isVerified?: boolean;
+  memberRole: string;
+}
+
 export interface PublicUserProfile {
   id: string;
   visibility: Required<ProfileVisibility>;
@@ -52,6 +72,8 @@ export interface PublicUserProfile {
   bio?: string | null;
   badges?: string[];
   role?: UserRole;
+  teams?: PublicUserTeam[];
+  statsByChain?: Record<ProfileChain, ProfileChainStats>;
   memberSince?: string | Date;
   githubId?: string;
   githubUsername?: string;
@@ -88,6 +110,7 @@ export interface PublicUserProfile {
     submitted: number;
     totalEarned: number;
     completionRate: number | null;
+    byChain?: Record<ProfileChain, ProfileChainStats>;
   };
 }
 

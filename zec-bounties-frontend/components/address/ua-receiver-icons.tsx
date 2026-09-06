@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AlertTriangle, Ban, Leaf, TreeDeciduous } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,50 +51,62 @@ export function UaReceiverIcons({
   receivers?: UaReceivers;
   size?: "sm" | "md";
 }) {
-  const empty =
-    !receivers ||
-    (!receivers.ironwood && !receivers.sapling && !receivers.transparent);
+  const r = receivers ?? {};
+  const empty = !r.ironwood && !r.sapling && !r.transparent;
 
-  const iconSize = size === "md" ? "w-6 h-6" : "w-5 h-5";
-  const ironwoodWrap =
-    size === "md"
-      ? "w-9 h-9 rounded-full bg-zinc-700 border-2 border-zinc-300"
-      : "w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300";
-  const ironwoodIcon = size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
+  const box = size === "md" ? "w-7 h-7" : "w-5 h-5";
+  const glyph = size === "md" ? "w-4 h-4" : "w-3.5 h-3.5";
+
+  const slot = (title: string, on: boolean, icon: ReactNode) => (
+    <div
+      title={on ? title : `${title} (absent)`}
+      className={cn(
+        "flex items-center justify-center shrink-0",
+        box,
+        !on && "opacity-20",
+      )}
+    >
+      {icon}
+    </div>
+  );
 
   if (empty) {
     return (
-      <div
-        title="No Address"
-        className="flex items-center justify-center text-red-500"
-      >
-        <Ban className={iconSize} />
+      <div title="No Address" className="grid grid-cols-3 gap-1.5 w-fit">
+        <div className={box} />
+        <div
+          className={cn("flex items-center justify-center text-red-500", box)}
+        >
+          <Ban className={glyph} />
+        </div>
+        <div className={box} />
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      {receivers.transparent && (
-        <div title="Transparent" className="flex items-center justify-center">
-          <AlertTriangle className={cn(iconSize, "text-yellow-400")} />
-        </div>
+    <div className="grid grid-cols-3 gap-1.5 w-fit">
+      {slot(
+        "Transparent",
+        !!r.transparent,
+        <AlertTriangle className={cn(glyph, "text-yellow-400")} />,
       )}
-      {receivers.sapling && (
-        <div title="Sapling" className="flex items-center justify-center">
-          <Leaf className={cn(iconSize, "text-emerald-400")} />
-        </div>
+      {slot(
+        "Sapling",
+        !!r.sapling,
+        <Leaf className={cn(glyph, "text-emerald-400")} />,
       )}
-      {receivers.ironwood && (
-        <div
-          title="Ironwood"
+      {slot(
+        "Ironwood",
+        !!r.ironwood,
+        <span
           className={cn(
-            "flex items-center justify-center",
-            ironwoodWrap,
+            "flex items-center justify-center w-full h-full rounded-full",
+            r.ironwood && "bg-zinc-700 border border-zinc-300",
           )}
         >
-          <TreeDeciduous className={cn(ironwoodIcon, "text-zinc-200")} />
-        </div>
+          <TreeDeciduous className={cn(glyph, "text-zinc-200")} />
+        </span>,
       )}
     </div>
   );
