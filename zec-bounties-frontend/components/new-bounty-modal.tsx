@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +66,7 @@ export function NewBountyModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [errorSummary, setErrorSummary] = useState("");
+  const openerRef = useRef<HTMLElement | null>(null);
 
   const clearFieldError = (field: keyof FieldErrors) => {
     setFieldErrors((prev) => {
@@ -161,7 +162,24 @@ export function NewBountyModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent
+        className="sm:max-w-[500px]"
+        onOpenAutoFocus={() => {
+          if (
+            document.activeElement instanceof HTMLElement &&
+            document.activeElement !== document.body
+          ) {
+            openerRef.current = document.activeElement;
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!openerRef.current) return;
+
+          event.preventDefault();
+          openerRef.current.focus();
+          openerRef.current = null;
+        }}
+      >
         <form onSubmit={handleSubmit} noValidate>
           <DialogHeader>
             <DialogTitle>Create New Bounty</DialogTitle>
