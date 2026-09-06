@@ -34,6 +34,12 @@ interface CreateBountyFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+type FieldErrors = {
+  title?: string;
+  category?: string;
+  reward?: string;
+  description?: string;
+};
 
 export function NewBountyModal({
   onSuccess,
@@ -58,6 +64,61 @@ export function NewBountyModal({
     category: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [errorSummary, setErrorSummary] = useState("");
+
+  const clearFieldError = (field: keyof FieldErrors) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+
+    setErrorSummary("");
+  };
+
+  const validateForm = () => {
+    const nextErrors: FieldErrors = {};
+
+    if (!formData.title.trim()) {
+      nextErrors.title = "Enter a bounty title.";
+    }
+
+    if (!formData.category) {
+      nextErrors.category = "Select a category.";
+    }
+
+    if (!formData.bountyAmount || formData.bountyAmount <= 0) {
+      nextErrors.reward = "Enter a reward amount greater than 0.";
+    }
+
+    if (!formData.description.trim()) {
+      nextErrors.description = "Describe the bounty requirements.";
+    }
+
+    setFieldErrors(nextErrors);
+
+    const firstInvalid = (
+      ["title", "category", "reward", "description"] as (keyof FieldErrors)[]
+    ).find((field) => Boolean(nextErrors[field]));
+
+    if (firstInvalid) {
+      setErrorSummary(
+        "Please correct the highlighted fields before continuing."
+      );
+
+      requestAnimationFrame(() => {
+        document.getElementById(firstInvalid)?.focus();
+      });
+
+      return false;
+    }
+
+    setErrorSummary("");
+    return true;
+  };
 
   // Users are already filtered to exclude admins in the context
   const availableUsers = nonAdminUsers;
@@ -65,34 +126,7 @@ export function NewBountyModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
-    if (!formData.title.trim()) {
-      toast.error("Title is required", {
-        description: "Please enter a title for the bounty.",
-      });
-      return;
-    }
-
-    if (!formData.category) {
-      toast.error("Category is required", {
-        description: "Please select a category.",
-      });
-      return;
-    }
-
-    if (!formData.bountyAmount || formData.bountyAmount <= 0) {
-      toast.error("Invalid reward amount", {
-        description: "Please enter a reward amount greater than 0.",
-      });
-      return;
-    }
-
-    if (!formData.description.trim()) {
-      toast.error("Description is required", {
-        description: "Please describe the bounty requirements.",
-      });
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsSubmitting(true);
     try {
@@ -128,38 +162,64 @@ export function NewBountyModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <DialogHeader>
             <DialogTitle>Create New Bounty</DialogTitle>
             <DialogDescription>
               Provide the details for your technical challenge.
             </DialogDescription>
           </DialogHeader>
+
+          {errorSummary && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {errorSummary}
+            </div>
+          )}
+
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="title">Bounty Title</Label>
               <Input
                 id="title"
                 value={formData.title}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, title: e.target.value }))
-                }
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, title: e.target.value }));
+                  clearFieldError("title");
+                }}
                 placeholder="Enter bounty title..."
                 autoComplete="off"
+                aria-invalid={Boolean(fieldErrors.title)}
+                aria-describedby={fieldErrors.title ? "title-error" : undefined}
                 required
               />
+              {fieldErrors.title && (
+                <p id="title-error" className="text-sm text-destructive">
+                  {fieldErrors.title}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="category">Category</Label>
                 <Select
                   value={formData.category}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, category: value }))
-                  }
+                  onValueChange={(value) => {
+                    setFormData((prev) => ({ ...prev, category: value }));
+                    clearFieldError("category");
+                  }}
                   required
                 >
-                  <SelectTrigger id="category">
+                  <SelectTrigger
+                    id="category"
+                    aria-invalid={Boolean(fieldErrors.category)}
+                    aria-describedby={
+                      fieldErrors.category ? "category-error" : undefined
+                    }
+                  >
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
@@ -170,6 +230,11 @@ export function NewBountyModal({
                     ))}
                   </SelectContent>
                 </Select>
+                {fieldErrors.category && (
+                  <p id="category-error" className="text-sm text-destructive">
+                    {fieldErrors.category}
+                  </p>
+                )}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="reward">Reward (ZEC)</Label>
@@ -178,15 +243,23 @@ export function NewBountyModal({
                   type="number"
                   step="any"
                   value={formData.bountyAmount}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData((prev) => ({
                       ...prev,
                       bountyAmount: Number.parseFloat(e.target.value) || 0,
-                    }))
-                  }
+                    }));
+                    clearFieldError("reward");
+                  }}
                   placeholder="0.00"
+                  aria-invalid={Boolean(fieldErrors.reward)}
+                  aria-describedby={fieldErrors.reward ? "reward-error" : undefined}
                   required
                 />
+                {fieldErrors.reward && (
+                  <p id="reward-error" className="text-sm text-destructive">
+                    {fieldErrors.reward}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid gap-2">
@@ -205,17 +278,27 @@ export function NewBountyModal({
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) =>
+                onChange={(e) => {
                   setFormData((prev) => ({
                     ...prev,
                     description: e.target.value,
-                  }))
-                }
+                  }));
+                  clearFieldError("description");
+                }}
                 placeholder="Describe the bounty requirements, deliverables, and any specific instructions..."
                 rows={4}
                 className="min-h-[100px]"
+                aria-invalid={Boolean(fieldErrors.description)}
+                aria-describedby={
+                  fieldErrors.description ? "description-error" : undefined
+                }
                 required
               />
+              {fieldErrors.description && (
+                <p id="description-error" className="text-sm text-destructive">
+                  {fieldErrors.description}
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>
