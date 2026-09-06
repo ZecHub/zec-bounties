@@ -1,0 +1,27 @@
+yarn run v1.22.22
+$ playwright test tests/accessibility
+[WebServer] [baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+
+Running 11 tests using 1 worker
+
+[WebServer]  ⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+[WebServer] Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+  ✓   1 [chromium] › tests/accessibility/keyboard.spec.ts:307:7 › keyboard accessibility › Create Bounty errors are announced and focus moves to the first invalid field (4.8s)
+  ✓   2 [chromium] › tests/accessibility/keyboard.spec.ts:354:7 › keyboard accessibility › Create Bounty modal traps focus, shows keyboard focus, and restores focus after Escape (3.5s)
+  ✓   3 [chromium] › tests/accessibility/keyboard.spec.ts:401:7 › keyboard accessibility › Application errors are announced and focus moves to the invalid message (3.3s)
+  ✓   4 [chromium] › tests/accessibility/keyboard.spec.ts:435:7 › keyboard accessibility › Work submission errors are announced and focus moves to the first invalid field (3.3s)
+  ✓   5 [chromium] › tests/accessibility/keyboard.spec.ts:488:7 › keyboard accessibility › Reviewer can select a payment recipient using only the keyboard (5.2s)
+  ✓   6 [chromium] › tests/accessibility/wcag.spec.ts:54:7 › / has no critical or serious accessibility violations (3.1s)
+  ✓   7 [chromium] › tests/accessibility/wcag.spec.ts:54:7 › /home has no critical or serious accessibility violations (3.5s)
+  ✓   8 [chromium] › tests/accessibility/wcag.spec.ts:54:7 › /explore has no critical or serious accessibility violations (3.4s)
+  ✓   9 [chromium] › tests/accessibility/wcag.spec.ts:54:7 › /login has no critical or serious accessibility violations (2.3s)
+  ✓  10 [chromium] › tests/accessibility/wcag.spec.ts:54:7 › /docs has no critical or serious accessibility violations (3.2s)
+  ✓  11 [chromium] › tests/accessibility/wcag.spec.ts:54:7 › /leaderboard has no critical or serious accessibility violations (3.4s)
+
+  11 passed (49.9s)
+
+To open last HTML report run:
+[36m[39m
+[36m  yarn playwright show-report[39m
+[36m[39m
+Done in 50.58s.

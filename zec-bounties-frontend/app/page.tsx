@@ -261,32 +261,47 @@ export default function RootPage() {
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => setViewMode("grid")}
+                  aria-label="Show bounties in grid view"
+                  aria-pressed={viewMode === "grid"}
                 >
-                  <LayoutGrid className="h-4 w-4" />
+                   <LayoutGrid className="h-4 w-4" aria-hidden="true" />
                 </Button>
                 <Button
                   variant={viewMode === "list" ? "secondary" : "ghost"}
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => setViewMode("list")}
+                  aria-label="Show bounties in list view"
+                  aria-pressed={viewMode === "list"}
                 >
-                  <List className="h-4 w-4" />
+                 <List className="h-4 w-4" aria-hidden="true" />
                 </Button>
                 {hasMoreBounties &&
                   !searchQuery &&
                   activeCategory === "All" && (
                     <div className="relative group">
                       <Button
-                        variant="ghost"
+                       variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={handleLoadMore}
                         disabled={isLoadingMore || bountiesLoading}
+                        aria-label={
+                          isLoadingMore || bountiesLoading
+                            ? "Loading more bounties"
+                            : "Load more bounties"
+                        }
                       >
                         {isLoadingMore || bountiesLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden="true"
+                          />
                         ) : (
-                          <ChevronsDown className="h-4 w-4" />
+                          <ChevronsDown
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
                         )}
                       </Button>
                       <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
