@@ -25,5 +25,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-app/testplaywright-report/
+playwright-report/
 test-results/
