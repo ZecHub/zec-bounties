@@ -12,17 +12,17 @@ const fixtureUser = {
   isRobin: false,
 };
 
-async function mockAuthenticatedBackend(page: Page) {
+async function mockAuthenticatedBackend(page: Page, user = fixtureUser) {
   await page.addInitScript((user) => {
     localStorage.setItem("authToken", "a11y-fixture-token");
     localStorage.setItem("currentUser", JSON.stringify(user));
-  }, fixtureUser);
+  }, user);
 
   await page.route("**/auth/me", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ user: fixtureUser }),
+      body: JSON.stringify({ user }),
     });
   });
 
@@ -164,9 +164,144 @@ async function useBountyFixture(
   });
 }
 
+
+const adminFixtureUser = {
+  ...fixtureUser,
+  id: "a11y-admin-user",
+  name: "Accessibility Admin",
+  email: "a11y-admin@example.invalid",
+  role: "ADMIN",
+};
+
+const reviewerBountyFixture = {
+  id: "a11y-reviewer-bounty",
+  title: "Reviewer Decision Fixture",
+  description: "Fixture used only for accessibility testing.",
+  createdBy: adminFixtureUser.id,
+  bountyAmount: 0.01,
+  dateCreated: "2026-09-01T12:00:00.000Z",
+  timeToComplete: "2026-12-01T12:00:00.000Z",
+  status: "IN_REVIEW",
+  isApproved: true,
+  isPaid: false,
+  isPrivate: false,
+  paymentAuthorized: false,
+  difficulty: "Easy",
+  chain: "MAIN",
+  categoryId: "Development",
+  createdByUser: adminFixtureUser,
+  assignees: [
+    {
+      id: "fixture-assignee-1",
+      bountyId: "a11y-reviewer-bounty",
+      userId: "reviewer-hunter-one",
+      assignedAt: "2026-09-01T12:00:00.000Z",
+      user: {
+        id: "reviewer-hunter-one",
+        name: "Reviewer Hunter One",
+        email: "hunter-one@example.invalid",
+      },
+    },
+    {
+      id: "fixture-assignee-2",
+      bountyId: "a11y-reviewer-bounty",
+      userId: "reviewer-hunter-two",
+      assignedAt: "2026-09-01T12:00:00.000Z",
+      user: {
+        id: "reviewer-hunter-two",
+        name: "Reviewer Hunter Two",
+        email: "hunter-two@example.invalid",
+      },
+    },
+  ],
+};
+
+async function useReviewerFixture(page: Page) {
+  await page.unroute("**/auth/me");
+  await page.route("**/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ user: adminFixtureUser }),
+    });
+  });
+
+  await page.unroute("**/api/**");
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    // Safety: never allow mutations to leave the test.
+    if (request.method() !== "GET") {
+      await route.fulfill({
+        status: 418,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Blocked by accessibility test fixture",
+        }),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/bounties/categories") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([{ id: 1, name: "Development" }]),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/zcash/params") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [
+            {
+              id: 999,
+              ownerId: adminFixtureUser.id,
+              accountName: "a11y-fixture-wallet",
+              chain: "mainnet",
+              serverUrl: "https://fixture.invalid",
+              isDefault: true,
+              isTeam: false,
+              teamId: null,
+              createdAt: "2026-09-01T12:00:00.000Z",
+              updatedAt: "2026-09-01T12:00:00.000Z",
+            },
+          ],
+        }),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/bounties") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([reviewerBountyFixture]),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    });
+  });
+}
+
 test.describe("keyboard accessibility", () => {
-  test.beforeEach(async ({ page }) => {
-    await mockAuthenticatedBackend(page);
+  test.beforeEach(async ({ page }, testInfo) => {
+    const user = testInfo.title.includes(
+      "Reviewer can select a payment recipient",
+    )
+      ? adminFixtureUser
+      : fixtureUser;
+
+    await mockAuthenticatedBackend(page, user);
   });
 
   test("Create Bounty errors are announced and focus moves to the first invalid field", async ({
@@ -347,6 +482,58 @@ test.describe("keyboard accessibility", () => {
     await expect(dialog.locator("#deliverable-url-error")).toHaveText(
       "Enter a deliverable URL.",
     );
+  });
+
+
+  test("Reviewer can select a payment recipient using only the keyboard", async ({
+    page,
+  }) => {
+    await useReviewerFixture(page);
+    await page.goto("/admin");
+
+    const row = page
+      .getByRole("row")
+      .filter({ hasText: "Reviewer Decision Fixture" });
+
+    await expect(row).toBeVisible({ timeout: 15000 });
+
+    const actions = row.getByRole("button", {
+      name: "Actions for Reviewer Decision Fixture",
+    });
+
+    await actions.focus();
+    await page.keyboard.press("Enter");
+
+    const markDone = page.getByRole("menuitem", {
+      name: "Mark as Done",
+    });
+
+    await expect(markDone).toBeVisible();
+    await markDone.focus();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog", {
+      name: /Select Payment Recipient/i,
+    });
+
+    await expect(dialog).toBeVisible();
+
+    const recipient = dialog.getByRole("button", {
+      name: "Select Reviewer Hunter One as payment recipient",
+    });
+
+    await recipient.focus();
+    await page.keyboard.press("Space");
+
+    await expect(recipient).toHaveAttribute("aria-pressed", "true");
+
+    const confirm = dialog.getByRole("button", {
+      name: "Mark as Done",
+    });
+
+    await expect(confirm).toBeEnabled();
+
+    // Deliberately do not activate confirmation.
   });
 
 });

@@ -1063,6 +1063,7 @@ export default function AdminDashboard() {
                                       variant="ghost"
                                       size="icon"
                                       className="h-8 w-8"
+                                      aria-label={`Actions for ${bounty.title}`}
                                     >
                                       <MoreHorizontal className="h-4 w-4" />
                                     </Button>
