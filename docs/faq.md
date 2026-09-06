@@ -1,6 +1,6 @@
 # FAQ
 
-Common questions about addresses, payouts, and using the platform.
+Common questions about addresses, payouts, roles, and using the platform.
 
 ## Why was my transparent address rejected?
 
@@ -17,6 +17,21 @@ Yes. It is accepted as long as a shielded receiver is present. Platform payouts 
 ## Can I change my payout address later?
 
 Yes. Update it in [Profile](https://bounties.zechub.wiki/profile). Future payments use the address on file when the payment runs.
+
+## Hunter or Team — which should I pick?
+
+- **Hunter** if you will apply to bounties yourself. See [Hunters](hunters.md).
+- **Team** if you will post and fund work as a group. See [Teams](teams.md).
+
+Onboarding sets this once. Normal accounts cannot switch later. Admin is not a self-serve option.
+
+## I picked the wrong role. Can I change it?
+
+Not self-serve. Ask a platform admin if the account must move. Do not create a second GitHub login unless an admin tells you to.
+
+## Does creating a team make me a platform admin?
+
+No. Team OWNER/ADMIN only manage that team. Platform Admin is a separate role. Team verification also requires three platform admins.
 
 ## My work was approved but I have not been paid.
 

@@ -2,6 +2,8 @@
 
 Propose tasks, review work, and pay contributors with shielded ZEC.
 
+Individuals and **[Teams](teams.md)** both use this flow. Teams typically pay from a shared wallet; hunters who later post a bounty still pay from a personal wallet.
+
 ## Workflow
 
 ### 1. Propose a bounty
@@ -39,4 +41,4 @@ After approval, payment can be triggered (one-click or batched by admins). Funds
 
 ## Next
 
-[Privacy & payments →](privacy-payments.md)
+[Teams →](teams.md) · [Privacy & payments →](privacy-payments.md)

@@ -9,6 +9,44 @@ export const metadata: Metadata = {
     "User guide for ZEC Bounties — privacy-first bounties with shielded ZEC payouts.",
 };
 
+const LINKS = [
+  {
+    href: "/docs/getting-started",
+    title: "Getting started",
+    desc: "Sign in, set a payout address, choose Hunter or Team",
+  },
+  {
+    href: "/docs/addresses",
+    title: "Addresses",
+    desc: "UA, Ironwood, Sapling — what is accepted and recommended",
+  },
+  {
+    href: "/docs/hunters",
+    title: "Hunters",
+    desc: "Individual role — apply, submit, get paid",
+  },
+  {
+    href: "/docs/teams",
+    title: "Teams",
+    desc: "Organization role — members, wallet, verification",
+  },
+  {
+    href: "/docs/contributors",
+    title: "Contributors",
+    desc: "Browse, apply, submit work, receive ZEC",
+  },
+  {
+    href: "/docs/creators",
+    title: "Creators",
+    desc: "Propose bounties, review work, pay out",
+  },
+  {
+    href: "/docs/badges",
+    title: "Badges",
+    desc: "Task stars and specialty role badges",
+  },
+];
+
 export default function DocsOverviewPage() {
   return (
     <div className="space-y-8">
@@ -45,33 +83,7 @@ export default function DocsOverviewPage() {
       <section>
         <h2 className="text-lg font-semibold mb-3">Start here</h2>
         <ul className="space-y-2">
-          {[
-            {
-              href: "/docs/getting-started",
-              title: "Getting started",
-              desc: "Sign in with GitHub and set your payout address",
-            },
-            {
-              href: "/docs/addresses",
-              title: "Addresses",
-              desc: "UA, Ironwood, Sapling — what is accepted and recommended",
-            },
-            {
-              href: "/docs/contributors",
-              title: "Contributors",
-              desc: "Browse, apply, submit work, receive ZEC",
-            },
-            {
-              href: "/docs/creators",
-              title: "Creators",
-              desc: "Propose bounties, review work, pay out",
-            },
-            {
-		  href: "/docs/badges",
-		  title: "Badges",
-		  desc: "Task stars and specialty role badges"
-	    },
-          ].map((item) => (
+          {LINKS.map((item) => (
             <li key={item.href}>
               <Link
                 href={item.href}

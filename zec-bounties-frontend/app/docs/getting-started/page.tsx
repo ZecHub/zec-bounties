@@ -4,7 +4,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "Getting started | ZEC Bounties Docs",
   description:
-    "Sign in, set a shielded payout address, and start using ZEC Bounties.",
+    "Sign in, set a shielded payout address, choose Hunter or Team, and start using ZEC Bounties.",
 };
 
 export default function GettingStartedPage() {
@@ -15,7 +15,7 @@ export default function GettingStartedPage() {
           Getting started
         </h1>
         <p className="mt-3 text-muted-foreground text-lg">
-          Three steps to use the platform.
+          Four steps to use the platform.
         </p>
       </div>
 
@@ -32,7 +32,8 @@ export default function GettingStartedPage() {
                 Sign in
               </Link>{" "}
               and authorize the app. Your GitHub identity is used for
-              authentication and profile basics.
+              authentication and profile basics. New accounts start as{" "}
+              <strong>Client</strong>.
             </p>
           </div>
         </li>
@@ -64,22 +65,44 @@ export default function GettingStartedPage() {
             3
           </span>
           <div>
-            <p className="font-medium">Use the platform</p>
+            <p className="font-medium">Choose how you work the board</p>
             <p className="text-sm text-muted-foreground mt-1">
+              Onboarding asks you to pick <strong>one</strong> role. Normal
+              accounts cannot change it later.{" "}
               <Link
-                href="/docs/contributors"
+                href="/docs/hunters"
                 className="text-primary hover:underline"
               >
-                Contributors
+                Hunter
               </Link>
-              : browse and apply to bounties.{" "}
+              : take on bounties and get paid.{" "}
+              <Link href="/docs/teams" className="text-primary hover:underline">
+                Team
+              </Link>
+              : post and fund work as a group. Admin is granted separately.
+            </p>
+          </div>
+        </li>
+
+        <li className="flex gap-4">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+            4
+          </span>
+          <div>
+            <p className="font-medium">Use the platform</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Hunters start on the board. Teams open{" "}
+              <Link href="/teams" className="text-primary hover:underline">
+                /teams
+              </Link>
+              . Posting work follows{" "}
               <Link
                 href="/docs/creators"
                 className="text-primary hover:underline"
               >
                 Creators
               </Link>
-              : propose tasks and pay out in ZEC.
+              .
             </p>
           </div>
         </li>
