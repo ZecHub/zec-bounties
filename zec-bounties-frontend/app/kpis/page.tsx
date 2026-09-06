@@ -799,15 +799,13 @@ export default function KpisDashboard() {
                       {viewMode === "admin" && (
                         <TableHead>Address Type</TableHead>
                       )}
-                      {viewMode === "admin" && (
-                        <TableHead
-                          className="text-right cursor-pointer"
-                          onClick={() => toggleSort("totalEarned")}
-                        >
-                          Total ZEC Earned{" "}
-                          <ArrowUpDown className="inline w-4 h-4" />
-                        </TableHead>
-                      )}
+                      <TableHead
+                        className="text-right cursor-pointer"
+                        onClick={() => toggleSort("totalEarned")}
+                      >
+                        Total ZEC Earned{" "}
+                        <ArrowUpDown className="inline w-4 h-4" />
+                      </TableHead>
                       {viewMode === "admin" && (
                         <TableHead
                           className="text-right cursor-pointer"
@@ -887,13 +885,11 @@ export default function KpisDashboard() {
                               </TableCell>
                             )}
 
-                            {viewMode === "admin" && (
-                              <TableCell className="text-right font-medium">
-                                {user.totalEarned
-                                  ? user.totalEarned.toFixed(4)
-                                  : "0.0000"}
-                              </TableCell>
-                            )}
+                            <TableCell className="text-right font-medium">
+                              {viewMode === "admin" || user.showEarnings
+                                ? Number(user.totalEarned || 0).toFixed(4)
+                                : "—"}
+                            </TableCell>
 
                             {viewMode === "admin" && (
                               <TableCell className="text-right font-medium">

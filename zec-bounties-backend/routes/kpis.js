@@ -47,10 +47,22 @@ function byRank(a, b) {
 }
 
 /** Strip wallet addresses for non-admin clients. Rank/badges/counts stay. */
+function visibilityFlag(raw, key) {
+  return !!(raw && typeof raw === "object" && raw[key] === true);
+}
+
 function redactContributorsForClient(rows, isAdminUser) {
-  if (isAdminUser) return rows;
   return rows.map((u) => {
-    const { UA_address, z_address, ...rest } = u;
+    const showEarnings = visibilityFlag(u.profileVisibility, "showEarnings");
+    const base = {
+      ...u,
+      showEarnings,
+    };
+    delete base.profileVisibility;
+    if (isAdminUser) return base;
+    const { UA_address, z_address, ...rest } = base;
+    // Public clients only receive the ZEC total when the user opted in.
+    if (!showEarnings) rest.totalEarned = null;
     return rest;
   });
 }
@@ -78,6 +90,7 @@ router.get("/top-contributors", authenticate, async (req, res) => {
           z_address: true,
           role: true,
           badges: true,
+          profileVisibility: true,
         },
       });
 
@@ -130,6 +143,7 @@ router.get("/top-contributors", authenticate, async (req, res) => {
           addressType,
           receivers,
           badges: userBadges,
+          profileVisibility: u.profileVisibility,
           completed: 0,
           cancelled: 0,
           submitted: 0,
@@ -201,6 +215,7 @@ router.get("/top-contributors", authenticate, async (req, res) => {
             z_address: true,
             role: true,
             badges: true,
+            profileVisibility: true,
           },
         },
       },
@@ -260,6 +275,7 @@ router.get("/top-contributors", authenticate, async (req, res) => {
           addressType,
           receivers,
           badges: userBadges,
+          profileVisibility: bounty.assigneeUser.profileVisibility,
           completed: 0,
           submitted: 0,
           cancelled: 0,

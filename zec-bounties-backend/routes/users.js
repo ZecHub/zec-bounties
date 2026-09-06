@@ -49,7 +49,25 @@ function coarseAddressType(user) {
   return "None";
 }
 
-async function loadStats(userId) {
+
+function stripAmountsIfPrivate(rows, allowAmount) {
+  if (!Array.isArray(rows)) return rows;
+  if (allowAmount) return rows;
+  return rows.map((row) => {
+    const { bountyAmount, ...rest } = row;
+    return rest;
+  });
+}
+
+function assignedDoneWhere(userId, chain) {
+  return {
+    status: "DONE",
+    chain,
+    OR: [{ assignee: userId }, { assignees: { some: { userId } } }],
+  };
+}
+
+async function loadChainStats(userId, chain) {
   const [
     completed,
     created,
@@ -59,30 +77,23 @@ async function loadStats(userId) {
     recentCreated,
   ] = await Promise.all([
     prisma.bounty.count({
-      where: {
-        status: "DONE",
-        OR: [{ assignee: userId }, { assignees: { some: { userId } } }],
-      },
+      where: assignedDoneWhere(userId, chain),
     }),
     prisma.bounty.count({
-      where: { createdBy: userId },
+      where: { createdBy: userId, chain },
     }),
     prisma.workSubmission.count({
-      where: { submittedBy: userId },
+      where: { submittedBy: userId, bounty: { chain } },
     }),
     prisma.bounty.aggregate({
       where: {
-        status: "DONE",
-        isPaid: true,
-        OR: [{ assignee: userId }, { assignees: { some: { userId } } }],
+        ...assignedDoneWhere(userId, chain),
+        completedAt: { not: null },
       },
       _sum: { bountyAmount: true },
     }),
     prisma.bounty.findMany({
-      where: {
-        status: "DONE",
-        OR: [{ assignee: userId }, { assignees: { some: { userId } } }],
-      },
+      where: assignedDoneWhere(userId, chain),
       orderBy: { paidAt: "desc" },
       take: 5,
       select: {
@@ -96,7 +107,7 @@ async function loadStats(userId) {
       },
     }),
     prisma.bounty.findMany({
-      where: { createdBy: userId },
+      where: { createdBy: userId, chain },
       orderBy: { dateCreated: "desc" },
       take: 5,
       select: {
@@ -124,6 +135,14 @@ async function loadStats(userId) {
     recentCompleted,
     recentCreated,
   };
+}
+
+async function loadStats(userId) {
+  const [MAIN, TEST] = await Promise.all([
+    loadChainStats(userId, "MAIN"),
+    loadChainStats(userId, "TEST"),
+  ]);
+  return { MAIN, TEST };
 }
 
 /**
@@ -154,6 +173,19 @@ router.get("/:idOrNickname/public", async (req, res) => {
         githubId: true,
         UA_address: true,
         z_address: true,
+        teamMembers: {
+          select: {
+            role: true,
+            team: {
+              select: {
+                id: true,
+                name: true,
+                logo: true,
+                isVerified: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -180,16 +212,65 @@ router.get("/:idOrNickname/public", async (req, res) => {
     const forceFull =
       (isOwner || isAdmin) && String(req.query.full || "") === "1";
 
-    const stats = await loadStats(user.id);
+    const [stats, teams] = await Promise.all([
+      loadStats(user.id),
+      Promise.resolve(
+        (user.teamMembers || []).map((row) => ({
+          id: row.team.id,
+          name: row.team.name,
+          logo: row.team.logo,
+          isVerified: row.team.isVerified,
+          memberRole: row.role,
+        })),
+      ),
+    ]);
 
     const profile = {
       id: user.id,
       visibility,
       isOwner,
       isAdminViewer: isAdmin,
+      teams,
     };
 
     const show = (flag) => forceFull || visibility[flag] === true;
+
+    function redactChainStats(src) {
+      const out = {};
+      for (const chain of ["MAIN", "TEST"]) {
+        const row = src[chain] || {};
+        const dst = {};
+        if (show("showCompleted")) {
+          dst.completed = row.completed;
+          dst.submitted = row.submitted;
+        }
+        if (show("showCreated")) dst.created = row.created;
+        if (show("showEarnings")) dst.totalEarned = row.totalEarned;
+        if (show("showCompletionRate")) {
+          dst.completionRate = row.completionRate;
+        }
+        if (show("showRecentBounties")) {
+          dst.recentCompleted = stripAmountsIfPrivate(
+            row.recentCompleted,
+            show("showEarnings"),
+          );
+          dst.recentCreated = stripAmountsIfPrivate(
+            row.recentCreated,
+            show("showEarnings"),
+          );
+        }
+        out[chain] = dst;
+      }
+      return out;
+    }
+
+    const exposeStats =
+      show("showCompleted") ||
+      show("showCreated") ||
+      show("showEarnings") ||
+      show("showCompletionRate") ||
+      show("showRecentBounties");
+    if (exposeStats) profile.statsByChain = redactChainStats(stats);
 
     if (show("showDisplayName")) {
       profile.displayName =
@@ -240,20 +321,20 @@ router.get("/:idOrNickname/public", async (req, res) => {
     }
 
     if (show("showCompleted")) {
-      profile.completed = stats.completed;
-      profile.submitted = stats.submitted;
+      profile.completed = stats.MAIN.completed;
+      profile.submitted = stats.MAIN.submitted;
     }
 
     if (show("showCreated")) {
-      profile.created = stats.created;
+      profile.created = stats.MAIN.created;
     }
 
     if (show("showEarnings")) {
-      profile.totalEarned = stats.totalEarned;
+      profile.totalEarned = stats.MAIN.totalEarned;
     }
 
     if (show("showCompletionRate")) {
-      profile.completionRate = stats.completionRate;
+      profile.completionRate = stats.MAIN.completionRate;
     }
 
     if (show("showAddressType")) {
@@ -276,19 +357,26 @@ router.get("/:idOrNickname/public", async (req, res) => {
       };
     }
     if (show("showRecentBounties")) {
-      profile.recentCompleted = stats.recentCompleted;
-      profile.recentCreated = stats.recentCreated;
+      profile.recentCompleted = stripAmountsIfPrivate(
+        stats.MAIN.recentCompleted,
+        show("showEarnings"),
+      );
+      profile.recentCreated = stripAmountsIfPrivate(
+        stats.MAIN.recentCreated,
+        show("showEarnings"),
+      );
     }
 
     if (isOwner) {
       profile.bio = user.bio || null;
       profile.profileVisibility = visibility;
       profile._private = {
-        completed: stats.completed,
-        created: stats.created,
-        submitted: stats.submitted,
-        totalEarned: stats.totalEarned,
-        completionRate: stats.completionRate,
+        completed: stats.MAIN.completed,
+        created: stats.MAIN.created,
+        submitted: stats.MAIN.submitted,
+        totalEarned: stats.MAIN.totalEarned,
+        completionRate: stats.MAIN.completionRate,
+        byChain: stats,
       };
     }
 
