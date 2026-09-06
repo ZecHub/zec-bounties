@@ -58,6 +58,42 @@ const FAQS = [
     ),
   },
   {
+    q: "Hunter or Team — which should I pick?",
+    a: (
+      <>
+        <strong>Hunter</strong> if you will apply to bounties yourself. See{" "}
+        <Link href="/docs/hunters" className="text-primary hover:underline">
+          Hunters
+        </Link>
+        . <strong>Team</strong> if you will post and fund work as a group. See{" "}
+        <Link href="/docs/teams" className="text-primary hover:underline">
+          Teams
+        </Link>
+        . Onboarding sets this once. Normal accounts cannot switch later. Admin
+        is not a self-serve option.
+      </>
+    ),
+  },
+  {
+    q: "I picked the wrong role. Can I change it?",
+    a: (
+      <>
+        Not self-serve. Ask a platform admin if the account must move. Do not
+        create a second GitHub login unless an admin tells you to.
+      </>
+    ),
+  },
+  {
+    q: "Does creating a team make me a platform admin?",
+    a: (
+      <>
+        No. Team OWNER/ADMIN only manage that team. Platform Admin is a
+        separate role. Team verification also requires three platform admins.
+      </>
+    ),
+  },
+
+  {
     q: "My work was approved but I have not been paid.",
     a: (
       <>

@@ -1,10 +1,10 @@
 # Getting started
 
-Three steps to use the platform.
+Four steps to use the platform.
 
 ## 1. Sign in with GitHub
 
-Open [Sign in](https://bounties.zechub.wiki/login) and authorize the app. Your GitHub identity is used for authentication and profile basics.
+Open [Sign in](https://bounties.zechub.wiki/login) and authorize the app. Your GitHub identity is used for authentication and profile basics. New accounts start as **Client**.
 
 ## 2. Register a payout address
 
@@ -12,10 +12,20 @@ Provide a Unified Address that includes a shielded receiver (Ironwood / Sapling)
 
 See [Addresses](addresses.md) for the full rules.
 
-## 3. Use the platform
+## 3. Choose how you work the board
 
-- **[Contributors](contributors.md):** browse and apply to bounties
-- **[Creators](creators.md):** propose tasks and pay out in ZEC
+After sign-in, onboarding asks you to pick **one** role. This cannot be changed later on a normal account.
+
+- **[Hunter](hunters.md)** — take on bounties, apply, submit work, get paid in ZEC
+- **[Team](teams.md)** — create a team, invite members, fund a shared wallet, post and pay bounties
+
+Admin is not a self-serve choice. Platform operators are granted that role separately.
+
+## 4. Use the platform
+
+- Hunters: browse the board and follow [Hunters](hunters.md) / [Contributors](contributors.md)
+- Teams: open `/teams` and follow [Teams](teams.md)
+- Anyone posting work: [Creators](creators.md)
 
 ## Mainnet
 

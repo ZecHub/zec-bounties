@@ -2,9 +2,11 @@
 
 Find open work, apply, deliver, and get paid in shielded ZEC.
 
+This is the **Hunter** workflow. If you chose Hunter at onboarding, this page is your loop. See [Hunters](hunters.md) for the role itself.
+
 ## Before you start
 
-- Sign in with GitHub — see [Getting started](getting-started.md)
+- Sign in with GitHub and choose **Hunter** — see [Getting started](getting-started.md)
 - Register a valid payout address — see [Addresses](addresses.md) (UA with a shielded receiver required; mixed UA allowed with warning; transparent-only rejected)
 
 ## Workflow
@@ -37,4 +39,4 @@ After approval the bounty is marked done / ready for payout. Payment is a shield
 
 ## Next
 
-[Creators →](creators.md)
+[Hunters →](hunters.md) · [Creators →](creators.md)
