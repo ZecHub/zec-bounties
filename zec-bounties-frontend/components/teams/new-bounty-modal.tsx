@@ -133,7 +133,7 @@ export function TeamsNewBountyModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="border bg-card p-0 text-foreground sm:max-w-[520px]"
+        className="max-h-[92vh] w-[calc(100%-1.5rem)] overflow-y-auto border bg-card p-0 text-foreground sm:max-w-[520px]"
       >
         <form onSubmit={handleSubmit}>
           {/* Header */}

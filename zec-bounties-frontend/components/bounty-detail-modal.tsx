@@ -24,7 +24,9 @@ import {
   ExternalLink,
   Share2,
   Check,
+  Edit,
 } from "lucide-react";
+import { NewBountyModal } from "@/components/new-bounty-modal";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
@@ -73,6 +75,7 @@ export function BountyDetailModal({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [linkCopied, setLinkCopied] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -129,6 +132,9 @@ export function BountyDetailModal({
     currentUser &&
     (bounty.assignees?.some((a) => a.userId === currentUser.id) ||
       bounty.assignee === currentUser.id);
+
+  const isOwner = currentUser && bounty.createdBy === currentUser.id;
+  const canEdit = isOwner && bounty.status === "TO_DO";
 
   const isSuggestedTask = bounty.createdByUser?.role === "HUNTER";
 
@@ -364,7 +370,8 @@ export function BountyDetailModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-2xl imd:max-h-[90vh] overflow-y-auto max-h-[70vh]">
         <DialogHeader className="pb-3 border-b border-border">
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -401,19 +408,33 @@ export function BountyDetailModal({
             <DialogTitle className="text-lg font-semibold leading-snug flex-1">
               {bounty.title}
             </DialogTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={handleShare}
-              title="Share this bounty"
-            >
-              {linkCopied ? (
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-              ) : (
-                <Share2 className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-1 shrink-0">
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={() => setIsEditDialogOpen(true)}
+                  title="Edit bounty"
+                >
+                  <Edit className="h-3.5 w-3.5" />
+                  <span>Edit</span>
+                </Button>
               )}
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={handleShare}
+                title="Share this bounty"
+              >
+                {linkCopied ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Share2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           </div>
           <DialogDescription className="flex items-center gap-3 mt-1">
             <span className="flex items-center gap-1 text-xs">
@@ -865,5 +886,14 @@ export function BountyDetailModal({
         </div>
       </DialogContent>
     </Dialog>
+    {canEdit && (
+      <NewBountyModal
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        bounty={bounty}
+        mode="edit"
+      />
+    )}
+  </>
   );
 }
