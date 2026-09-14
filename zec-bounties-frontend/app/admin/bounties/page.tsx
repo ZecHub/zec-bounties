@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
@@ -110,6 +110,27 @@ export default function MarketplacePage() {
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [categoryError, setCategoryError] = useState("");
+
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMoreBounties || viewMode === "defrag") return;
+
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !bountiesLoading) {
+          loadMoreBounties();
+        }
+      },
+      { rootMargin: "400px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreBounties, bountiesLoading, loadMoreBounties, viewMode]);
 
   const openBounty = (bounty: Bounty) => {
     setSelectedBounty(bounty);
@@ -610,22 +631,16 @@ export default function MarketplacePage() {
             )}
 
             {hasMoreBounties && viewMode !== "defrag" && (
-              <div className="pt-8 flex justify-center">
-                <Button
-                  variant="outline"
-                  className="rounded-full px-8 bg-transparent"
-                  onClick={loadMoreBounties}
-                  disabled={bountiesLoading}
-                >
-                  {bountiesLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading…
-                    </>
-                  ) : (
-                    "Load More Bounties"
-                  )}
-                </Button>
+              <div
+                ref={loadMoreSentinelRef}
+                className="pt-8 flex justify-center text-xs text-muted-foreground"
+              >
+                {bountiesLoading && (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading more…
+                  </span>
+                )}
               </div>
             )}
           </div>
