@@ -2,13 +2,16 @@ const jwt = require("jsonwebtoken");
 const SECRET = process.env.JWT_SECRET;
 const prisma = require("../prisma/client");
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).send("Unauthorized");
   try {
-    req.user = jwt.verify(token, SECRET);
+    const decoded = jwt.verify(token, SECRET);
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) return res.status(401).send("User not found");
+    req.user = user;
     next();
-  } catch {
+  } catch (err) {
     res.status(401).send("Invalid token");
   }
 }
