@@ -36,6 +36,26 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Input } from "@/components/ui/input";
 import { WalletGuard } from "@/components/settings/wallet-guard";
 
+const STATUS_DOT: Record<BountyStatus, string> = {
+  TO_DO: "bg-slate-400",
+  IN_PROGRESS: "bg-blue-500",
+  IN_REVIEW: "bg-yellow-500",
+  DONE: "bg-green-500",
+  CANCELLED: "bg-red-500",
+};
+
+const MARKETPLACE_STATUS_FILTERS: {
+  status: BountyStatus | "all";
+  label: string;
+}[] = [
+  { status: "all", label: "All" },
+  { status: "TO_DO", label: "Todo" },
+  { status: "IN_PROGRESS", label: "In Progress" },
+  { status: "IN_REVIEW", label: "In Review" },
+  { status: "DONE", label: "Done" },
+  { status: "CANCELLED", label: "Cancelled" },
+];
+
 const DEFRAG_STATUS_COLORS: Record<BountyStatus, string> = {
   TO_DO: "bg-cyan-400",
   IN_PROGRESS: "bg-blue-800",
@@ -130,6 +150,34 @@ export default function MarketplacePage() {
   };
 
   const displayCategories = ["All", ...categories.map((cat) => cat.name)];
+
+  const categorySearchFilteredBounties = useMemo(() => {
+    let filtered = bounties;
+
+    if (activeCategory !== "All") {
+      filtered = filtered.filter(
+        (bounty) => bounty.categoryId === activeCategory,
+      );
+    }
+
+    if (searchQuery.trim()) {
+      const searchLower = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (bounty) =>
+          bounty.title.toLowerCase().includes(searchLower) ||
+          bounty.description.toLowerCase().includes(searchLower) ||
+          bounty.createdByUser?.name?.toLowerCase().includes(searchLower),
+      );
+    }
+
+    return filtered;
+  }, [bounties, activeCategory, searchQuery]);
+
+  const statusCountFor = (status: BountyStatus | "all") =>
+    status === "all"
+      ? categorySearchFilteredBounties.length
+      : categorySearchFilteredBounties.filter((b) => b.status === status)
+          .length;
 
   const filteredBounties = useMemo(() => {
     let filtered = bounties;
@@ -350,6 +398,36 @@ export default function MarketplacePage() {
                   <Grid3X3 className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <div
+              className="-mx-1 mb-4 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+            >
+              {MARKETPLACE_STATUS_FILTERS.map((f) => {
+                const active = statusFilter === f.status;
+                return (
+                  <button
+                    key={f.status}
+                    onClick={() => setStatusFilter(f.status)}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      active
+                        ? "border-primary/40 bg-primary/10 font-medium text-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted/60"
+                    }`}
+                  >
+                    {f.status !== "all" && (
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[f.status]}`}
+                      />
+                    )}
+                    {f.label}
+                    <span className="tabular-nums opacity-60">
+                      {statusCountFor(f.status)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {viewMode === "defrag" ? (
