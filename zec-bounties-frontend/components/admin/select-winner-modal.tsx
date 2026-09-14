@@ -72,7 +72,11 @@ export function SelectWinnerModal({
         </DialogHeader>
 
         {/* Assignee list */}
-        <div className="px-4 py-3 space-y-2 max-h-72 overflow-y-auto">
+        <div
+          className="px-4 py-3 space-y-2 max-h-72 overflow-y-auto"
+          role="group"
+          aria-label="Payment recipient"
+        >
           {assignees.map((a) => {
             const user = a.user;
             const isSelected = selectedWinnerId === a.userId;
@@ -80,7 +84,10 @@ export function SelectWinnerModal({
             return (
               <button
                 key={a.userId}
+                type="button"
                 onClick={() => setSelectedWinnerId(a.userId)}
+                aria-pressed={isSelected}
+                aria-label={`Select ${user?.name ?? "Unknown"} as payment recipient`}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all duration-150 ${
                   isSelected
                     ? "border-amber-500 bg-amber-500/8 shadow-sm"
@@ -88,7 +95,10 @@ export function SelectWinnerModal({
                 }`}
               >
                 <Avatar className="h-10 w-10 border-2 border-background shadow-sm flex-shrink-0">
-                  <AvatarImage src={user?.avatar || "/placeholder-user.jpg"} />
+                  <AvatarImage
+                    src={user?.avatar || "/placeholder-user.jpg"}
+                    alt=""
+                  />
                   <AvatarFallback className="text-sm font-semibold">
                     {user?.name?.[0] ?? "?"}
                   </AvatarFallback>
@@ -112,7 +122,10 @@ export function SelectWinnerModal({
                   }`}
                 >
                   {isSelected && (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                    <CheckCircle2
+                      className="h-3.5 w-3.5 text-white"
+                      aria-hidden="true"
+                    />
                   )}
                 </div>
               </button>

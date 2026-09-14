@@ -78,7 +78,7 @@ export default function DocsOverviewPage() {
             Register a Unified Address that includes a shielded receiver.
             Transparent-only addresses are rejected. Mixed UAs (shielded +
             transparent) are allowed with a warning.{" "}
-            <Link href="/docs/addresses" className="text-primary hover:underline">
+            <Link href="/docs/addresses" className="text-primary underline underline-offset-4">
               Address rules →
             </Link>
           </p>
@@ -116,7 +116,7 @@ export default function DocsOverviewPage() {
             href="https://github.com/ZecHub/zec-bounties/tree/main/docs"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:underline"
+            className="text-primary underline underline-offset-4"
           >
             GitHub repo
           </a>

@@ -6,7 +6,9 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "next start",
+    "test:a11y": "playwright test tests/accessibility",
+    "test:a11y:headed": "playwright test tests/accessibility --headed"
   },
   "dependencies": {
     "@elemental-zcash/zaddr_wasm_parser": "^0.2.0",
@@ -64,6 +66,8 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.1.9",
     "@types/node": "^22",
     "@types/react": "^19",
