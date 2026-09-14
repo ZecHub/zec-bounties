@@ -323,7 +323,6 @@ router.post("/", authenticate, async (req, res) => {
       bountyAmount,
       timeToComplete,
       assignee,
-      isApproved,
       categoryId,
       chain,
       teamId,
@@ -379,13 +378,17 @@ router.post("/", authenticate, async (req, res) => {
         timeToComplete: new Date(timeToComplete),
         createdBy: req.user.id,
         assignee: resolvedAssignee,
-        isApproved,
+        // Approval is an authorization decision, so it is derived here rather
+        // than read from the request body: admins and verified teams post
+        // pre-approved, everyone else waits for review.
+        isApproved: req.user.role === "ADMIN" || team !== null,
         categoryId,
         ...(chain && { chain }),
         ...(teamId && { teamId }),
-        // Denormalized from the team at creation time — a bounty's privacy
-        // always tracks its team's current privacy setting.
-        isPrivate: team?.isPrivate ?? false,
+        // Team bounties track their team's privacy. A teamless bounty that
+        // self-assigns is personal task tracking, so it stays off the public
+        // board until an admin approves it (see /:id/approve below).
+        isPrivate: team ? team.isPrivate : resolvedAssignee === req.user.id,
         ...(resolvedAssignee && {
           assignees: {
             create: {
@@ -961,9 +964,35 @@ router.put(
 // FIX: id was cast to Number() but schema uses cuid strings — removed the cast.
 router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
   try {
-    const updated = await prisma.bounty.update({
+    const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      data: { approved: true },
+      select: { createdBy: true, assignee: true },
+    });
+    if (!bounty) return res.status(404).json({ error: "Bounty not found" });
+
+    // Approving is what turns a personal bounty into a public one, so it also
+    // undoes the two markers that kept it personal: its privacy, and the
+    // self-assignment that would otherwise stop anyone else from applying. An
+    // assignment an admin made deliberately is left alone.
+    const releaseSelfAssignment = bounty.assignee === bounty.createdBy;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (releaseSelfAssignment) {
+        // Creation writes the self-assignment to both the scalar column and
+        // the join table; clearing only the scalar would leave the creator as
+        // the sole assignee, and PATCH /:id/status pays the sole assignee.
+        await tx.bountyAssignee.deleteMany({
+          where: { bountyId: req.params.id, userId: bounty.createdBy },
+        });
+      }
+      return tx.bounty.update({
+        where: { id: req.params.id },
+        data: {
+          isApproved: true,
+          isPrivate: false,
+          ...(releaseSelfAssignment && { assignee: null }),
+        },
+      });
     });
     sendRealtimeUpdate("bounty_approved", updated, req.user.id);
     await invalidateBounty(req.params.id);
