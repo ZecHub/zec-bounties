@@ -19,10 +19,12 @@ import {
   Upload,
   Send,
   Lock,
+  Edit,
 } from "lucide-react";
 import { formatStatus } from "@/lib/utils";
 import { useBounty } from "@/lib/bounty-context";
 import { useState } from "react";
+import { NewBountyModal } from "@/components/new-bounty-modal";
 import {
   Dialog,
   DialogContent,
@@ -77,6 +79,7 @@ export function BountyCard({
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrl, setDeliverableUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const userApplication = currentUser
     ? getUserApplicationForBounty(bounty.id)
@@ -95,9 +98,12 @@ export function BountyCard({
   const canSubmitWork =
     isAssignedToCurrentUser && bounty.status === "IN_PROGRESS";
 
+  const isOwner = currentUser && bounty.createdBy === currentUser.id;
+  const canEdit = isOwner && bounty.status === "TO_DO";
+
   const canApply =
     currentUser &&
-    bounty.createdBy !== currentUser.id &&
+    !isOwner &&
     !userApplication &&
     !isAssignedToCurrentUser;
 
@@ -283,6 +289,20 @@ export function BountyCard({
                   </span>
                   <span className="text-[10px] text-muted-foreground">ZEC</span>
                 </div>
+                {canEdit && (
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-6 w-6 rounded-full"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEditDialogOpen(true);
+                    }}
+                    title="Edit bounty"
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                )}
                 {canSubmitWork && (
                   <Button
                     size="icon"
@@ -379,6 +399,14 @@ export function BountyCard({
             </div>
           </DialogContent>
         </Dialog>
+        {canEdit && (
+          <NewBountyModal
+            open={isEditDialogOpen}
+            onOpenChange={setIsEditDialogOpen}
+            bounty={bounty}
+            mode="edit"
+          />
+        )}
       </>
     );
   }
@@ -522,6 +550,20 @@ export function BountyCard({
               </p>
             </div>
 
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditDialogOpen(true);
+                }}
+                className="h-8 gap-1.5 text-xs shrink-0"
+              >
+                <Edit className="h-3.5 w-3.5" />
+                <span>Edit</span>
+              </Button>
+            )}
             {canSubmitWork && (
               <Button
                 size="sm"
@@ -616,6 +658,14 @@ export function BountyCard({
             </div>
           </DialogContent>
         </Dialog>
+        {canEdit && (
+          <NewBountyModal
+            open={isEditDialogOpen}
+            onOpenChange={setIsEditDialogOpen}
+            bounty={bounty}
+            mode="edit"
+          />
+        )}
       </>
     );
   }
@@ -757,6 +807,20 @@ export function BountyCard({
             <span className="font-bold text-xs imd:text-sm">
               {bounty.bountyAmount} ZEC
             </span>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditDialogOpen(true);
+                }}
+                className="h-8 gap-1.5 text-xs"
+              >
+                <Edit className="h-3.5 w-3.5" />
+                <span>Edit</span>
+              </Button>
+            )}
             {canSubmitWork && (
               <Button
                 size="sm"
@@ -856,6 +920,14 @@ export function BountyCard({
           </div>
         </DialogContent>
       </Dialog>
+      {canEdit && (
+        <NewBountyModal
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          bounty={bounty}
+          mode="edit"
+        />
+      )}
     </>
   );
 }
