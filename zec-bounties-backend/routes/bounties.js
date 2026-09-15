@@ -2091,7 +2091,19 @@ router.post("/apply", authenticate, async (req, res) => {
   try {
     if (!requireOnboarded(req, res)) return;
 
-    const { bountyId, applicantId, message } = req.body;
+    // The applicant is always the authenticated caller. An applicantId taken
+    // from the request body must never be trusted: a client could otherwise
+    // apply on behalf of another user, and the "own bounty" and duplicate
+    // checks below would then be evaluated against a forged identity.
+    const { bountyId, message } = req.body;
+    const applicantId = req.user.id;
+
+    if (!bountyId) {
+      return res.status(400).json({ error: "bountyId is required" });
+    }
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "Application message is required" });
+    }
 
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
