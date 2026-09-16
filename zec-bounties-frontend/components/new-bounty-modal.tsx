@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
-import type { BountyFormData } from "@/lib/types";
+import type { BountyFormData, Bounty } from "@/lib/types";
 import { Loader2, Plus, Clock, Tag, AlignLeft } from "lucide-react";
 import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
@@ -33,6 +33,8 @@ interface CreateBountyFormProps {
   onCancel?: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When provided, the modal opens in edit mode for this bounty. */
+  bounty?: Bounty;
 }
 
 export function NewBountyModal({
@@ -40,14 +42,20 @@ export function NewBountyModal({
   onCancel,
   open,
   onOpenChange,
+  bounty,
 }: CreateBountyFormProps) {
   const {
     createBounty,
+    updateBounty,
     currentUser,
     categories,
     bountyQuota,
     fetchBountyQuota,
   } = useBounty();
+
+  const isEditMode = !!bounty;
+  // Reward is locked once people have applied, to avoid a bait-and-switch.
+  const rewardLocked = isEditMode && (bounty?.applications?.length ?? 0) > 0;
 
   const [formData, setFormData] = useState({
     title: "",
@@ -59,8 +67,19 @@ export function NewBountyModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) fetchBountyQuota();
-  }, [open]);
+    if (!open) return;
+    if (bounty) {
+      setFormData({
+        title: bounty.title,
+        description: bounty.description,
+        bountyAmount: bounty.bountyAmount,
+        timeToComplete: new Date(bounty.timeToComplete),
+        category: bounty.category?.name ?? bounty.categoryId ?? "",
+      });
+    } else {
+      fetchBountyQuota();
+    }
+  }, [open, bounty]);
 
   const isAdmin = currentUser?.role === "ADMIN";
   const atLimit =
@@ -69,7 +88,7 @@ export function NewBountyModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (atLimit) {
+    if (!isEditMode && atLimit) {
       toast.error("Weekly bounty limit reached", {
         description: `You've used your ${bountyQuota?.limit} bount${
           bountyQuota?.limit === 1 ? "y" : "ies"
@@ -85,7 +104,7 @@ export function NewBountyModal({
       return;
     }
 
-    if (!formData.category) {
+    if (!isEditMode && !formData.category) {
       toast.error("Category is required", {
         description: "Please select a category.",
       });
@@ -108,22 +127,33 @@ export function NewBountyModal({
 
     setIsSubmitting(true);
     try {
-      await createBounty(formData);
-      toast.success("Bounty created!", {
-        description: `"${formData.title}" is now live.`,
-      });
-      onSuccess?.();
-      setFormData({
-        title: "",
-        description: "",
-        bountyAmount: 0,
-        timeToComplete: new Date(),
-        category: "",
-      });
+      if (isEditMode && bounty) {
+        await updateBounty(bounty.id, formData);
+        toast.success("Bounty updated!", {
+          description: `"${formData.title}" has been updated.`,
+        });
+        onSuccess?.();
+      } else {
+        await createBounty(formData);
+        toast.success("Bounty created!", {
+          description: `"${formData.title}" is now live.`,
+        });
+        onSuccess?.();
+        setFormData({
+          title: "",
+          description: "",
+          bountyAmount: 0,
+          timeToComplete: new Date(),
+          category: "",
+        });
+      }
     } catch (error: any) {
-      toast.error("Failed to create bounty", {
-        description: error?.message,
-      });
+      toast.error(
+        isEditMode ? "Failed to update bounty" : "Failed to create bounty",
+        {
+          description: error?.message,
+        },
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -149,14 +179,16 @@ export function NewBountyModal({
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Plus className="h-4 w-4" />
                 </span>
-                Create New Bounty
+                {isEditMode ? "Edit Bounty" : "Create New Bounty"}
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
-                Provide the details for your technical challenge.
+                {isEditMode
+                  ? "Update the details of your bounty."
+                  : "Provide the details for your technical challenge."}
               </DialogDescription>
             </div>
 
-            {!isAdmin && bountyQuota && (
+            {!isEditMode && !isAdmin && bountyQuota && (
               <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span
                   className={`h-2 w-2 rounded-full ${
@@ -249,8 +281,14 @@ export function NewBountyModal({
                   }
                   placeholder="0.00"
                   required
-                  className="h-11 rounded-xl"
+                  disabled={rewardLocked}
+                  className="h-11 rounded-xl disabled:opacity-60"
                 />
+                {rewardLocked && (
+                  <p className="text-xs text-muted-foreground">
+                    Reward is locked because this bounty already has applicants.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -309,16 +347,18 @@ export function NewBountyModal({
             )}
             <Button
               type="submit"
-              disabled={isSubmitting || atLimit}
+              disabled={isSubmitting || (!isEditMode && atLimit)}
               className="h-11 w-full rounded-xl px-6 w-auto"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  {isEditMode ? "Saving..." : "Creating..."}
                 </>
-              ) : atLimit ? (
+              ) : !isEditMode && atLimit ? (
                 "Weekly limit reached"
+              ) : isEditMode ? (
+                "Save Changes"
               ) : (
                 "Create Bounty"
               )}
