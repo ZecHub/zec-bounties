@@ -498,6 +498,7 @@ export function AdminNavbar({
       setRescanHidden(false);
     }
   }, []);
+
   const {
     currentUser,
     currentTeam,
@@ -513,6 +514,16 @@ export function AdminNavbar({
     rescanWallet,
     rescanLoading,
   } = useBounty();
+
+  // Auto-load the wallet balance as soon as the navbar mounts for an admin —
+  // previously this stayed at 0.0000 ZEC until the user manually hit refresh
+  // or opened the topup modal.
+  useEffect(() => {
+    if (currentUser?.role === "ADMIN") {
+      fetchBalance();
+    }
+  }, [currentUser?.id, currentUser?.role]);
+
   const activeWallet =
     zcashParams?.find((p) => p.isDefault) ??
     (zcashParams && zcashParams.length > 0

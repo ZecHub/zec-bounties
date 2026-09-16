@@ -132,13 +132,14 @@ export function TeamAuthorizePaymentPanel({
     }
   };
 
-  if (eligibleBounties.length === 0) {
-    return (
-      <div className="text-center py-8 text-muted-foreground">
-        <Coins className="w-8 h-8 mx-auto mb-2 opacity-40" />
-        <p className="text-sm">No bounties ready for payment</p>
-      </div>
-    );
+  const hasEligible = eligibleBounties.length > 0;
+  const hasActivity =
+    hasEligible || blockedBounties.length > 0 || inFlightBounties.length > 0;
+
+  // Nothing due, nothing blocked, nothing stuck — don't clutter the
+  // Treasury tab with an empty card at all.
+  if (!hasActivity) {
+    return null;
   }
 
   return (
@@ -146,8 +147,11 @@ export function TeamAuthorizePaymentPanel({
       <div>
         <h3 className="text-sm font-semibold">Payments due</h3>
         <p className="text-xs text-muted-foreground">
-          {eligibleBounties.length} completed bounty
-          {eligibleBounties.length !== 1 ? "ies" : ""} awaiting payout
+          {hasEligible
+            ? `${eligibleBounties.length} completed bounty${
+                eligibleBounties.length !== 1 ? "ies" : ""
+              } awaiting payout`
+            : "Nothing ready to pay out right now"}
         </p>
       </div>
 
@@ -200,65 +204,69 @@ export function TeamAuthorizePaymentPanel({
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={selectedIds.size === eligibleBounties.length}
-            onCheckedChange={toggleAll}
-            id="team-select-all"
-          />
-          <label
-            htmlFor="team-select-all"
-            className="text-sm font-medium cursor-pointer"
-          >
-            Select all ({eligibleBounties.length})
-          </label>
-        </div>
-        {selectedIds.size > 0 && (
-          <span className="text-sm text-muted-foreground">
-            {selectedIds.size} selected · {totalSelected.toFixed(4)} ZEC
-          </span>
-        )}
-      </div>
-
-      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-        {eligibleBounties.map((bounty) => (
-          <div
-            key={bounty.id}
-            onClick={() => toggleOne(bounty.id)}
-            className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-              selectedIds.has(bounty.id)
-                ? "border-primary bg-primary/5"
-                : "hover:bg-muted/50"
-            }`}
-          >
-            <Checkbox
-              checked={selectedIds.has(bounty.id)}
-              onCheckedChange={() => toggleOne(bounty.id)}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{bounty.title}</p>
-              <p className="text-xs text-muted-foreground truncate">
-                {bounty.assigneeUser?.name ?? "Unknown assignee"}
-              </p>
+      {hasEligible && (
+        <>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={selectedIds.size === eligibleBounties.length}
+                onCheckedChange={toggleAll}
+                id="team-select-all"
+              />
+              <label
+                htmlFor="team-select-all"
+                className="text-sm font-medium cursor-pointer"
+              >
+                Select all ({eligibleBounties.length})
+              </label>
             </div>
-            <span className="text-sm font-mono font-medium shrink-0">
-              {bounty.bountyAmount.toFixed(4)} ZEC
-            </span>
+            {selectedIds.size > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} selected · {totalSelected.toFixed(4)} ZEC
+              </span>
+            )}
           </div>
-        ))}
-      </div>
 
-      <Button
-        onClick={() => setShowConfirm(true)}
-        disabled={selectedIds.size === 0 || isProcessing || !team.wallet}
-        className="w-full"
-      >
-        {isProcessing
-          ? "Processing..."
-          : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
-      </Button>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {eligibleBounties.map((bounty) => (
+              <div
+                key={bounty.id}
+                onClick={() => toggleOne(bounty.id)}
+                className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                  selectedIds.has(bounty.id)
+                    ? "border-primary bg-primary/5"
+                    : "hover:bg-muted/50"
+                }`}
+              >
+                <Checkbox
+                  checked={selectedIds.has(bounty.id)}
+                  onCheckedChange={() => toggleOne(bounty.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{bounty.title}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {bounty.assigneeUser?.name ?? "Unknown assignee"}
+                  </p>
+                </div>
+                <span className="text-sm font-mono font-medium shrink-0">
+                  {bounty.bountyAmount.toFixed(4)} ZEC
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <Button
+            onClick={() => setShowConfirm(true)}
+            disabled={selectedIds.size === 0 || isProcessing || !team.wallet}
+            className="w-full"
+          >
+            {isProcessing
+              ? "Processing..."
+              : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
+          </Button>
+        </>
+      )}
 
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
         <AlertDialogContent>

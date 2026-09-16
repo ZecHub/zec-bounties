@@ -52,7 +52,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
@@ -251,7 +251,6 @@ export function TeamNavbar({
   const router = useRouter();
   const [topupOpen, setTopupOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [zecBalance] = useState(0.0);
   const {
     currentUser,
     logout,
@@ -268,6 +267,13 @@ export function TeamNavbar({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [teamAddresses, setTeamAddresses] = useState<string[]>([]);
+
+  // Auto-load the team wallet balance once a team with a wallet is known —
+  // previously this stayed at 0.0000 ZEC until someone clicked Refresh.
+  useEffect(() => {
+    if (!currentTeam?.wallet) return;
+    fetchTeamWalletBalance(currentTeam.id).then(setTeamBalance);
+  }, [currentTeam?.id, currentTeam?.wallet]);
 
   const confirmedTotal = (b: Balance | undefined) =>
     ((b?.confirmed_ironwood_balance ?? 0) +
@@ -611,7 +617,9 @@ export function TeamNavbar({
                           onClick={handleOpenTopup}
                         >
                           <Wallet className="h-4 w-4" />
-                          {zecBalance.toFixed(4)} ZEC
+                          {teamBalance
+                            ? `${fmt(confirmedTotal(teamBalance))} ZEC`
+                            : "0.0000 ZEC"}
                         </Button>
                       )}
 
