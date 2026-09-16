@@ -2044,6 +2044,8 @@ function TreasuryTab({
     teamPaymentIDs,
     teamPaymentChain,
     teamPaymentServerUrl,
+    teamPaymentRecords,
+    fetchTeamPaymentRecords,
     rescanTeamWallet,
     teamRescanLoading,
     teamRescanStatus,
@@ -2051,8 +2053,6 @@ function TreasuryTab({
     teamSyncStatusLoading,
     teamSyncStatusError,
     fetchTeamSyncStatus,
-    teamPaymentRecords,
-    fetchTeamPaymentRecords,
   } = useBounty();
   const [balance, setBalance] = useState<any>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
@@ -2076,8 +2076,12 @@ function TreasuryTab({
     loadBalance();
   }, [team.id, team.wallet]);
 
+  // Auto-load transaction history + payment records as soon as the Treasury
+  // tab is viewed with a wallet present — no more waiting on a manual click.
   useEffect(() => {
-    if (team.wallet) fetchTeamPaymentRecords(team.id);
+    if (!team.wallet) return;
+    fetchTeamTransactionHashes(team.id);
+    fetchTeamPaymentRecords(team.id);
   }, [team.id, team.wallet]);
 
   const handleFetchTransactions = async () => {
@@ -2285,10 +2289,12 @@ function TreasuryTab({
               serverUrl={teamPaymentServerUrl}
             />
           ) : (
-            <EmptyTxState
-              onRefresh={handleFetchTransactions}
-              loading={isFetchingTxHashes}
-            />
+            <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
+              <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">
+                No transactions found for this wallet yet.
+              </p>
+            </div>
           )
         ) : teamPaymentRecords.length > 0 ? (
           <PaymentRecordsTable records={teamPaymentRecords} />
