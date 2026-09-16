@@ -257,6 +257,7 @@ export function TeamNavbar({
     logout,
     currentTeam,
     fetchTeamWalletBalance,
+    fetchTeamWalletAddresses,
     teamSyncStatus,
     teamSyncStatusError,
     fetchTeamSyncStatus,
@@ -266,6 +267,7 @@ export function TeamNavbar({
   const [teamBalance, setTeamBalance] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [teamAddresses, setTeamAddresses] = useState<string[]>([]);
 
   const confirmedTotal = (b: Balance | undefined) =>
     ((b?.confirmed_ironwood_balance ?? 0) +
@@ -294,6 +296,16 @@ export function TeamNavbar({
       setIsSyncing(false);
     }
   };
+
+  const handleOpenTopup = async () => {
+    setTopupOpen(true);
+    setMobileMenuOpen(false);
+    if (currentTeam) {
+      const addrs = await fetchTeamWalletAddresses(currentTeam.id);
+      setTeamAddresses(addrs);
+    }
+  };
+
   const currentSyncStatus = currentTeam
     ? (teamSyncStatus[currentTeam.id] ?? null)
     : null;
@@ -380,10 +392,7 @@ export function TeamNavbar({
                 <Button
                   variant="outline"
                   className="gap-2 justify-start font-mono"
-                  onClick={() => {
-                    setTopupOpen(true);
-                    setMobileMenuOpen(false);
-                  }}
+                  onClick={handleOpenTopup}
                 >
                   <Wallet className="h-4 w-4" />
                   {teamBalance
@@ -599,10 +608,7 @@ export function TeamNavbar({
                         <Button
                           variant="outline"
                           className="gap-2 justify-start font-mono"
-                          onClick={() => {
-                            setTopupOpen(true);
-                            setMobileMenuOpen(false);
-                          }}
+                          onClick={handleOpenTopup}
                         >
                           <Wallet className="h-4 w-4" />
                           {zecBalance.toFixed(4)} ZEC
@@ -663,7 +669,11 @@ export function TeamNavbar({
       </nav>
 
       {isTeam && currentUser && (
-        <WalletTopupModal open={topupOpen} onOpenChange={setTopupOpen} />
+        <WalletTopupModal
+          open={topupOpen}
+          onOpenChange={setTopupOpen}
+          addresses={teamAddresses}
+        />
       )}
     </>
   );

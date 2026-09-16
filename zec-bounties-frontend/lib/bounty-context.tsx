@@ -221,6 +221,7 @@ interface BountyContextType {
   address: string | undefined;
   addresses: string[];
   fetchAddresses: () => Promise<void>;
+  fetchTeamWalletAddresses: (teamId: string) => Promise<string[]>;
   emailNotificationsUpdate: (enabled: boolean) => Promise<boolean | undefined>;
 
   // Sync status & rescan
@@ -1654,6 +1655,26 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error("Failed to fetch addresses:", error);
+    }
+  };
+
+  const fetchTeamWalletAddresses = async (
+    teamId: string,
+  ): Promise<string[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/addresses`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.addresses ?? [])
+        .map((a: any) => a.encoded_address)
+        .filter(Boolean);
+    } catch (error) {
+      console.error("Failed to fetch team wallet addresses:", error);
+      return [];
     }
   };
 
@@ -3507,6 +3528,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         address,
         addresses,
         fetchAddresses,
+        fetchTeamWalletAddresses,
         emailNotificationsUpdate,
         syncStatus,
         syncStatusLoading,
