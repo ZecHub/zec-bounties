@@ -380,6 +380,20 @@ interface BountyContextType {
     userId: string,
   ) => Promise<{ success: boolean; deletedTeamIds: string[] }>;
 
+  teamPaymentRecords: PaymentRecord[];
+  fetchTeamPaymentRecords: (teamId: string) => Promise<void>;
+  authorizeTeamDuePayment: (
+    teamId: string,
+    bountyIds: string[],
+    idempotencyKey?: string,
+  ) => Promise<{
+    success: boolean;
+    paidCount: number;
+    txids: string[];
+    batchKey?: string;
+    skipped: Array<{ id: string; title: string; reason: string }>;
+  }>;
+
   // Favorites
   favoriteTeamIds: Set<string>;
   favoriteTeamsLoading: boolean;
@@ -478,6 +492,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [teamSyncStatusLoading, setTeamSyncStatusLoading] = useState(false);
   const [teamSyncStatusError, setTeamSyncStatusError] = useState<string | null>(
     null,
+  );
+  const [teamPaymentRecords, setTeamPaymentRecords] = useState<PaymentRecord[]>(
+    [],
   );
   const [bountyQuota, setBountyQuota] = useState<{
     limit: number;
@@ -1073,6 +1090,73 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setTeamPaymentServerUrl(data.serverUrl);
     } catch (error) {
       console.error("Failed to fetch team transaction hashes:", error);
+    }
+  };
+
+  const fetchTeamPaymentRecords = async (teamId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/payment-records`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch team payment records");
+      const data = await res.json();
+      setTeamPaymentRecords(data.records || []);
+    } catch (error) {
+      console.error("Failed to fetch team payment records:", error);
+    }
+  };
+
+  const authorizeTeamDuePayment = async (
+    teamId: string,
+    bountyIds: string[],
+    idempotencyKey?: string,
+  ) => {
+    if (!currentUser) {
+      return { success: false, paidCount: 0, txids: [], skipped: [] };
+    }
+
+    const key =
+      idempotencyKey ||
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/authorize-payment`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ bountyIds, idempotencyKey: key }),
+        },
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Same as the admin flow: refresh regardless, since an unknown outcome
+        // (502) may have already locked the bounties server-side.
+        await Promise.all([fetchBounties(), fetchTeamPaymentRecords(teamId)]);
+        const message = data.details
+          ? `${data.error}: ${data.details}`
+          : data.error || "Failed to authorize payment";
+        throw new Error(message);
+      }
+
+      await Promise.all([fetchBounties(), fetchTeamPaymentRecords(teamId)]);
+
+      return {
+        success: true,
+        paidCount: data.paidCount,
+        txids: data.txids || [],
+        batchKey: data.batchKey,
+        skipped: data.skipped || [],
+      };
+    } catch (error) {
+      console.error("Failed to authorize team payment:", error);
+      throw error;
     }
   };
 
@@ -2470,6 +2554,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           case "team_bounties_privacy_changed":
             fetchBounties();
             break;
+
+          case "payment_authorized":
+            if (msg.payload.id) {
+              setBounties((prev) =>
+                prev.map((b) => (b.id === msg.payload.id ? msg.payload : b)),
+              );
+            } else if (msg.payload.teamId) {
+              fetchBounties();
+              fetchTeamPaymentRecords(msg.payload.teamId);
+            }
+            break;
+
           case "team_verification_updated":
             setTeams((prev) =>
               prev.map((t) =>
@@ -3603,6 +3699,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         teamSyncStatusError,
         fetchTeamSyncStatus,
         convertUserToHunter,
+        authorizeTeamDuePayment,
+        fetchTeamPaymentRecords,
+        teamPaymentRecords,
       }}
     >
       {children}
