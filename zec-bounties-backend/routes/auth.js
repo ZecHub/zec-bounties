@@ -584,7 +584,16 @@ router.patch("/select-role", authenticate, async (req, res) => {
 
     sendRealtimeUpdate("user_updated", updated, req.user.id);
 
-    res.json({ user: updated });
+    const token = jwt.sign(
+      {
+        id: updated.id,
+        role: updated.role,
+      },
+      SECRET,
+      { expiresIn: "7d" },
+    );
+
+    res.json({ user: updated, token });
   } catch (error) {
     console.error("Failed to select role:", error);
     res.status(500).json({

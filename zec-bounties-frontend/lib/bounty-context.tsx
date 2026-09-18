@@ -116,6 +116,13 @@ interface BountyContextType {
   bounties: Bounty[];
   bountiesLoading: boolean;
   createBounty: (data: BountyFormData) => Promise<void>;
+  bountyQuota: {
+    limit: number | null;
+    used: number;
+    remaining: number | null;
+    resetsAt: string | null;
+  } | null;
+  fetchBountyQuota: () => Promise<void>;
   updateBounty: (
     id: string,
     data: Partial<BountyFormData> & {
@@ -214,6 +221,7 @@ interface BountyContextType {
   address: string | undefined;
   addresses: string[];
   fetchAddresses: () => Promise<void>;
+  fetchTeamWalletAddresses: (teamId: string) => Promise<string[]>;
   emailNotificationsUpdate: (enabled: boolean) => Promise<boolean | undefined>;
 
   // Sync status & rescan
@@ -284,6 +292,9 @@ interface BountyContextType {
 
   fetchExportPayments: (from?: string, to?: string) => Promise<any[]>;
   fetchExportCompleted: () => Promise<any[]>;
+  markBountiesExported: (
+    bountyIds: string[],
+  ) => Promise<{ exportedAt: string }>;
   updateUserOfac: (userId: string, ofacVerified: boolean) => Promise<void>;
 
   // Teams
@@ -368,6 +379,20 @@ interface BountyContextType {
   convertUserToHunter: (
     userId: string,
   ) => Promise<{ success: boolean; deletedTeamIds: string[] }>;
+
+  teamPaymentRecords: PaymentRecord[];
+  fetchTeamPaymentRecords: (teamId: string) => Promise<void>;
+  authorizeTeamDuePayment: (
+    teamId: string,
+    bountyIds: string[],
+    idempotencyKey?: string,
+  ) => Promise<{
+    success: boolean;
+    paidCount: number;
+    txids: string[];
+    batchKey?: string;
+    skipped: Array<{ id: string; title: string; reason: string }>;
+  }>;
 
   // Favorites
   favoriteTeamIds: Set<string>;
@@ -468,6 +493,15 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [teamSyncStatusError, setTeamSyncStatusError] = useState<string | null>(
     null,
   );
+  const [teamPaymentRecords, setTeamPaymentRecords] = useState<PaymentRecord[]>(
+    [],
+  );
+  const [bountyQuota, setBountyQuota] = useState<{
+    limit: number;
+    used: number;
+    remaining: number;
+    resetsAt: string;
+  } | null>(null);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -1059,6 +1093,73 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchTeamPaymentRecords = async (teamId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/payment-records`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch team payment records");
+      const data = await res.json();
+      setTeamPaymentRecords(data.records || []);
+    } catch (error) {
+      console.error("Failed to fetch team payment records:", error);
+    }
+  };
+
+  const authorizeTeamDuePayment = async (
+    teamId: string,
+    bountyIds: string[],
+    idempotencyKey?: string,
+  ) => {
+    if (!currentUser) {
+      return { success: false, paidCount: 0, txids: [], skipped: [] };
+    }
+
+    const key =
+      idempotencyKey ||
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/authorize-payment`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ bountyIds, idempotencyKey: key }),
+        },
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Same as the admin flow: refresh regardless, since an unknown outcome
+        // (502) may have already locked the bounties server-side.
+        await Promise.all([fetchBounties(), fetchTeamPaymentRecords(teamId)]);
+        const message = data.details
+          ? `${data.error}: ${data.details}`
+          : data.error || "Failed to authorize payment";
+        throw new Error(message);
+      }
+
+      await Promise.all([fetchBounties(), fetchTeamPaymentRecords(teamId)]);
+
+      return {
+        success: true,
+        paidCount: data.paidCount,
+        txids: data.txids || [],
+        batchKey: data.batchKey,
+        skipped: data.skipped || [],
+      };
+    } catch (error) {
+      console.error("Failed to authorize team payment:", error);
+      throw error;
+    }
+  };
+
   // Fetch all categories (PUBLIC - no auth required)
   const fetchCategories = async () => {
     setCategoriesLoading(true);
@@ -1641,6 +1742,26 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchTeamWalletAddresses = async (
+    teamId: string,
+  ): Promise<string[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/addresses`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.addresses ?? [])
+        .map((a: any) => a.encoded_address)
+        .filter(Boolean);
+    } catch (error) {
+      console.error("Failed to fetch team wallet addresses:", error);
+      return [];
+    }
+  };
+
   const emailNotificationsUpdate = async (enabled: boolean) => {
     if (!currentUser) return;
     try {
@@ -1988,6 +2109,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       fetchUsers();
       fetchTeams();
       fetchFavoriteTeams();
+      fetchBountyQuota();
       if (currentUser.role === "ADMIN") {
         fetchAllSubmissions().then(setAllSubmissions);
       }
@@ -2003,6 +2125,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setFavoriteTeamIds(new Set());
       setSyncStatus(null);
       setSyncStatusError(null);
+      setBountyQuota(null);
     }
   }, [currentUser]);
 
@@ -2246,6 +2369,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             fetchBalance();
             break;
 
+          case "bounties_exported":
+            fetchTotalStats();
+            break;
+
           case "bounty_assignees_updated":
             fetchBounties();
             break;
@@ -2427,6 +2554,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           case "team_bounties_privacy_changed":
             fetchBounties();
             break;
+
+          case "payment_authorized":
+            if (msg.payload.id) {
+              setBounties((prev) =>
+                prev.map((b) => (b.id === msg.payload.id ? msg.payload : b)),
+              );
+            } else if (msg.payload.teamId) {
+              fetchBounties();
+              fetchTeamPaymentRecords(msg.payload.teamId);
+            }
+            break;
+
           case "team_verification_updated":
             setTeams((prev) =>
               prev.map((t) =>
@@ -2543,8 +2682,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     if (bountiesLoading) return;
     setBountiesLoading(true);
     try {
-      const resolvedChain =
-        currentUser?.role === "ADMIN" ? "ALL" : "MAIN";
+      const resolvedChain = currentUser?.role === "ADMIN" ? "ALL" : "MAIN";
       const limit = 50;
       const collected: Bounty[] = [];
       let page = 1;
@@ -2714,6 +2852,24 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return data.community ?? [];
   };
 
+  const fetchBountyQuota = async () => {
+    if (!currentUser) return;
+    if (currentUser.role === "ADMIN") {
+      setBountyQuota(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${backendUrl}/api/bounties/mine/quota`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch bounty quota");
+      setBountyQuota(await res.json());
+    } catch (error) {
+      console.error("Failed to fetch bounty quota:", error);
+    }
+  };
+
   const createBounty = async (data: BountyFormData & { teamId?: string }) => {
     if (!currentUser) return;
 
@@ -2741,10 +2897,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to create bounty");
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || "Failed to create bounty");
+      }
 
       const created = await res.json();
       setBounties((prev) => [created, ...prev]);
+      fetchBountyQuota();
     } catch (error) {
       console.error("Failed to create bounty:", error);
       throw error;
@@ -3073,6 +3233,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to update role");
       }
       const data = await res.json();
+      if (data.token) {
+        localStorage.setItem("authToken", data.token);
+      }
       setCurrentUser(data.user);
       localStorage.setItem("currentUser", JSON.stringify(data.user));
       return true;
@@ -3136,6 +3299,28 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to fetch completed bounties:", error);
       return [];
     }
+  };
+
+  const markBountiesExported = async (
+    bountyIds: string[],
+  ): Promise<{ exportedAt: string }> => {
+    if (!currentUser || currentUser.role !== "ADMIN") {
+      throw new Error("Unauthorized");
+    }
+    const res = await fetch(
+      `${backendUrl}/api/bounties/export-completed/mark-exported`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ bountyIds }),
+      },
+    );
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Failed to mark bounties exported");
+    }
+    await fetchTotalStats();
+    return { exportedAt: json.exportedAt };
   };
 
   const updateUserOfac = async (
@@ -3383,6 +3568,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         bounties: populatedBounties,
         bountiesLoading,
         createBounty,
+        bountyQuota,
+        fetchBountyQuota,
         updateBounty,
         updateBountyStatus,
         approveBounty,
@@ -3443,6 +3630,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         address,
         addresses,
         fetchAddresses,
+        fetchTeamWalletAddresses,
         emailNotificationsUpdate,
         syncStatus,
         syncStatusLoading,
@@ -3465,6 +3653,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         setDefaultWallet,
         fetchExportPayments,
         fetchExportCompleted,
+        markBountiesExported,
         updateUserOfac,
         teams,
         teamsLoading,
@@ -3516,6 +3705,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         teamSyncStatusError,
         fetchTeamSyncStatus,
         convertUserToHunter,
+        authorizeTeamDuePayment,
+        fetchTeamPaymentRecords,
+        teamPaymentRecords,
       }}
     >
       {children}
