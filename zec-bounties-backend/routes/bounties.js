@@ -769,7 +769,7 @@ router.post("/:id/assignees", authenticate, isAdmin, async (req, res) => {
         if (["TO_DO", "CANCELLED"].includes(bounty.status)) {
           await tx.bounty.update({
             where: { id: bountyId },
-            data: { status: "IN_PROGRESS" },
+            data: { status: "IN_PROGRESS", isApproved: true },
           });
         }
       }
@@ -1968,6 +1968,7 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
           },
           data: {
             status: "IN_PROGRESS",
+            isApproved: true,
           },
         });
 
