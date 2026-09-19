@@ -3230,6 +3230,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to update role");
       }
       const data = await res.json();
+      localStorage.setItem("authToken", data.token);
       setCurrentUser(data.user);
       localStorage.setItem("currentUser", JSON.stringify(data.user));
       return true;
