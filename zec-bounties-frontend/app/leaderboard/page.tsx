@@ -105,7 +105,10 @@ export default function LeaderboardPage() {
                       hunter.rank === 1 ? "border-primary" : "border-muted"
                     }`}
                   >
-                    <AvatarImage src={hunter.avatar || "/placeholder.svg"} />
+                    <AvatarImage
+  src={hunter.avatar || "/placeholder.svg"}
+  alt={`${hunter.name} avatar`}
+/>
                     <AvatarFallback>{"None"}</AvatarFallback>
                   </Avatar>
                   <div
@@ -156,7 +159,10 @@ export default function LeaderboardPage() {
                     #{hunter.rank}
                   </div>
                   <Avatar className="h-10 w-10 border">
-                    <AvatarImage src={hunter.avatar || "/placeholder.svg"} />
+                    <AvatarImage
+  src={hunter.avatar || "/placeholder.svg"}
+  alt={`${hunter.name} avatar`}
+/>
                     <AvatarFallback>{"None"}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
