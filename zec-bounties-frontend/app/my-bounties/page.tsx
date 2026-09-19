@@ -2,6 +2,7 @@
 
 import {
   Plus,
+  Pencil,
   TrendingUp,
   Clock,
   CheckCircle,
@@ -83,6 +84,7 @@ export default function MyBountiesPage() {
   const { myBounties, myBountiesLoading, fetchMyBounties, currentUser } =
     useBounty();
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [editingBounty, setEditingBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("bounties");
@@ -202,6 +204,19 @@ export default function MyBountiesPage() {
             fetchMyBounties();
           }}
           onCancel={() => setIsNewBountyModalOpen(false)}
+        />
+
+        <NewBountyModal
+          open={!!editingBounty}
+          bounty={editingBounty ?? undefined}
+          onOpenChange={(o) => {
+            if (!o) setEditingBounty(null);
+          }}
+          onSuccess={() => {
+            setEditingBounty(null);
+            fetchMyBounties();
+          }}
+          onCancel={() => setEditingBounty(null)}
         />
 
         <div className="max-w-7xl mx-auto px-3 sam:px-4 imd:px-6 lg:px-8 py-5 imd:py-8">
@@ -384,6 +399,22 @@ export default function MyBountiesPage() {
                         <span className="text-xs tabular-nums text-muted-foreground shrink-0">
                           {bounty.bountyAmount.toLocaleString()} ZEC
                         </span>
+                        {bounty.createdBy === currentUser?.id &&
+                          bounty.status === "TO_DO" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Edit bounty"
+                              aria-label="Edit bounty"
+                              className="h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingBounty(bounty);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                       </div>
                     );
                   })}
