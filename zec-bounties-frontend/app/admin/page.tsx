@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -216,6 +217,38 @@ function CountPill({
 
 /* ------------------------------------------------------------------ */
 
+function getAssigneeGroup(bounty: Bounty): { key: string; label: string } {
+  if (bounty.assignees && bounty.assignees.length > 0) {
+    const ids = bounty.assignees
+      .map((a) => a.userId)
+      .sort()
+      .join(",");
+    const label =
+      bounty.assignees.length === 1
+        ? displayName(bounty.assignees[0].user)
+        : bounty.assignees
+            .map((a) => displayName(a.user))
+            .sort((a, b) =>
+              a.localeCompare(b, undefined, { sensitivity: "base" }),
+            )
+            .join(", ");
+    return { key: `ids:${ids}`, label };
+  }
+
+  if (bounty.assignee && bounty.assigneeUser) {
+    return {
+      key: `ids:${bounty.assignee}`,
+      label: displayName(bounty.assigneeUser),
+    };
+  }
+
+  return { key: "unassigned", label: "Unassigned" };
+}
+
+type BountyTableRow =
+  | { type: "group"; key: string; label: string; count: number }
+  | { type: "bounty"; bounty: Bounty };
+
 export default function AdminDashboard() {
   useRoleGuard("ADMIN");
   const {
@@ -277,6 +310,7 @@ export default function AdminDashboard() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
   const [searchQuery, setSearchQuery] = useState("");
+  const [groupByAssignee, setGroupByAssignee] = useState(false);
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
@@ -315,6 +349,50 @@ export default function AdminDashboard() {
     categoryFilter,
     searchQuery,
   ]);
+
+  const bountyTableRows = useMemo<BountyTableRow[]>(() => {
+    if (!groupByAssignee) {
+      return filteredBounties.map((bounty) => ({
+        type: "bounty" as const,
+        bounty,
+      }));
+    }
+
+    const sorted = [...filteredBounties].sort((a, b) => {
+      const ga = getAssigneeGroup(a);
+      const gb = getAssigneeGroup(b);
+      if (ga.key === "unassigned" && gb.key !== "unassigned") return 1;
+      if (gb.key === "unassigned" && ga.key !== "unassigned") return -1;
+      const byName = ga.label.localeCompare(gb.label, undefined, {
+        sensitivity: "base",
+      });
+      if (byName !== 0) return byName;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+    });
+
+    const counts = new Map<string, number>();
+    for (const bounty of sorted) {
+      const key = getAssigneeGroup(bounty).key;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    const rows: BountyTableRow[] = [];
+    let lastKey: string | null = null;
+    for (const bounty of sorted) {
+      const group = getAssigneeGroup(bounty);
+      if (group.key !== lastKey) {
+        rows.push({
+          type: "group",
+          key: group.key,
+          label: group.label,
+          count: counts.get(group.key) ?? 0,
+        });
+        lastKey = group.key;
+      }
+      rows.push({ type: "bounty", bounty });
+    }
+    return rows;
+  }, [filteredBounties, groupByAssignee]);
 
   const activeCategoryLabel =
     categoryFilter === "ALL" ? "All Categories" : categoryFilter;
@@ -845,7 +923,25 @@ export default function AdminDashboard() {
                           Category
                         </TableHead>
                         <TableHead className="hidden lg:table-cell">
-                          Assignee
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <label className="inline-flex cursor-pointer select-none items-center gap-2">
+                                  <Checkbox
+                                    checked={groupByAssignee}
+                                    onCheckedChange={(value) =>
+                                      setGroupByAssignee(value === true)
+                                    }
+                                    aria-label="Group by assignee"
+                                  />
+                                  Assignee
+                                </label>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Group identical assignees and show open counts
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </TableHead>
                         <TableHead className="hidden lg:table-cell">
                           Activity
@@ -889,7 +985,29 @@ export default function AdminDashboard() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredBounties.map((bounty) => {
+                        bountyTableRows.map((row) => {
+                          if (row.type === "group") {
+                            return (
+                              <TableRow
+                                key={`group-${row.key}`}
+                                className="hover:bg-transparent"
+                              >
+                                <TableCell
+                                  colSpan={7}
+                                  className="bg-muted/40 py-1.5 pl-4 text-xs font-medium text-muted-foreground sm:pl-6"
+                                >
+                                  <span className="text-foreground">
+                                    {row.label}
+                                  </span>
+                                  <span className="ml-2 tabular-nums opacity-70">
+                                    {row.count} open
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          }
+
+                          const bounty = row.bounty;
                           const applications = getAllApplicationsForBounty(
                             bounty.id,
                           );
