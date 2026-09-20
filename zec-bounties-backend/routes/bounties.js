@@ -20,6 +20,9 @@ const {
 const sendMail = require("../utils/sendMail");
 const notifyUser = require("../utils/notifyUser");
 const { REQUIRED_TEAM_VERIFICATIONS } = require("../utils/constants");
+const {
+  buildBountyNotificationCopy,
+} = require("../helpers/bountyNotificationCopy");
 
 // ─── Email settings ───────────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -451,28 +454,27 @@ router.post("/", authenticate, async (req, res) => {
 
         console.log("pushCandidateIds:", pushCandidateIds);
 
+        const copy = buildBountyNotificationCopy(
+          {
+            ...bounty,
+            formattedDescription: formatEmailText(bounty.description),
+          },
+          creatorDisplayName,
+        );
+
         await Promise.all([
           sendPushToOptedIn(pushCandidateIds, {
-            title: "New Bounty Available",
-            body: `${bounty.title} — ${bounty.bountyAmount} ZEC`,
+            title: copy.push.title,
+            body: copy.push.body,
             url: `/bounty/${bounty.id}`,
           }),
           Promise.all(
             emailRecipients.map((recipient) =>
               sendMailIfEnabled({
                 to: recipient,
-                subject: `New Bounty Created: ${bounty.title}`,
-                text: `A new bounty has been created.\n\nCreated by: ${creatorDisplayName}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
-                html: `
-            <h2>New Bounty Created</h2>
-            <p><strong>Created by:</strong> ${creatorDisplayName}</p>
-            <p><strong>Title:</strong> ${bounty.title}</p>
-            <p><strong>Description:</strong><br/>
-              ${formatEmailText(bounty.description)}
-            </p>
-            <p><strong>Amount:</strong> ${bounty.bountyAmount} ZEC</p>
-            <p><strong>Time to complete:</strong> ${bounty.timeToComplete}</p>
-          `,
+                subject: copy.email.subject,
+                text: copy.email.text,
+                html: copy.email.html,
               }),
             ),
           ),
