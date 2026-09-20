@@ -221,7 +221,10 @@ export default function KpisDashboard() {
   );
   const [sortKey, setSortKey] = useState<SortKey>("completed");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
-  const [showAllUsers, setShowAllUsers] = useState(false);
+  const [showAllUsers, setShowAllUsers] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("kpis:showAllUsers") === "true";
+  });
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
   const [isRescanning, setIsRescanning] = useState(false);
   const [rescanMessage, setRescanMessage] = useState("");
@@ -327,6 +330,11 @@ export default function KpisDashboard() {
       setShowAllUsers(false);
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem("kpis:showAllUsers", String(showAllUsers));
+  }, [showAllUsers]);
 
   // Fetch top contributors
   useEffect(() => {
@@ -576,26 +584,13 @@ export default function KpisDashboard() {
 
       if (!res.ok) throw new Error("Failed to update badges");
 
-      const params = new URLSearchParams();
-      if (showAllUsers) params.set("all", "true");
-      params.set("timeRange", timeRange);
-
-      const refreshRes = await fetch(
-        `${backendUrl}/api/kpis/top-contributors?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-          },
-        },
+      setTopContributors((prev) =>
+        prev.map((user) =>
+          user.id === selectedUserForBadges.id
+            ? { ...user, badges: selectedBadges }
+            : user,
+        ),
       );
-
-      if (refreshRes.ok) {
-        const raw = await refreshRes.json();
-        const { list, summary } = parseTopContributorsResponse(raw);
-        const enriched = enrichWithReceivers(list, isAdmin);
-        setTopContributors(enriched);
-        setKpiSummary(summary);
-      }
 
       toast.success("Badges updated");
       closeBadgeModal();
