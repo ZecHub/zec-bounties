@@ -22,22 +22,30 @@ cp .env.example .env
 ```
 
 `.env.example` documents every variable the code reads. For a basic local
-run you only need `DATABASE_URL` (a local PostgreSQL database) — everything
-else is optional for local dev and marked as such in the file.
+run you need `DATABASE_URL` (a local PostgreSQL database) and a running
+Redis (the server connects on boot; `REDIS_URL` defaults to
+`redis://localhost:6379`). Everything else is optional for local dev and
+marked as such in the file.
 
-### 3. Generate the Prisma client
+### 3. Create the database
+
+```bash
+createdb zec_bounties
+```
+
+### 4. Generate the Prisma client
 
 ```bash
 npx prisma generate
 ```
 
-### 4. Run the initial migration
+### 5. Run the initial migration
 
 ```bash
 npx prisma migrate dev --name init
 ```
 
-### 5. Start the development server
+### 6. Start the development server
 
 ```bash
 npm run dev
@@ -56,7 +64,11 @@ frontend's dev `backendUrl` in `zec-bounties-frontend/lib/configENV.ts`.)
 
 ## Notes
 
-- You need PostgreSQL running locally and reachable via `DATABASE_URL`.
+- You need PostgreSQL running locally and reachable via `DATABASE_URL`
+  (create the database first: `createdb zec_bounties`).
+- You need Redis running locally and reachable via `REDIS_URL`
+  (default `redis://localhost:6379`). The server connects to Redis on boot
+  and will not start without it.
 - Zcash payments additionally need Zebrad and Zaino installed. Check
   [Zechub Developers Resources](https://zechub.wiki/developers) to get started.
   Without them the API and UI still run; only actual ZEC transfers will fail.
