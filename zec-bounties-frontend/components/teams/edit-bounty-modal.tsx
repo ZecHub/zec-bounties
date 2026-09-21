@@ -291,6 +291,7 @@ export function TeamsEditBountyModal({
                   <Input
                     id="edit-deadline"
                     type="date"
+                    min={new Date().toISOString().split("T")[0]}
                     value={timeToComplete}
                     onChange={(e) => setTimeToComplete(e.target.value)}
                   />

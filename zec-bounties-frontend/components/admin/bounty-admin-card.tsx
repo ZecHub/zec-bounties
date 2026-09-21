@@ -676,6 +676,7 @@ export function BountyAdminCard({
                     <Input
                       id="edit-due"
                       type="date"
+                      min={new Date().toISOString().split("T")[0]}
                       value={editForm.timeToComplete}
                       onChange={(e) =>
                         setEditForm((prev) => ({
@@ -1371,6 +1372,7 @@ export function BountyAdminCard({
                           <Input
                             id="edit-due"
                             type="date"
+                            min={new Date().toISOString().split("T")[0]}
                             value={editForm.timeToComplete}
                             onChange={(e) =>
                               setEditForm((prev) => ({
