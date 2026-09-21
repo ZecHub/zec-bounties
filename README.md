@@ -11,15 +11,15 @@ The project consists of:
 
 # Prerequisites
 
-Before getting started, ensure you have the following installed:
+Before getting started, ensure you have the following installed and running:
 
 - Node.js
-- npm and/or Yarn
-- Prisma
-- Zebrad
-- Zaino
-- Zingo-cli
+- npm
+- PostgreSQL (running locally; you will create a `zec_bounties` database below)
+- Redis (running locally; the backend connects to it on boot)
 
+Zcash payments additionally need Zebrad, Zaino, and zingo-cli. Those are
+only required for real ZEC transfers; the API and UI run without them.
 For Zcash node setup, see the **ZecHub Developer Resources**:
 
 https://zechub.wiki/developers
@@ -42,28 +42,35 @@ cd zec-bounties-backend
 npm install
 ```
 
-### 3. Initialize Prisma
+### 3. Copy the environment file
 
 ```bash
-npx prisma init
+cp .env.example .env
 ```
 
-### 4. Generate Prisma Client
+See the Environment Variables section below for what each value means.
+At minimum, `DATABASE_URL` must point at your local PostgreSQL.
+
+### 4. Create the database
+
+```bash
+createdb zec_bounties
+```
+
+(Or in psql: `CREATE DATABASE zec_bounties;`. The default `DATABASE_URL` in
+`.env.example` expects a database named `zec_bounties` owned by the
+`postgres` superuser with password `postgres`.)
+
+### 5. Generate Prisma Client
 
 ```bash
 npx prisma generate
 ```
 
-### 5. Run the initial migration
+### 6. Run the initial migration
 
 ```bash
 npx prisma migrate dev --name init
-```
-
-### 6. Push the database schema
-
-```bash
-npx prisma db push
 ```
 
 ### 7. Start the backend
@@ -91,13 +98,13 @@ cd zec-bounties-frontend
 ### 2. Install dependencies
 
 ```bash
-yarn install
+npm install
 ```
 
 ### 3. Start the development server
 
 ```bash
-yarn dev
+npm run dev
 ```
 
 The frontend runs at:
@@ -110,11 +117,12 @@ http://localhost:3000
 
 # Environment Variables
 
-Create a `.env` file inside the backend directory:
+The backend reads its config from a `.env` file. Step 3 above already
+copies the template; this section documents the values:
 
 ```bash
 cd zec-bounties-backend
-cp .env.example .env
+cp .env.example .env   # already done in step 3 if you followed the order above
 ```
 
 `.env.example` documents every variable the code reads (placeholders included).
@@ -161,7 +169,7 @@ Start the frontend:
 
 ```bash
 cd zec-bounties-frontend
-yarn dev
+npm run dev
 ```
 
 Once both services are running, open:
