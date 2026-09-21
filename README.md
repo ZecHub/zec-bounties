@@ -110,16 +110,20 @@ http://localhost:3000
 
 # Environment Variables
 
-Create a `.env` file inside the backend directory (it is automatically created after running `npx prisma init`).
+Create a `.env` file inside the backend directory:
 
-Example:
+```bash
+cd zec-bounties-backend
+cp .env.example .env
+```
+
+`.env.example` documents every variable the code reads (placeholders included).
+Example of the key entries:
 
 ```env
-USER="USER_NAME"
-
 PORT=9000
 
-DATABASE_URL="file:./dev.db" # For local setup
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/zec_bounties"
 JWT_SECRET="JWT_SECRET"
 
 ZCASH_RPC_USER=rpcuser
@@ -132,13 +136,12 @@ GITHUB_CLIENT_ID=GITHUB_CLIENT_ID
 GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET
 
 FRONTEND_URL=http://localhost:3000
-BACKEND_URL=http://localhost:9000
 
 SMTP_USER=mail
 SMTP_PASS=password
 
 NODE_ENV=development
-DEV_EMAIL_FALLBACK=mail
+DEV_EMAIL_FALLBACK=dev@example.com
 ```
 
 Update these values to match your local environment.
@@ -170,8 +173,9 @@ Backend:  http://localhost:9000
 
 ## NOTES & LIMITATIONS
 
-- Database: SQLite (dev.db) for local use (Not Production). No external DB needed initially.
-- To reset DB: delete dev.db and re-run `npx prisma db push`.
+- Database: PostgreSQL, configured via `DATABASE_URL` in `zec-bounties-backend/.env`
+  (copy `.env.example`). Prisma schema provider is `postgresql`.
+- To reset DB: drop and recreate the database, then re-run `npx prisma migrate dev`.
 - Zcash integration (payments, shielded tx, etc.) requires Zebrad + Zaino running and correctly configured in .env.
   Without them, bounty creation/submission UI may work but actual ZEC transfers will fail.
 - GitHub login is used for authentication. Set up a GitHub OAuth App at https://github.com/settings/developers
