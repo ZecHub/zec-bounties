@@ -21,6 +21,10 @@ const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_REDIRECT_URI = `${process.env.BACKEND_URL || "http://localhost:5000"}/auth/discord/callback`;
+
 router.get("/github", (req, res) => {
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=user:email`;
   res.redirect(githubAuthUrl);
@@ -141,6 +145,135 @@ router.get("/github/callback", async (req, res) => {
   }
 });
 
+// Step 1: authenticated user clicks "Connect Discord" — frontend navigates
+// here with their JWT as a query param (redirects can't carry headers).
+// We re-sign that identity into a short-lived state token so the callback
+// (a plain GET from Discord, no auth header either) knows who to attach to.
+router.get("/discord", (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.redirect(`${FRONTEND_URL}/profile?discord=error`);
+  }
+
+  let userId;
+  try {
+    userId = jwt.verify(token, SECRET).id;
+  } catch {
+    return res.redirect(`${FRONTEND_URL}/profile?discord=error`);
+  }
+
+  const state = jwt.sign({ userId }, SECRET, { expiresIn: "10m" });
+
+  const params = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    redirect_uri: DISCORD_REDIRECT_URI,
+    response_type: "code",
+    scope: "identify",
+    state,
+  });
+
+  res.redirect(`https://discord.com/api/oauth2/authorize?${params}`);
+});
+
+router.get("/discord/callback", async (req, res) => {
+  const { code, state, error } = req.query;
+
+  if (error || !code || !state) {
+    return res.redirect(`${FRONTEND_URL}/profile?discord=error`);
+  }
+
+  let userId;
+  try {
+    ({ userId } = jwt.verify(state, SECRET));
+  } catch {
+    return res.redirect(`${FRONTEND_URL}/profile?discord=expired`);
+  }
+
+  try {
+    const tokenResponse = await axios.post(
+      "https://discord.com/api/oauth2/token",
+      new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: DISCORD_REDIRECT_URI,
+      }),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+    );
+
+    const discordUser = await axios.get("https://discord.com/api/users/@me", {
+      headers: { Authorization: `Bearer ${tokenResponse.data.access_token}` },
+    });
+
+    const { id: discordUserId, username, global_name } = discordUser.data;
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        discordUserId,
+        discordUsername: username,
+        discordGlobalName: global_name || username,
+        discordConnectedAt: new Date(),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        discordUserId: true,
+        discordUsername: true,
+        discordGlobalName: true,
+        discordConnectedAt: true,
+      },
+    });
+
+    await delCache("users:all");
+    sendRealtimeUpdate("user_updated", updated, userId);
+
+    res.redirect(`${FRONTEND_URL}/profile?discord=success`);
+  } catch (err) {
+    if (err.code === "P2002") {
+      return res.redirect(`${FRONTEND_URL}/profile?discord=taken`);
+    }
+    console.error("Discord OAuth error:", err.message);
+    res.redirect(`${FRONTEND_URL}/profile?discord=error`);
+  }
+});
+
+// Disconnect
+router.delete("/discord", authenticate, async (req, res) => {
+  try {
+    const updated = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        discordUserId: null,
+        discordUsername: null,
+        discordGlobalName: null,
+        discordConnectedAt: null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        discordUserId: true,
+        discordUsername: true,
+        discordGlobalName: true,
+        discordConnectedAt: true,
+      },
+    });
+
+    await delCache("users:all");
+    sendRealtimeUpdate("user_updated", updated, req.user.id);
+
+    res.json({ user: updated });
+  } catch (error) {
+    console.error("Failed to disconnect Discord:", error);
+    res.status(500).json({ error: "Failed to disconnect Discord" });
+  }
+});
+
 router.get("/verify", (req, res) => {
   const authHeader = req.headers.authorization;
 
@@ -183,6 +316,7 @@ router.get("/me", async (req, res) => {
         UA_address: true,
         isRobin: true,
         emailNotifications: true,
+        discordUsername: true,
       },
     });
 
@@ -584,7 +718,16 @@ router.patch("/select-role", authenticate, async (req, res) => {
 
     sendRealtimeUpdate("user_updated", updated, req.user.id);
 
-    res.json({ user: updated });
+    const token = jwt.sign(
+      {
+        id: updated.id,
+        role: updated.role,
+      },
+      SECRET,
+      { expiresIn: "7d" },
+    );
+
+    res.json({ user: updated, token });
   } catch (error) {
     console.error("Failed to select role:", error);
     res.status(500).json({
