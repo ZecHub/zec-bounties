@@ -99,6 +99,7 @@ interface BountyContextType {
   ) => Promise<RecoveryData>;
   nicknameUpdate: (nickname: string) => Promise<boolean | undefined>;
   selectRole: (role: "HUNTER" | "TEAM") => Promise<boolean>;
+  disconnectDiscord: () => Promise<boolean>;
 
   // Role switching (isRobin users only)
   switchRole: (role: "ADMIN" | "CLIENT" | "HUNTER" | "TEAM") => Promise<void>;
@@ -3240,6 +3241,24 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const disconnectDiscord = async () => {
+    if (!currentUser) return false;
+    try {
+      const res = await fetch(`${backendUrl}/auth/discord`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to disconnect Discord");
+      const data = await res.json();
+      setCurrentUser(data.user);
+      localStorage.setItem("currentUser", JSON.stringify(data.user));
+      return true;
+    } catch (error) {
+      console.error("Failed to disconnect Discord:", error);
+      return false;
+    }
+  };
+
   const uaAddressUpdate = async (UA_address: string) => {
     if (!currentUser) return;
     try {
@@ -3554,6 +3573,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         verifyRecoveryOtp,
         nicknameUpdate,
         selectRole,
+        disconnectDiscord,
         categories,
         categoriesLoading,
         fetchCategories,
