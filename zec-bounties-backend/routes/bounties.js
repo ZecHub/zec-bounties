@@ -22,6 +22,11 @@ const notifyUser = require("../utils/notifyUser");
 const { notifyNewBounty } = require("../utils/discord/discordNotify");
 const { notifyAssignment } = require("../utils/discord/discordAssignWebhook");
 const { REQUIRED_TEAM_VERIFICATIONS } = require("../utils/constants");
+const {
+  validateBountyCreate,
+  validateBountyUpdate,
+  validateCategory,
+} = require("../helpers/validateBounty");
 
 // ─── Email settings ───────────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -359,6 +364,22 @@ router.post("/", authenticate, async (req, res) => {
 
     if (chain && !["MAIN", "TEST"].includes(chain)) {
       return res.status(400).json({ error: "Invalid chain value" });
+    }
+
+    // ─── Input validation ───────────────────────────────────────────────
+    const createCheck = validateBountyCreate({
+      title,
+      description,
+      bountyAmount,
+      timeToComplete,
+    });
+    if (!createCheck.valid) {
+      return res.status(400).json({ error: createCheck.error });
+    }
+
+    const categoryCheck = await validateCategory(prisma, categoryId);
+    if (!categoryCheck.valid) {
+      return res.status(400).json({ error: categoryCheck.error });
     }
 
     // If a teamId was given, confirm it exists and the creator is actually
@@ -2528,6 +2549,19 @@ router.put("/:id", authenticate, async (req, res) => {
       !["MAIN", "TEST"].includes(req.body.chain)
     ) {
       return res.status(400).json({ error: "Invalid chain value" });
+    }
+
+    // ─── Input validation (partial — only checks fields present) ────────
+    const updateCheck = validateBountyUpdate(req.body);
+    if (!updateCheck.valid) {
+      return res.status(400).json({ error: updateCheck.error });
+    }
+
+    if (req.body.categoryId !== undefined) {
+      const categoryCheck = await validateCategory(prisma, req.body.categoryId);
+      if (!categoryCheck.valid) {
+        return res.status(400).json({ error: categoryCheck.error });
+      }
     }
 
     if (req.body.teamId && req.user.role !== "ADMIN") {
