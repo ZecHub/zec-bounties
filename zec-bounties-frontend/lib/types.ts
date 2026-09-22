@@ -21,6 +21,8 @@ export interface User {
   isRobin: Boolean;
   emailNotifications?: boolean;
   badges?: string[];
+  discordUsername?: string;
+  discordGlobalName?: string;
 }
 
 /** Privacy-first profile visibility. Missing keys treated as false except avatar/displayName. */

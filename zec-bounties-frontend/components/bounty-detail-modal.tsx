@@ -25,6 +25,7 @@ import {
   Share2,
   Check,
 } from "lucide-react";
+import { RxDiscordLogo } from "react-icons/rx";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
@@ -636,6 +637,22 @@ export function BountyDetailModal({
                       className="min-h-[90px] text-sm"
                     />
                   </div>
+
+                  {/* Discord hint — soft, non-blocking */}
+                  {!currentUser?.discordUsername && (
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <RxDiscordLogo className="h-3 w-3 flex-shrink-0" />
+                      Connect Discord on your{" "}
+                      <Link
+                        href="/profile"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        profile
+                      </Link>{" "}
+                      to get notified if you're assigned.
+                    </p>
+                  )}
+
                   <div className="flex gap-2">
                     <Button
                       size="sm"

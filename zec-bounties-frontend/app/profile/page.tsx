@@ -34,6 +34,7 @@ import {
   BellRing,
   Wallet,
 } from "lucide-react";
+import { RxDiscordLogo } from "react-icons/rx";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,7 @@ export default function ProfilePage() {
     setCurrentUser,
     nicknameUpdate,
     emailNotificationsUpdate,
+    disconnectDiscord,
   } = useBounty();
 
   // ── Additional settings visibility ─────────────────────────────────────────
@@ -597,6 +599,55 @@ export default function ProfilePage() {
                   />
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-medium flex items-center gap-2">
+                <RxDiscordLogo />
+                Discord
+              </CardTitle>
+              <CardDescription>
+                Link your Discord account for community roles and notifications.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {currentUser?.discordUsername ? (
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">
+                      {currentUser.discordGlobalName ??
+                        currentUser.discordUsername}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      @{currentUser.discordUsername}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      const ok = await disconnectDiscord();
+                      toast[ok ? "success" : "error"](
+                        ok ? "Discord disconnected" : "Failed to disconnect",
+                      );
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const token = localStorage.getItem("authToken");
+                    window.location.href = `${backendUrl}/auth/discord?token=${encodeURIComponent(token ?? "")}`;
+                  }}
+                >
+                  Connect Discord
+                </Button>
+              )}
             </CardContent>
           </Card>
 
