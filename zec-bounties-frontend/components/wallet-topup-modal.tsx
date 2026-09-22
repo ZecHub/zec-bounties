@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Dialog,
@@ -17,20 +17,36 @@ import { formatAddress } from "@/lib/utils";
 interface WalletTopupModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  addresses?: string[];
 }
 
 export function WalletTopupModal({
   open,
   onOpenChange,
+  addresses: addressesProp,
 }: WalletTopupModalProps) {
-  const { addresses } = useBounty();
+  const { addresses: ctxAddresses } = useBounty();
+
+  const addresses = addressesProp ?? ctxAddresses ?? [];
+
   const [copied, setCopied] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const walletAddress = addresses[activeIndex] || "Loading Address...";
+  // Addresses arrive asynchronously (and can change when the active wallet
+  // changes), so keep the index inside bounds instead of rendering undefined.
+  const safeIndex = addresses.length > 0 ? activeIndex % addresses.length : 0;
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setCopied(false);
+  }, [open, addresses.length]);
+
+  const walletAddress = addresses[safeIndex] ?? "";
+  const hasAddress = walletAddress.length > 0;
   const hasMultiple = addresses.length > 1;
 
   const handleCopyAddress = () => {
+    if (!hasAddress) return;
     navigator.clipboard.writeText(walletAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -68,12 +84,12 @@ export function WalletTopupModal({
             )}
 
             <div className="w-64 h-64 bg-white border-2 border-border rounded-lg flex items-center justify-center p-4">
-              {addresses.length > 0 ? (
+              {hasAddress ? (
                 <QRCodeSVG
                   value={walletAddress}
                   size={224}
                   level="H"
-                  includeMargin={false}
+                  marginSize={0}
                 />
               ) : (
                 <div className="text-center">
@@ -112,12 +128,12 @@ export function WalletTopupModal({
           {/* Dot indicators */}
           {hasMultiple && (
             <div className="flex gap-1.5">
-              {addresses.map((_, i) => (
+              {addresses.map((address, i) => (
                 <button
-                  key={i}
+                  key={address}
                   onClick={() => setActiveIndex(i)}
                   className={`h-1.5 rounded-full transition-all ${
-                    i === activeIndex
+                    i === safeIndex
                       ? "w-4 bg-primary"
                       : "w-1.5 bg-muted-foreground/30"
                   }`}
@@ -129,7 +145,7 @@ export function WalletTopupModal({
           {/* Address counter */}
           {hasMultiple && (
             <p className="text-xs text-muted-foreground -mt-3">
-              Address {activeIndex + 1} of {addresses.length}
+              Address {safeIndex + 1} of {addresses.length}
             </p>
           )}
 
@@ -140,14 +156,16 @@ export function WalletTopupModal({
             </label>
             <div className="flex gap-2 items-center bg-muted rounded-lg p-3 border border-border">
               <code className="text-xs font-mono flex-1 break-all text-foreground">
-                {formatAddress(walletAddress)}
+                {hasAddress
+                  ? formatAddress(walletAddress)
+                  : "Loading Address..."}
               </code>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 flex-shrink-0"
                 onClick={handleCopyAddress}
-                disabled={addresses.length === 0}
+                disabled={!hasAddress}
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-green-500" />
@@ -167,7 +185,10 @@ export function WalletTopupModal({
           >
             Cancel
           </Button>
-          <Button className="flex-1 bg-primary hover:bg-primary/90">
+          <Button
+            className="flex-1 bg-primary hover:bg-primary/90"
+            disabled={!hasAddress}
+          >
             View on Block Explorer
           </Button>
         </div>

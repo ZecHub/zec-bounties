@@ -91,6 +91,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
+import { TeamAuthorizePaymentPanel } from "@/components/payments/teams/authorize-payment-panel";
 
 type Tab =
   | "Overview"
@@ -415,6 +417,37 @@ function statusDotColor(status: Bounty["status"]) {
     default:
       return "bg-red-500";
   }
+}
+
+function EmptyTxState({
+  onRefresh,
+  loading,
+}: {
+  onRefresh: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
+      <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+      <p className="text-sm text-muted-foreground">
+        No transactions loaded yet.
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-3 gap-2"
+        onClick={onRefresh}
+        disabled={loading}
+      >
+        {loading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <RefreshCw className="h-3.5 w-3.5" />
+        )}
+        Refresh
+      </Button>
+    </div>
+  );
 }
 
 function OverviewTab({
@@ -2011,6 +2044,8 @@ function TreasuryTab({
     teamPaymentIDs,
     teamPaymentChain,
     teamPaymentServerUrl,
+    teamPaymentRecords,
+    fetchTeamPaymentRecords,
     rescanTeamWallet,
     teamRescanLoading,
     teamRescanStatus,
@@ -2025,6 +2060,7 @@ function TreasuryTab({
   const [deletingWallet, setDeletingWallet] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
 
   const syncStatus = teamSyncStatus[team.id] ?? null;
 
@@ -2038,6 +2074,14 @@ function TreasuryTab({
 
   useEffect(() => {
     loadBalance();
+  }, [team.id, team.wallet]);
+
+  // Auto-load transaction history + payment records as soon as the Treasury
+  // tab is viewed with a wallet present — no more waiting on a manual click.
+  useEffect(() => {
+    if (!team.wallet) return;
+    fetchTeamTransactionHashes(team.id);
+    fetchTeamPaymentRecords(team.id);
   }, [team.id, team.wallet]);
 
   const handleFetchTransactions = async () => {
@@ -2107,6 +2151,9 @@ function TreasuryTab({
 
   return (
     <div className="space-y-6">
+      {canManage && (
+        <TeamAuthorizePaymentPanel team={team} teamBounties={teamBounties} />
+      )}
       <div className="rounded-xl border bg-card p-6">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
@@ -2211,59 +2258,49 @@ function TreasuryTab({
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-          Recent payouts
-        </h2>
-        <div className="divide-y rounded-xl border bg-card">
-          {teamBounties
-            .filter((b) => b.status === "DONE")
-            .map((bounty) => (
-              <div
-                key={bounty.id}
-                className="flex items-center justify-between gap-4 px-4 py-3"
-              >
-                <span className="text-sm">{bounty.title}</span>
-                <span className="text-sm text-muted-foreground">
-                  −{formatZec(bounty.bountyAmount)}
-                </span>
-              </div>
-            ))}
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-muted-foreground">
-            Transaction history
-          </h2>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-2"
-            onClick={handleFetchTransactions}
-            disabled={isFetchingTxHashes}
+        <div className="mb-3 flex items-center gap-1 rounded-lg border bg-muted/40 p-1 w-fit">
+          <button
+            onClick={() => setTxSubTab("wallet")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              txSubTab === "wallet"
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground"
+            }`}
           >
-            {isFetchingTxHashes ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-            {isFetchingTxHashes ? "Fetching..." : "Refresh"}
-          </Button>
+            Wallet history ({teamPaymentIDs?.length || 0})
+          </button>
+          <button
+            onClick={() => setTxSubTab("payouts")}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              txSubTab === "payouts"
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground"
+            }`}
+          >
+            Bounty payouts ({teamPaymentRecords.length})
+          </button>
         </div>
 
-        {teamPaymentIDs && teamPaymentIDs.length > 0 ? (
-          <PaymentTxIdsTable
-            paymentIDs={teamPaymentIDs}
-            chain={teamPaymentChain}
-            serverUrl={teamPaymentServerUrl}
-          />
+        {txSubTab === "wallet" ? (
+          teamPaymentIDs && teamPaymentIDs.length > 0 ? (
+            <PaymentTxIdsTable
+              paymentIDs={teamPaymentIDs}
+              chain={teamPaymentChain}
+              serverUrl={teamPaymentServerUrl}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
+              <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">
+                No transactions found for this wallet yet.
+              </p>
+            </div>
+          )
+        ) : teamPaymentRecords.length > 0 ? (
+          <PaymentRecordsTable records={teamPaymentRecords} />
         ) : (
-          <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
-            <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">
-              No transactions loaded yet. Click Refresh to fetch history.
-            </p>
+          <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center text-sm text-muted-foreground">
+            No payout records yet.
           </div>
         )}
       </div>

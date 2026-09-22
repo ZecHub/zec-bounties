@@ -52,7 +52,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
@@ -251,12 +251,12 @@ export function TeamNavbar({
   const router = useRouter();
   const [topupOpen, setTopupOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [zecBalance] = useState(0.0);
   const {
     currentUser,
     logout,
     currentTeam,
     fetchTeamWalletBalance,
+    fetchTeamWalletAddresses,
     teamSyncStatus,
     teamSyncStatusError,
     fetchTeamSyncStatus,
@@ -266,6 +266,14 @@ export function TeamNavbar({
   const [teamBalance, setTeamBalance] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [teamAddresses, setTeamAddresses] = useState<string[]>([]);
+
+  // Auto-load the team wallet balance once a team with a wallet is known —
+  // previously this stayed at 0.0000 ZEC until someone clicked Refresh.
+  useEffect(() => {
+    if (!currentTeam?.wallet) return;
+    fetchTeamWalletBalance(currentTeam.id).then(setTeamBalance);
+  }, [currentTeam?.id, currentTeam?.wallet]);
 
   const confirmedTotal = (b: Balance | undefined) =>
     ((b?.confirmed_ironwood_balance ?? 0) +
@@ -294,6 +302,16 @@ export function TeamNavbar({
       setIsSyncing(false);
     }
   };
+
+  const handleOpenTopup = async () => {
+    setTopupOpen(true);
+    setMobileMenuOpen(false);
+    if (currentTeam) {
+      const addrs = await fetchTeamWalletAddresses(currentTeam.id);
+      setTeamAddresses(addrs);
+    }
+  };
+
   const currentSyncStatus = currentTeam
     ? (teamSyncStatus[currentTeam.id] ?? null)
     : null;
@@ -380,10 +398,7 @@ export function TeamNavbar({
                 <Button
                   variant="outline"
                   className="gap-2 justify-start font-mono"
-                  onClick={() => {
-                    setTopupOpen(true);
-                    setMobileMenuOpen(false);
-                  }}
+                  onClick={handleOpenTopup}
                 >
                   <Wallet className="h-4 w-4" />
                   {teamBalance
@@ -599,13 +614,12 @@ export function TeamNavbar({
                         <Button
                           variant="outline"
                           className="gap-2 justify-start font-mono"
-                          onClick={() => {
-                            setTopupOpen(true);
-                            setMobileMenuOpen(false);
-                          }}
+                          onClick={handleOpenTopup}
                         >
                           <Wallet className="h-4 w-4" />
-                          {zecBalance.toFixed(4)} ZEC
+                          {teamBalance
+                            ? `${fmt(confirmedTotal(teamBalance))} ZEC`
+                            : "0.0000 ZEC"}
                         </Button>
                       )}
 
@@ -663,7 +677,11 @@ export function TeamNavbar({
       </nav>
 
       {isTeam && currentUser && (
-        <WalletTopupModal open={topupOpen} onOpenChange={setTopupOpen} />
+        <WalletTopupModal
+          open={topupOpen}
+          onOpenChange={setTopupOpen}
+          addresses={teamAddresses}
+        />
       )}
     </>
   );
