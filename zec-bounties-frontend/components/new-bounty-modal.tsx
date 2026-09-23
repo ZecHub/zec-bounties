@@ -240,7 +240,7 @@ export function NewBountyModal({
                   type="number"
                   step="0.01"
                   min="0"
-                  value={formData.bountyAmount || ""}
+                  value={formData.bountyAmount}
                   onChange={(e) =>
                     setFormData((prev) => ({
                       ...prev,
