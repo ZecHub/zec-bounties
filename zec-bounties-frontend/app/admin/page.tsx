@@ -68,7 +68,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { BountyStatus, WorkSubmission, Bounty } from "@/lib/types";
 import { formatStatus } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, startOfWeek } from "date-fns";
 import { GlobalSettingsModal } from "@/components/settings/global-settings-modal";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
@@ -370,6 +370,45 @@ function getAssigneeGroup(bounty: Bounty): { key: string; label: string } {
   return { key: "unassigned", label: "Unassigned" };
 }
 
+/* ------------------------------------------------------------------ */
+/* Week grouping — collapses bounties into the ISO-ish (Mon-start) week */
+/* they were created in, newest week first. "This Week" / "Last Week"   */
+/* get friendly labels; anything older gets a date range.               */
+/* ------------------------------------------------------------------ */
+
+function getWeekGroup(bounty: Bounty): {
+  key: string;
+  label: string;
+  start: Date;
+} {
+  const created = bounty.dateCreated
+    ? new Date(bounty.dateCreated)
+    : new Date(0);
+  const start = startOfWeek(created, { weekStartsOn: 1 });
+  const key = start.toISOString();
+
+  const thisWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const diffWeeks = Math.round(
+    (thisWeekStart.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
+  );
+
+  let label: string;
+  if (diffWeeks === 0) {
+    label = "This Week";
+  } else if (diffWeeks === 1) {
+    label = "Last Week";
+  } else {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const sameYear = start.getFullYear() === end.getFullYear();
+    label = sameYear
+      ? `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`
+      : `${format(start, "MMM d, yyyy")} – ${format(end, "MMM d, yyyy")}`;
+  }
+
+  return { key, label, start };
+}
+
 type BountyRow = {
   bounty: Bounty;
   appCount: number;
@@ -379,6 +418,7 @@ type BountyRow = {
 };
 
 type BountyTableRow =
+  | { type: "week"; key: string; label: string; count: number }
   | { type: "group"; key: string; label: string; count: number }
   | ({ type: "bounty" } & BountyRow);
 
@@ -449,6 +489,7 @@ export default function AdminDashboard() {
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
   const [searchQuery, setSearchQuery] = useState("");
   const [groupByAssignee, setGroupByAssignee] = useState(false);
+  const [groupByWeek, setGroupByWeek] = useState(false);
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
@@ -512,15 +553,16 @@ export default function AdminDashboard() {
     [filteredBounties, getAllApplicationsForBounty, allSubmissions],
   );
 
-  // Desktop-only grouping: when enabled, collapses bounties that share the
-  // same assignee(s) under one header row with an open count. Mobile cards
-  // stay flat regardless.
+  // Desktop-only grouping: collapses bounties under week headers (by
+  // creation date, newest first) and/or assignee headers with an open
+  // count. When both are on, weeks are the outer grouping and assignees
+  // are nested inside each week. Mobile cards stay flat regardless.
   const bountyTableRows = useMemo<BountyTableRow[]>(() => {
-    if (!groupByAssignee) {
+    if (!groupByWeek && !groupByAssignee) {
       return bountyRows.map((row) => ({ type: "bounty" as const, ...row }));
     }
 
-    const sorted = [...bountyRows].sort((a, b) => {
+    const assigneeCompare = (a: BountyRow, b: BountyRow) => {
       const ga = getAssigneeGroup(a.bounty);
       const gb = getAssigneeGroup(b.bounty);
       if (ga.key === "unassigned" && gb.key !== "unassigned") return 1;
@@ -532,7 +574,73 @@ export default function AdminDashboard() {
       return a.bounty.title.localeCompare(b.bounty.title, undefined, {
         sensitivity: "base",
       });
-    });
+    };
+
+    if (groupByWeek) {
+      const withWeek = bountyRows.map((row) => ({
+        row,
+        week: getWeekGroup(row.bounty),
+      }));
+
+      withWeek.sort((a, b) => {
+        if (a.week.start.getTime() !== b.week.start.getTime()) {
+          return b.week.start.getTime() - a.week.start.getTime(); // newest week first
+        }
+        return groupByAssignee
+          ? assigneeCompare(a.row, b.row)
+          : a.row.bounty.title.localeCompare(b.row.bounty.title, undefined, {
+              sensitivity: "base",
+            });
+      });
+
+      const weekCounts = new Map<string, number>();
+      const assigneeCountsByWeek = new Map<string, number>();
+      for (const { week, row } of withWeek) {
+        weekCounts.set(week.key, (weekCounts.get(week.key) ?? 0) + 1);
+        if (groupByAssignee) {
+          const aKey = `${week.key}::${getAssigneeGroup(row.bounty).key}`;
+          assigneeCountsByWeek.set(
+            aKey,
+            (assigneeCountsByWeek.get(aKey) ?? 0) + 1,
+          );
+        }
+      }
+
+      const rows: BountyTableRow[] = [];
+      let lastWeekKey: string | null = null;
+      let lastAssigneeKey: string | null = null;
+      for (const { row, week } of withWeek) {
+        if (week.key !== lastWeekKey) {
+          rows.push({
+            type: "week",
+            key: week.key,
+            label: week.label,
+            count: weekCounts.get(week.key) ?? 0,
+          });
+          lastWeekKey = week.key;
+          lastAssigneeKey = null; // reset nested grouping per week
+        }
+
+        if (groupByAssignee) {
+          const group = getAssigneeGroup(row.bounty);
+          if (group.key !== lastAssigneeKey) {
+            rows.push({
+              type: "group",
+              key: `${week.key}::${group.key}`,
+              label: group.label,
+              count: assigneeCountsByWeek.get(`${week.key}::${group.key}`) ?? 0,
+            });
+            lastAssigneeKey = group.key;
+          }
+        }
+
+        rows.push({ type: "bounty", ...row });
+      }
+      return rows;
+    }
+
+    // Assignee-only grouping (no week grouping).
+    const sorted = [...bountyRows].sort(assigneeCompare);
 
     const counts = new Map<string, number>();
     for (const row of sorted) {
@@ -556,7 +664,12 @@ export default function AdminDashboard() {
       rows.push({ type: "bounty", ...row });
     }
     return rows;
-  }, [bountyRows, groupByAssignee]);
+  }, [bountyRows, groupByAssignee, groupByWeek]);
+
+  // Nested assignee headers (inside a week) get extra indent so the
+  // hierarchy reads clearly; standalone assignee headers keep the
+  // original alignment.
+  const groupIndentClass = groupByWeek ? "pl-8 sm:pl-10" : "pl-4 sm:pl-6";
 
   const activeCategoryLabel =
     categoryFilter === "ALL" ? "All Categories" : categoryFilter;
@@ -1283,7 +1396,25 @@ export default function AdminDashboard() {
                       <TableHeader className="sticky top-[0px] z-10 bg-muted/50 backdrop-blur">
                         <TableRow>
                           <TableHead className="py-3 pl-4 sm:pl-6">
-                            Bounty
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <label className="inline-flex cursor-pointer select-none items-center gap-2">
+                                    <Checkbox
+                                      checked={groupByWeek}
+                                      onCheckedChange={(value) =>
+                                        setGroupByWeek(value === true)
+                                      }
+                                      aria-label="Group by week"
+                                    />
+                                    Bounty
+                                  </label>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Group bounties by the week they were created
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </TableHead>
                           <TableHead className="hidden sm:table-cell">
                             Status
@@ -1357,6 +1488,26 @@ export default function AdminDashboard() {
                           </TableRow>
                         ) : (
                           bountyTableRows.map((row) => {
+                            if (row.type === "week") {
+                              return (
+                                <TableRow
+                                  key={`week-${row.key}`}
+                                  className="hover:bg-transparent"
+                                >
+                                  <TableCell
+                                    colSpan={7}
+                                    className="bg-muted/60 py-2 pl-4 text-xs font-semibold text-foreground sm:pl-6"
+                                  >
+                                    {row.label}
+                                    <span className="ml-2 tabular-nums font-normal text-muted-foreground opacity-70">
+                                      {row.count}{" "}
+                                      {row.count === 1 ? "bounty" : "bounties"}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+
                             if (row.type === "group") {
                               return (
                                 <TableRow
@@ -1365,7 +1516,7 @@ export default function AdminDashboard() {
                                 >
                                   <TableCell
                                     colSpan={7}
-                                    className="bg-muted/40 py-1.5 pl-4 text-xs font-medium text-muted-foreground sm:pl-6"
+                                    className={`bg-muted/40 py-1.5 text-xs font-medium text-muted-foreground ${groupIndentClass}`}
                                   >
                                     <span className="text-foreground">
                                       {row.label}
