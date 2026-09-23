@@ -1264,12 +1264,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/api/bounties/users`, {
-        headers: getAuthHeaders(),
-      });
-
+      const endpoint =
+        currentUser?.role === "ADMIN"
+          ? `${backendUrl}/api/bounties/users/full`
+          : `${backendUrl}/api/bounties/users`;
+      const res = await fetch(endpoint, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch users");
-
       const data = await res.json();
       const nonAdminUsersData = data.filter(
         (user: User) => user.role !== "ADMIN",
