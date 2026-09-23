@@ -489,7 +489,7 @@ export default function AdminDashboard() {
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
   const [searchQuery, setSearchQuery] = useState("");
   const [groupByAssignee, setGroupByAssignee] = useState(false);
-  const [groupByWeek, setGroupByWeek] = useState(false);
+  const [groupByWeek, setGroupByWeek] = useState(true);
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(

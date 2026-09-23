@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Share2,
   Check,
+  Copy,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { useState, useEffect } from "react";
@@ -74,6 +75,7 @@ export function BountyDetailModal({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [linkCopied, setLinkCopied] = useState(false);
+  const [copyOnlyState, setCopyOnlyState] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -213,6 +215,18 @@ export function BountyDetailModal({
       setLinkCopied(true);
       toast.success("Link copied to clipboard");
       setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy link");
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const url = `${window.location.origin}/bounty/${bounty.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyOnlyState(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setCopyOnlyState(false), 2000);
     } catch {
       toast.error("Couldn't copy link");
     }
@@ -402,19 +416,34 @@ export function BountyDetailModal({
             <DialogTitle className="text-lg font-semibold leading-snug flex-1">
               {bounty.title}
             </DialogTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={handleShare}
-              title="Share this bounty"
-            >
-              {linkCopied ? (
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-              ) : (
-                <Share2 className="h-3.5 w-3.5" />
-              )}
-            </Button>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={handleCopyLink}
+                title="Copy link"
+              >
+                {copyOnlyState ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={handleShare}
+                title="Share this bounty"
+              >
+                {linkCopied ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Share2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           </div>
           <DialogDescription className="flex items-center gap-3 mt-1">
             <span className="flex items-center gap-1 text-xs">
