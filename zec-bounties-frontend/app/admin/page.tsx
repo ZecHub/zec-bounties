@@ -577,65 +577,60 @@ export default function AdminDashboard() {
     };
 
     if (groupByWeek) {
-      const withWeek = bountyRows.map((row) => ({
-        row,
-        week: getWeekGroup(row.bounty),
-      }));
+      const weekBuckets = new Map<
+        string,
+        { label: string; rows: BountyRow[] }
+      >();
 
-      withWeek.sort((a, b) => {
-        if (a.week.start.getTime() !== b.week.start.getTime()) {
-          return b.week.start.getTime() - a.week.start.getTime(); // newest week first
+      for (const row of bountyRows) {
+        const week = getWeekGroup(row.bounty);
+        if (!weekBuckets.has(week.key)) {
+          weekBuckets.set(week.key, { label: week.label, rows: [] });
         }
-        return groupByAssignee
-          ? assigneeCompare(a.row, b.row)
-          : a.row.bounty.title.localeCompare(b.row.bounty.title, undefined, {
-              sensitivity: "base",
-            });
-      });
-
-      const weekCounts = new Map<string, number>();
-      const assigneeCountsByWeek = new Map<string, number>();
-      for (const { week, row } of withWeek) {
-        weekCounts.set(week.key, (weekCounts.get(week.key) ?? 0) + 1);
-        if (groupByAssignee) {
-          const aKey = `${week.key}::${getAssigneeGroup(row.bounty).key}`;
-          assigneeCountsByWeek.set(
-            aKey,
-            (assigneeCountsByWeek.get(aKey) ?? 0) + 1,
-          );
-        }
+        weekBuckets.get(week.key)!.rows.push(row);
       }
 
       const rows: BountyTableRow[] = [];
-      let lastWeekKey: string | null = null;
-      let lastAssigneeKey: string | null = null;
-      for (const { row, week } of withWeek) {
-        if (week.key !== lastWeekKey) {
-          rows.push({
-            type: "week",
-            key: week.key,
-            label: week.label,
-            count: weekCounts.get(week.key) ?? 0,
-          });
-          lastWeekKey = week.key;
-          lastAssigneeKey = null; // reset nested grouping per week
-        }
+
+      for (const [weekKey, bucket] of weekBuckets) {
+        rows.push({
+          type: "week",
+          key: weekKey,
+          label: bucket.label,
+          count: bucket.rows.length,
+        });
 
         if (groupByAssignee) {
-          const group = getAssigneeGroup(row.bounty);
-          if (group.key !== lastAssigneeKey) {
+          const assigneeBuckets = new Map<
+            string,
+            { label: string; rows: BountyRow[] }
+          >();
+          for (const row of bucket.rows) {
+            const group = getAssigneeGroup(row.bounty);
+            if (!assigneeBuckets.has(group.key)) {
+              assigneeBuckets.set(group.key, { label: group.label, rows: [] });
+            }
+            assigneeBuckets.get(group.key)!.rows.push(row);
+          }
+
+          for (const [assigneeKey, aBucket] of assigneeBuckets) {
             rows.push({
               type: "group",
-              key: `${week.key}::${group.key}`,
-              label: group.label,
-              count: assigneeCountsByWeek.get(`${week.key}::${group.key}`) ?? 0,
+              key: `${weekKey}::${assigneeKey}`,
+              label: aBucket.label,
+              count: aBucket.rows.length,
             });
-            lastAssigneeKey = group.key;
+            for (const row of aBucket.rows) {
+              rows.push({ type: "bounty", ...row });
+            }
+          }
+        } else {
+          for (const row of bucket.rows) {
+            rows.push({ type: "bounty", ...row });
           }
         }
-
-        rows.push({ type: "bounty", ...row });
       }
+
       return rows;
     }
 
@@ -666,9 +661,6 @@ export default function AdminDashboard() {
     return rows;
   }, [bountyRows, groupByAssignee, groupByWeek]);
 
-  // Nested assignee headers (inside a week) get extra indent so the
-  // hierarchy reads clearly; standalone assignee headers keep the
-  // original alignment.
   const groupIndentClass = groupByWeek ? "pl-8 sm:pl-10" : "pl-4 sm:pl-6";
 
   const activeCategoryLabel =
