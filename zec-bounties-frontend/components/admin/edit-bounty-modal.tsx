@@ -35,6 +35,7 @@ import { useBounty } from "@/lib/bounty-context";
 import { Bounty } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
+import { ZecToUsd } from "../ZecToUsd";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -237,6 +238,12 @@ export function EditBountyModal({
                     onChange={(e) => setBountyAmount(e.target.value)}
                     placeholder="0.000"
                   />
+                  {bountyAmount && !isNaN(parseFloat(bountyAmount)) && (
+                    <ZecToUsd
+                      zecAmount={parseFloat(bountyAmount)}
+                      showZec={false}
+                    />
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label
