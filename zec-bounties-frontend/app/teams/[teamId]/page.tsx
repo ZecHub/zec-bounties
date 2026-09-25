@@ -208,19 +208,33 @@ function VerificationStatusBanner({ teamId }: { teamId: string }) {
 export default function TeamConsolePage() {
   const params = useParams<{ teamId: string }>();
   const router = useRouter();
-  const { currentUser, teams, teamsLoading, fetchTeams, bounties } =
-    useBounty();
+
+  const {
+    currentUser,
+    teams,
+    teamsLoading,
+    fetchTeams,
+    teamBounties: teamBountiesMap,
+    teamBountiesLoading,
+    fetchTeamBounties,
+  } = useBounty();
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Refresh-safe: if the store is empty (e.g. hard refresh landed straight
-  // here), fetch teams so we can resolve the id from the URL.
   useEffect(() => {
     if (currentUser && teams.length === 0) fetchTeams();
   }, [currentUser?.id]);
 
+  // Team-scoped bounties (private-team-aware) — separate from the public
+  // global feed now that the backend splits the two.
+  useEffect(() => {
+    if (currentUser && params.teamId) fetchTeamBounties(params.teamId);
+  }, [currentUser?.id, params.teamId]);
+
   const team = teams.find((t) => t.id === params.teamId) ?? null;
-  const teamBounties = bounties.filter((b) => b.teamId === params.teamId);
+  const teamBounties = teamBountiesMap[params.teamId] ?? [];
+  const teamBountiesAreLoading =
+    teamBountiesLoading[params.teamId] && teamBounties.length === 0;
 
   if (!currentUser) {
     return (
@@ -361,6 +375,7 @@ export default function TeamConsolePage() {
           <OverviewTab
             team={team}
             teamBounties={teamBounties}
+            teamBountiesLoading={teamBountiesAreLoading}
             canManage={canManage}
           />
         )}
@@ -368,6 +383,7 @@ export default function TeamConsolePage() {
           <BountyProgramTab
             team={team}
             teamBounties={teamBounties}
+            teamBountiesLoading={teamBountiesAreLoading}
             canManage={canManage}
           />
         )}
@@ -453,10 +469,12 @@ function EmptyTxState({
 function OverviewTab({
   team,
   teamBounties,
+  teamBountiesLoading,
   canManage,
 }: {
   team: Team;
   teamBounties: Bounty[];
+  teamBountiesLoading: boolean;
   canManage: boolean;
 }) {
   const {
@@ -592,7 +610,16 @@ function OverviewTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {teamBounties.length === 0 ? (
+            {teamBountiesLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={canManage ? 8 : 7}
+                  className="text-center py-12 text-muted-foreground"
+                >
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : teamBounties.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={canManage ? 8 : 7}
@@ -1201,10 +1228,12 @@ function OverviewTab({
 function BountyProgramTab({
   team,
   teamBounties,
+  teamBountiesLoading,
   canManage,
 }: {
   team: Team;
   teamBounties: Bounty[];
+  teamBountiesLoading: boolean;
   canManage: boolean;
 }) {
   const [showNewBounty, setShowNewBounty] = useState(false);
@@ -1237,7 +1266,11 @@ function BountyProgramTab({
           )}
         </div>
 
-        {teamBounties.length === 0 ? (
+        {teamBountiesLoading ? (
+          <div className="flex justify-center rounded-xl border border-dashed px-4 py-10 bg-muted/20">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : teamBounties.length === 0 ? (
           <p className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground bg-muted/20">
             No bounties posted for this team yet.
           </p>
