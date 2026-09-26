@@ -38,6 +38,7 @@ import {
   bountyCreatorInitial,
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
+import { ZecToUsd } from "./ZecToUsd";
 
 interface BountyDetailModalProps {
   bounty: Bounty | null;
@@ -828,10 +829,12 @@ export function BountyDetailModal({
               </p>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-bold">
-                  {bounty.bountyAmount}
+                  {bounty.bountyAmount} ZEC
                 </span>
-                <span className="text-xs text-muted-foreground">ZEC</span>
               </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                <ZecToUsd zecAmount={bounty.bountyAmount} showZec={false} />
+              </p>
               <p className="text-[10px] text-muted-foreground mt-0.5">
                 Paid upon successful review
               </p>
