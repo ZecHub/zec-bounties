@@ -1783,7 +1783,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to submit work");
       }
 
-      await fetchBounties();
+      await patchOneBounty(bountyId);
     } catch (error) {
       console.error("Failed to submit work:", error);
       throw error;
@@ -3255,7 +3255,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setApplications((prev) => [...prev, newApplication]);
       setAllApplications((prev) => [...prev, newApplication]);
 
-      await fetchBounties();
+      await patchOneBounty(bountyId);
     } catch (error) {
       console.error("Failed to apply to bounty:", error);
       throw error;
