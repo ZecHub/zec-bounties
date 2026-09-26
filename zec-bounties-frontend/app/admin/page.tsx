@@ -253,12 +253,12 @@ function BountyActionsMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon"
-          className={triggerClassName}
-          aria-label="Bounty actions"
-        >
-          <MoreHorizontal className="h-4 w-4" />
+         variant="ghost"
+         size="icon"
+         className={triggerClassName}
+         aria-label={`Actions for ${bounty.title}`}
+         >
+         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
