@@ -208,19 +208,34 @@ function VerificationStatusBanner({ teamId }: { teamId: string }) {
 export default function TeamConsolePage() {
   const params = useParams<{ teamId: string }>();
   const router = useRouter();
-  const { currentUser, teams, teamsLoading, fetchTeams, bounties } =
-    useBounty();
+
+  const {
+    currentUser,
+    teams,
+    teamsLoading,
+    fetchTeams,
+    teamBounties: teamBountiesMap,
+    teamBountiesLoading,
+    fetchTeamBounties,
+  } = useBounty();
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showNewBounty, setShowNewBounty] = useState(false);
 
-  // Refresh-safe: if the store is empty (e.g. hard refresh landed straight
-  // here), fetch teams so we can resolve the id from the URL.
   useEffect(() => {
     if (currentUser && teams.length === 0) fetchTeams();
   }, [currentUser?.id]);
 
+  // Team-scoped bounties (private-team-aware) — separate from the public
+  // global feed now that the backend splits the two.
+  useEffect(() => {
+    if (currentUser && params.teamId) fetchTeamBounties(params.teamId);
+  }, [currentUser?.id, params.teamId]);
+
   const team = teams.find((t) => t.id === params.teamId) ?? null;
-  const teamBounties = bounties.filter((b) => b.teamId === params.teamId);
+  const teamBounties = teamBountiesMap[params.teamId] ?? [];
+  const teamBountiesAreLoading =
+    teamBountiesLoading[params.teamId] && teamBounties.length === 0;
 
   if (!currentUser) {
     return (
@@ -300,9 +315,9 @@ export default function TeamConsolePage() {
           canManage={canManage}
         />
 
-        <div className="mb-8 flex flex-col gap-4 imd:flex-row imd:items-center imd:justify-between">
-          <div className="flex items-center gap-4">
-            <Avatar className="h-14 w-14 border">
+        <div className="mb-8 flex flex-col gap-4 imd:flex-row imd:items-start imd:justify-between">
+          <div className="flex items-start gap-4">
+            <Avatar className="h-14 w-14 border shrink-0">
               {team.logo && (
                 <AvatarImage src={team.logo} alt={`${team.name} logo`} />
               )}
@@ -310,28 +325,50 @@ export default function TeamConsolePage() {
                 {initials(team.name)}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight">
-                {team.name}
-              </h1>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <h1 className="text-3xl font-extrabold tracking-tight">
+                  {team.name}
+                </h1>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className={roleBadgeClass(role)}>
+                    {role}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={
+                      team.isVerified
+                        ? "text-green-600 border-green-500/30 bg-green-500/10"
+                        : "text-amber-600 border-amber-500/30 bg-amber-500/10"
+                    }
+                  >
+                    {team.isVerified ? "Verified" : "Pending verification"}
+                  </Badge>
+                </div>
+              </div>
               <p className="mt-1 text-muted-foreground">
                 {team.description || "No description yet."}
               </p>
             </div>
           </div>
-          <Badge variant="outline" className={`w-fit ${roleBadgeClass(role)}`}>
-            {role}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={`w-fit ${
-              team.isVerified
-                ? "text-green-600 border-green-500/30 bg-green-500/10"
-                : "text-amber-600 border-amber-500/30 bg-amber-500/10"
-            }`}
-          >
-            {team.isVerified ? "Verified" : "Pending verification"}
-          </Badge>
+
+          {canManage &&
+            (team.isVerified ? (
+              <Button
+                size="sm"
+                className="rounded-full shrink-0"
+                onClick={() => setShowNewBounty(true)}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> New bounty
+              </Button>
+            ) : (
+              <Badge
+                variant="outline"
+                className="w-fit shrink-0 text-amber-600 border-amber-500/30 bg-amber-500/10"
+              >
+                Verification required to post bounties
+              </Badge>
+            ))}
         </div>
 
         <div
@@ -361,6 +398,7 @@ export default function TeamConsolePage() {
           <OverviewTab
             team={team}
             teamBounties={teamBounties}
+            teamBountiesLoading={teamBountiesAreLoading}
             canManage={canManage}
           />
         )}
@@ -368,6 +406,7 @@ export default function TeamConsolePage() {
           <BountyProgramTab
             team={team}
             teamBounties={teamBounties}
+            teamBountiesLoading={teamBountiesAreLoading}
             canManage={canManage}
           />
         )}
@@ -391,6 +430,15 @@ export default function TeamConsolePage() {
           />
         )}
       </div>
+
+      <TeamsNewBountyModal
+        open={showNewBounty}
+        onOpenChange={setShowNewBounty}
+        onSuccess={() => setShowNewBounty(false)}
+        onCancel={() => setShowNewBounty(false)}
+        defaultTeamId={team.id}
+        defaultTeamName={team.name}
+      />
     </main>
   );
 }
@@ -450,13 +498,110 @@ function EmptyTxState({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Overview tab — small local presentational helpers kept here so the table
+// and both dialogs render pending/approved/rejected state the same way
+// everywhere. Uses formatStatus/displayName/statusDotColor/formatZec/icons
+// already imported and defined above in this file.
+// ---------------------------------------------------------------------------
+
+function StatusPill({ status }: { status: Bounty["status"] }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm">
+      <span className={`h-2 w-2 rounded-full ${statusDotColor(status)}`} />
+      {formatStatus(status)}
+    </span>
+  );
+}
+
+function CountPill({
+  count,
+  pending,
+  icon: Icon,
+  emptyLabel,
+  onClick,
+}: {
+  count: number;
+  pending: number;
+  icon: React.ElementType;
+  emptyLabel: string;
+  onClick: () => void;
+}) {
+  const tone =
+    pending > 0
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+      : count > 0
+        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+        : "border-dashed text-muted-foreground";
+
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors hover:opacity-80 ${tone}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {count > 0 ? (
+        <>
+          {count}
+          {pending > 0 && (
+            <span className="rounded-full bg-amber-500/20 px-1 text-[10px] leading-4">
+              {pending} pending
+            </span>
+          )}
+        </>
+      ) : (
+        emptyLabel
+      )}
+    </button>
+  );
+}
+
+function ReviewStatusNote({
+  status,
+}: {
+  status: "approved" | "rejected" | "needs_revision";
+}) {
+  const config = {
+    approved: {
+      icon: CheckCircle2,
+      text: "Approved",
+      classes:
+        "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300",
+    },
+    rejected: {
+      icon: XCircle,
+      text: "Rejected",
+      classes:
+        "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300",
+    },
+    needs_revision: {
+      icon: FileText,
+      text: "Revision requested — bounty back to In Progress",
+      classes:
+        "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-300",
+    },
+  }[status];
+
+  const Icon = config.icon;
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-md border px-3 py-2 ${config.classes}`}
+    >
+      <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+      <p className="text-xs">{config.text}</p>
+    </div>
+  );
+}
+
 function OverviewTab({
   team,
   teamBounties,
+  teamBountiesLoading,
   canManage,
 }: {
   team: Team;
   teamBounties: Bounty[];
+  teamBountiesLoading: boolean;
   canManage: boolean;
 }) {
   const {
@@ -500,6 +645,13 @@ function OverviewTab({
     (b) => b.status === "IN_PROGRESS" || b.status === "IN_REVIEW",
   ).length;
 
+  const pendingApplicationsTotal = applications.filter(
+    (a) => a.status === "pending",
+  ).length;
+  const pendingSubmissionsTotal = submissions.filter(
+    (s) => s.status === "pending",
+  ).length;
+
   const managingBounty = teamBounties.find((b) => b.id === managingBountyId);
   const managingApplications = applications.filter(
     (a) => a.bountyId === managingBountyId,
@@ -507,6 +659,31 @@ function OverviewTab({
   const managingSubmissions = submissions.filter(
     (s) => s.bountyId === managingBountyId,
   );
+
+  const openApplications = (bountyId: string) => {
+    setManagingBountyId(bountyId);
+    setIsManagingApplications(true);
+  };
+
+  const openSubmissions = (bountyId: string) => {
+    setManagingBountyId(bountyId);
+    setIsManagingSubmissions(true);
+  };
+
+  // Jump straight to the first bounty that actually needs a decision.
+  const goToFirstPending = () => {
+    const bountyWithPendingApp = teamBounties.find((b) =>
+      applications.some((a) => a.bountyId === b.id && a.status === "pending"),
+    );
+    if (bountyWithPendingApp) {
+      openApplications(bountyWithPendingApp.id);
+      return;
+    }
+    const bountyWithPendingSub = teamBounties.find((b) =>
+      submissions.some((s) => s.bountyId === b.id && s.status === "pending"),
+    );
+    if (bountyWithPendingSub) openSubmissions(bountyWithPendingSub.id);
+  };
 
   const handleApplicationAction = async (
     applicationId: string,
@@ -547,7 +724,7 @@ function OverviewTab({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 imd:grid-cols-4">
         <StatCard label="Members" value={String(team.members.length)} />
         <StatCard label="Active bounties" value={String(active)} />
@@ -559,6 +736,25 @@ function OverviewTab({
       </div>
 
       {!team.isVerified && <VerificationStatusBanner teamId={team.id} />}
+
+      {/* {canManage &&
+        (pendingApplicationsTotal > 0 || pendingSubmissionsTotal > 0) && (
+          <button
+            onClick={goToFirstPending}
+            className="flex w-full items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-left text-sm transition-colors hover:bg-amber-500/10"
+          >
+            <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="text-amber-900 dark:text-amber-200">
+              {pendingApplicationsTotal > 0 &&
+                `${pendingApplicationsTotal} application${pendingApplicationsTotal !== 1 ? "s" : ""} waiting on you`}
+              {pendingApplicationsTotal > 0 &&
+                pendingSubmissionsTotal > 0 &&
+                " · "}
+              {pendingSubmissionsTotal > 0 &&
+                `${pendingSubmissionsTotal} submission${pendingSubmissionsTotal !== 1 ? "s" : ""} to review`}
+            </span>
+          </button>
+        )} */}
 
       <div className="rounded-xl border bg-card overflow-hidden">
         <div className="flex items-center justify-between border-b px-4 py-3 sm:px-6">
@@ -583,7 +779,9 @@ function OverviewTab({
               <TableHead className="hidden lg:table-cell">
                 Submissions
               </TableHead>
-              <TableHead className="hidden sm:table-cell">Reward</TableHead>
+              <TableHead className="hidden sm:table-cell text-right">
+                Reward
+              </TableHead>
               {canManage && (
                 <TableHead className="text-right pr-4 sm:pr-6">
                   Actions
@@ -592,13 +790,25 @@ function OverviewTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {teamBounties.length === 0 ? (
+            {teamBountiesLoading ? (
               <TableRow>
                 <TableCell
                   colSpan={canManage ? 8 : 7}
                   className="text-center py-12 text-muted-foreground"
                 >
-                  No bounties yet for this team.
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : teamBounties.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={canManage ? 8 : 7}
+                  className="text-center py-12"
+                >
+                  <p className="text-sm font-medium">No bounties yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Bounties posted under {team.name} will show up here.
+                  </p>
                 </TableCell>
               </TableRow>
             ) : (
@@ -651,41 +861,24 @@ function OverviewTab({
                             {bounty.title}
                           </button>
                           <div className="flex items-center gap-2 mt-1 sm:hidden flex-wrap">
-                            <div className="flex items-center gap-1">
-                              <div
-                                className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${statusDotColor(bounty.status)}`}
-                              />
-                              <span className="text-[11px] text-muted-foreground">
-                                {formatStatus(bounty.status)}
-                              </span>
-                            </div>
+                            <StatusPill status={bounty.status} />
                             <span className="text-[11px] text-muted-foreground">
                               ·
                             </span>
-                            <span className="text-[11px] font-mono text-muted-foreground">
-                              {bounty.bountyAmount} ZEC
+                            <span className="text-[11px] tabular-nums text-muted-foreground">
+                              {bounty.bountyAmount.toLocaleString()} ZEC
                             </span>
                           </div>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] uppercase font-bold tracking-tight"
-                      >
-                        {bounty.categoryId ?? "uncategorized"}
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {bounty.categoryId ?? "Uncategorized"}
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`h-2 w-2 rounded-full ${statusDotColor(bounty.status)}`}
-                        />
-                        <span className="text-sm">
-                          {formatStatus(bounty.status)}
-                        </span>
-                      </div>
+                      <StatusPill status={bounty.status} />
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       {bounty.assignees && bounty.assignees.length > 0 ? (
@@ -732,7 +925,7 @@ function OverviewTab({
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 text-[10px] gap-1 px-2 border border-dashed"
+                          className="h-7 text-xs gap-1 px-2 border border-dashed"
                           onClick={() => setAssigneeSectionBounty(bounty)}
                         >
                           <UserPlus className="h-3 w-3" /> Assign
@@ -740,51 +933,25 @@ function OverviewTab({
                       )}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={`h-7 text-xs gap-1 px-2 ${
-                          pendingApps > 0
-                            ? "border border-yellow-500/50 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
-                            : bountyApps.length > 0
-                              ? "border border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400"
-                              : "border border-dashed"
-                        }`}
-                        onClick={() => {
-                          setManagingBountyId(bounty.id);
-                          setIsManagingApplications(true);
-                        }}
-                      >
-                        <Users className="h-3 w-3" />
-                        {bountyApps.length > 0
-                          ? `${bountyApps.length}${pendingApps > 0 ? ` (${pendingApps} pending)` : ""}`
-                          : "None"}
-                      </Button>
+                      <CountPill
+                        count={bountyApps.length}
+                        pending={pendingApps}
+                        icon={Users}
+                        emptyLabel="None"
+                        onClick={() => openApplications(bounty.id)}
+                      />
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={`h-7 text-xs gap-1 px-2 ${
-                          pendingSubs > 0
-                            ? "border border-yellow-500/50 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
-                            : bountySubs.length > 0
-                              ? "border border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400"
-                              : "border border-dashed"
-                        }`}
-                        onClick={() => {
-                          setManagingBountyId(bounty.id);
-                          setIsManagingSubmissions(true);
-                        }}
-                      >
-                        <Upload className="h-3 w-3" />
-                        {bountySubs.length > 0
-                          ? `${bountySubs.length}${pendingSubs > 0 ? ` (${pendingSubs} pending)` : ""}`
-                          : "None"}
-                      </Button>
+                      <CountPill
+                        count={bountySubs.length}
+                        pending={pendingSubs}
+                        icon={Upload}
+                        emptyLabel="None"
+                        onClick={() => openSubmissions(bounty.id)}
+                      />
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell font-mono text-sm">
-                      {bounty.bountyAmount} ZEC
+                    <TableCell className="hidden sm:table-cell text-right tabular-nums text-sm">
+                      {bounty.bountyAmount.toLocaleString()} ZEC
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right pr-4 sm:pr-6">
@@ -808,22 +975,16 @@ function OverviewTab({
                               Edit bounty
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => {
-                                setManagingBountyId(bounty.id);
-                                setIsManagingApplications(true);
-                              }}
+                              onClick={() => openApplications(bounty.id)}
                             >
                               <Users className="h-4 w-4 mr-2" />
-                              View Applications
+                              View applications
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => {
-                                setManagingBountyId(bounty.id);
-                                setIsManagingSubmissions(true);
-                              }}
+                              onClick={() => openSubmissions(bounty.id)}
                             >
                               <Upload className="h-4 w-4 mr-2" />
-                              Review Submissions
+                              Review submissions
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -861,20 +1022,26 @@ function OverviewTab({
       >
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-3 border-b">
-            <div className="flex items-start gap-3">
-              <Users className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-              <div>
-                <DialogTitle className="text-base font-medium leading-tight">
-                  Applications
-                </DialogTitle>
-                {managingBounty && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {managingBounty.title} &middot;{" "}
-                    {managingApplications.length} applicant
-                    {managingApplications.length !== 1 ? "s" : ""}
-                  </p>
-                )}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <Users className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                <div>
+                  <DialogTitle className="text-base font-medium leading-tight">
+                    Applications
+                  </DialogTitle>
+                  {managingBounty && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {managingBounty.title} · {managingApplications.length}{" "}
+                      applicant{managingApplications.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                </div>
               </div>
+              {managingBounty && (
+                <span className="text-xs tabular-nums text-muted-foreground flex-shrink-0">
+                  {managingBounty.bountyAmount.toLocaleString()} ZEC
+                </span>
+              )}
             </div>
           </DialogHeader>
 
@@ -954,7 +1121,7 @@ function OverviewTab({
                       )}
                     </div>
                   </div>
-                  <p className="mt-2.5 text-xs text-muted-foreground leading-relaxed pl-10.5 border-l-2 ml-3.5 wrap-anywhere">
+                  <p className="mt-2.5 text-xs text-muted-foreground leading-relaxed pl-[42px] ml-3.5 border-l-2 wrap-anywhere">
                     {application.message}
                   </p>
                 </div>
@@ -962,8 +1129,9 @@ function OverviewTab({
             ) : (
               <div className="flex flex-col items-center py-10 text-center">
                 <Users className="w-9 h-9 text-muted-foreground/40 mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  No applications yet.
+                <p className="text-sm font-medium">No applications yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  You'll see people here once they apply for this bounty.
                 </p>
               </div>
             )}
@@ -978,19 +1146,26 @@ function OverviewTab({
       >
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-3 border-b">
-            <div className="flex items-start gap-3">
-              <Upload className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-              <div>
-                <DialogTitle className="text-base font-medium leading-tight">
-                  Submissions
-                </DialogTitle>
-                {managingBounty && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {managingBounty.title} &middot; {managingSubmissions.length}{" "}
-                    submission{managingSubmissions.length !== 1 ? "s" : ""}
-                  </p>
-                )}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <Upload className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                <div>
+                  <DialogTitle className="text-base font-medium leading-tight">
+                    Submissions
+                  </DialogTitle>
+                  {managingBounty && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {managingBounty.title} · {managingSubmissions.length}{" "}
+                      submission{managingSubmissions.length !== 1 ? "s" : ""}
+                    </p>
+                  )}
+                </div>
               </div>
+              {managingBounty && (
+                <span className="text-xs tabular-nums text-muted-foreground flex-shrink-0">
+                  {managingBounty.bountyAmount.toLocaleString()} ZEC
+                </span>
+              )}
             </div>
           </DialogHeader>
 
@@ -1042,7 +1217,7 @@ function OverviewTab({
                     </Badge>
                   </div>
 
-                  <p className="text-xs text-muted-foreground leading-relaxed break-words whitespace-pre-wrap pl-[42px] border-l-2 ml-[14px]">
+                  <p className="text-xs text-muted-foreground leading-relaxed break-words whitespace-pre-wrap pl-[42px] ml-[14px] border-l-2">
                     {submission.description}
                   </p>
 
@@ -1129,12 +1304,7 @@ function OverviewTab({
 
                   {submission.status === "approved" && (
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-900/20">
-                        <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-green-600 dark:text-green-400" />
-                        <p className="text-xs text-green-700 dark:text-green-300">
-                          Approved
-                        </p>
-                      </div>
+                      <ReviewStatusNote status="approved" />
 
                       {submissions.some(
                         (s) =>
@@ -1165,29 +1335,20 @@ function OverviewTab({
                   )}
 
                   {submission.status === "rejected" && (
-                    <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 dark:border-red-800 dark:bg-red-900/20">
-                      <XCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-600 dark:text-red-400" />
-                      <p className="text-xs text-red-700 dark:text-red-300">
-                        Rejected
-                      </p>
-                    </div>
+                    <ReviewStatusNote status="rejected" />
                   )}
 
                   {submission.status === "needs_revision" && (
-                    <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 dark:border-orange-800 dark:bg-orange-900/20">
-                      <FileText className="h-3.5 w-3.5 flex-shrink-0 text-orange-600 dark:text-orange-400" />
-                      <p className="text-xs text-orange-700 dark:text-orange-300">
-                        Revision requested — bounty back to In Progress
-                      </p>
-                    </div>
+                    <ReviewStatusNote status="needs_revision" />
                   )}
                 </div>
               ))
             ) : (
               <div className="flex flex-col items-center py-10 text-center">
                 <Upload className="w-9 h-9 text-muted-foreground/40 mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  No submissions yet.
+                <p className="text-sm font-medium">No submissions yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Work submitted against this bounty will show up here.
                 </p>
               </div>
             )}
@@ -1201,43 +1362,29 @@ function OverviewTab({
 function BountyProgramTab({
   team,
   teamBounties,
+  teamBountiesLoading,
   canManage,
 }: {
   team: Team;
   teamBounties: Bounty[];
+  teamBountiesLoading: boolean;
   canManage: boolean;
 }) {
-  const [showNewBounty, setShowNewBounty] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       <div className="min-w-0 flex-1">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-muted-foreground">
-            {teamBounties.length} bounties
-          </h2>
-          {canManage && team.isVerified && (
-            <Button
-              size="sm"
-              className="rounded-full"
-              onClick={() => setShowNewBounty(true)}
-            >
-              <Plus className="mr-1.5 h-4 w-4" /> New bounty
-            </Button>
-          )}
-          {canManage && !team.isVerified && (
-            <Badge
-              variant="outline"
-              className="text-amber-600 border-amber-500/30 bg-amber-500/10"
-            >
-              Verification required to post bounties
-            </Badge>
-          )}
-        </div>
+        <h2 className="mb-4 text-sm font-semibold text-muted-foreground">
+          {teamBounties.length} bounties
+        </h2>
 
-        {teamBounties.length === 0 ? (
+        {teamBountiesLoading ? (
+          <div className="flex justify-center rounded-xl border border-dashed px-4 py-10 bg-muted/20">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : teamBounties.length === 0 ? (
           <p className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground bg-muted/20">
             No bounties posted for this team yet.
           </p>
@@ -1261,15 +1408,6 @@ function BountyProgramTab({
       <div className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[300px] xl:w-[340px]">
         <TeamActivityFeed teamId={team.id} canManage={canManage} />
       </div>
-
-      <TeamsNewBountyModal
-        open={showNewBounty}
-        onOpenChange={setShowNewBounty}
-        onSuccess={() => setShowNewBounty(false)}
-        onCancel={() => setShowNewBounty(false)}
-        defaultTeamId={team.id}
-        defaultTeamName={team.name}
-      />
 
       <BountyDetailModal
         bounty={selectedBounty}
