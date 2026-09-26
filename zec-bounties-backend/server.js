@@ -90,7 +90,7 @@ app.use((req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 9001;
+const PORT = process.env.PORT || 9000;
 server.listen(PORT, async () => {
   await connectRedis();
   console.log(`Server running on port ${PORT}`);
