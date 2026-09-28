@@ -22,3 +22,17 @@ do not reach persisted rows, optional categories remain nullable, and accepted
 string amounts/dates survive real Prisma writes. They do not test real HTTP
 authentication, notifications or wallets. Without the variable, this test is
 reported as skipped.
+
+From `zec-bounties-frontend`, after installing its existing dev dependencies, run:
+
+```sh
+node --test tests/bounty-edit-validation.test.cjs
+```
+
+These tests compile and execute both real edit components and the admin date
+helpers, substituting React hooks and UI rendering. They pass serialized save
+payloads to the real edit route and verify that expired, unchanged deadlines
+permit title and assignee payloads without losing the stored time of day, while
+changed deadlines still undergo validation. UTC and a timezone west of UTC are
+covered. This is not a browser/DOM test and does not execute the context's
+subsequent assignee HTTP request.
