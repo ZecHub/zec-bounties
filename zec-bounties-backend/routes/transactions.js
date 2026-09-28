@@ -442,13 +442,17 @@ router.get("/records", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// A PENDING row this old outlived its send (the wallet gives up after at
-// most a minute), so the server crashed or failed to record the outcome.
-const PENDING_RESOLVABLE_AFTER_MS = 2 * 60 * 1000;
-
-// Manual settlement for sends whose outcome we couldn't observe: UNKNOWN
-// after a timeout, or PENDING left behind mid-send. The admin checks the
-// wallet history and tells us what actually happened.
+// Manual settlement for a send whose outcome we couldn't observe: an
+// UNKNOWN row left by a quicksend timeout. The admin checks the wallet
+// history and tells us what actually happened.
+//
+// Only UNKNOWN is resolvable. A PENDING row is NOT: its send may still be
+// queued behind other sends on the shared wallet process, and the send's
+// own timeout does not start until it is written, so age says nothing about
+// whether it is still live. Reopening a PENDING bounty could double-pay one
+// whose send later goes through. Recovering a genuinely-stuck PENDING row
+// needs positive evidence the sender cannot run (a durable attempt/lease),
+// which is out of scope here.
 router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
   try {
     const { outcome, txid, confirm } = req.body;
@@ -482,19 +486,14 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
     if (!record) {
       return res.status(404).json({ error: "Payment record not found" });
     }
-    if (record.status !== "UNKNOWN" && record.status !== "PENDING") {
-      return res
-        .status(409)
-        .json({ error: `Record is already settled (${record.status})` });
-    }
-    if (
-      record.status === "PENDING" &&
-      Date.now() - new Date(record.createdAt).getTime() <
-        PENDING_RESOLVABLE_AFTER_MS
-    ) {
+    if (record.status !== "UNKNOWN") {
+      // PENDING is deliberately excluded (see the note above); everything
+      // else is already settled.
       return res.status(409).json({
         error:
-          "This send may still be in flight — wait a couple of minutes, refresh, then resolve",
+          record.status === "PENDING"
+            ? "This send may still be in flight and cannot be resolved manually yet"
+            : `Record is already settled (${record.status})`,
       });
     }
 
@@ -503,10 +502,10 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
 
     try {
       await prisma.$transaction(async (tx) => {
-        // Compare-and-swap on the status we checked, so two admins resolving
-        // the same record can't both apply (one paying, one re-opening).
+        // Compare-and-swap on UNKNOWN, so two admins resolving the same
+        // record can't both apply (one paying, one re-opening).
         const { count } = await tx.transaction.updateMany({
-          where: { id: record.id, status: record.status },
+          where: { id: record.id, status: "UNKNOWN" },
           data:
             outcome === "broadcast"
               ? { status: "BROADCAST", txid: txid.trim().toLowerCase(), settledAt }

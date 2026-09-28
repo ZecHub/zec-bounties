@@ -156,19 +156,19 @@ describe("POST /records/:id/resolve", () => {
     assert.equal(bounties[0].paymentInFlight, true);
   });
 
-  it("resolves a PENDING record left behind by a send that never settled", async () => {
-    records[0].status = "PENDING";
-    const { status } = await resolve({ outcome: "broadcast", txid: TXID });
-    assert.equal(status, 200);
-    assert.equal(bounties[0].isPaid, true);
-  });
-
-  it("waits out a PENDING record whose send may still be in flight", async () => {
-    records[0].status = "PENDING";
-    records[0].createdAt = new Date();
-    const { status } = await resolve({ outcome: "failed", confirm: true });
-    assert.equal(status, 409);
-    assert.equal(bounties[0].paymentInFlight, true);
+  it("refuses to resolve a PENDING record, however old, since its send may still be queued", async () => {
+    // The send's timeout starts only once it is written, and the shared
+    // wallet queue is unbounded, so an old PENDING row is not proof the send
+    // is dead. Resolving it as failed could reopen a bounty that later pays.
+    for (const createdAt of [new Date(), new Date(Date.now() - 60 * 60 * 1000)]) {
+      records[0].status = "PENDING";
+      records[0].createdAt = createdAt;
+      const { status } = await resolve({ outcome: "failed", confirm: true });
+      assert.equal(status, 409);
+      assert.equal(records[0].status, "PENDING");
+      assert.equal(bounties[0].paymentInFlight, true);
+      assert.equal(bounties[0].isPaid, false);
+    }
   });
 
   it("applies only one of two concurrent resolutions", async () => {
