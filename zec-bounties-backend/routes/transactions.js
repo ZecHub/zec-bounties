@@ -442,38 +442,108 @@ router.get("/records", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
-  const { outcome, txid } = req.body; // "broadcast" or "failed"
-  const record = await prisma.transaction.findUnique({
-    where: { id: req.params.id },
-  });
-  if (record.status !== "UNKNOWN")
-    return res.status(409).json({ error: "already settled" });
+// A PENDING row this old outlived its send (the wallet gives up after at
+// most a minute), so the server crashed or failed to record the outcome.
+const PENDING_RESOLVABLE_AFTER_MS = 2 * 60 * 1000;
 
-  if (outcome === "broadcast") {
-    await prisma.$transaction([
-      prisma.transaction.update({
-        where: { id: record.id },
-        data: { status: "BROADCAST", txid, settledAt: new Date() },
-      }),
-      prisma.bounty.update({
-        where: { id: record.bountyId },
-        data: { isPaid: true, paymentInFlight: false, paidAt: new Date() },
-      }),
-    ]);
-  } else {
-    await prisma.$transaction([
-      prisma.transaction.update({
-        where: { id: record.id },
-        data: { status: "FAILED", settledAt: new Date() },
-      }),
-      prisma.bounty.update({
-        where: { id: record.bountyId },
-        data: { paymentInFlight: false },
-      }),
-    ]);
+// Manual settlement for sends whose outcome we couldn't observe: UNKNOWN
+// after a timeout, or PENDING left behind mid-send. The admin checks the
+// wallet history and tells us what actually happened.
+router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
+  try {
+    const { outcome, txid, confirm } = req.body;
+
+    if (outcome !== "broadcast" && outcome !== "failed") {
+      return res
+        .status(400)
+        .json({ error: 'outcome must be "broadcast" or "failed"' });
+    }
+    if (
+      outcome === "broadcast" &&
+      (typeof txid !== "string" || !/^[0-9a-f]{64}$/i.test(txid.trim()))
+    ) {
+      return res.status(400).json({
+        error:
+          "A 64-character hex txid from the wallet history is required to resolve as broadcast",
+      });
+    }
+    // "failed" re-opens the bounty for payment; if the send did go out, the
+    // next payout pays it twice. Make the caller say they checked.
+    if (outcome === "failed" && confirm !== true) {
+      return res.status(400).json({
+        error:
+          "Resolving as failed re-opens the bounty for payment. Pass confirm: true after checking the wallet history.",
+      });
+    }
+
+    const record = await prisma.transaction.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!record) {
+      return res.status(404).json({ error: "Payment record not found" });
+    }
+    if (record.status !== "UNKNOWN" && record.status !== "PENDING") {
+      return res
+        .status(409)
+        .json({ error: `Record is already settled (${record.status})` });
+    }
+    if (
+      record.status === "PENDING" &&
+      Date.now() - new Date(record.createdAt).getTime() <
+        PENDING_RESOLVABLE_AFTER_MS
+    ) {
+      return res.status(409).json({
+        error:
+          "This send may still be in flight — wait a couple of minutes, refresh, then resolve",
+      });
+    }
+
+    const settledAt = new Date();
+    const alreadySettled = new Error("already-settled");
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        // Compare-and-swap on the status we checked, so two admins resolving
+        // the same record can't both apply (one paying, one re-opening).
+        const { count } = await tx.transaction.updateMany({
+          where: { id: record.id, status: record.status },
+          data:
+            outcome === "broadcast"
+              ? { status: "BROADCAST", txid: txid.trim().toLowerCase(), settledAt }
+              : {
+                  status: "FAILED",
+                  settledAt,
+                  errorDetail: "Resolved manually: not found in wallet history",
+                },
+        });
+        if (count !== 1) throw alreadySettled;
+
+        await tx.bounty.update({
+          where: { id: record.bountyId },
+          data:
+            outcome === "broadcast"
+              ? {
+                  isPaid: true,
+                  paymentAuthorized: true,
+                  paidAt: settledAt,
+                  paymentInFlight: false,
+                }
+              : { paymentInFlight: false },
+        });
+      });
+    } catch (err) {
+      if (err !== alreadySettled) throw err;
+      return res
+        .status(409)
+        .json({ error: "Record was settled by another request; refresh" });
+    }
+
+    await invalidateBounty(record.bountyId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error resolving payment record:", error);
+    res.status(500).json({ error: error.message });
   }
-  res.json({ success: true });
 });
 
 router.post(
