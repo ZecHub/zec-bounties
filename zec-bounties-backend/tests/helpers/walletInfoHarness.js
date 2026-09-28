@@ -14,6 +14,7 @@ function load(file, dependencies) {
       throw new Error(`Unexpected dependency: ${name}`);
     },
     console: { log() {}, error() {} },
+    process: { env: { ZINGO_CLI: "fixture-zingo" } },
     // A command returning non-JSON must time out without a ten-second test.
     setTimeout: fn => setTimeout(fn, 10),
     clearTimeout,
@@ -21,36 +22,36 @@ function load(file, dependencies) {
   return module.exports;
 }
 
-// Exercise the actual route, command adapter and info parser. Never construct
-// a real ZingoProcess: only its info method runs over an isolated fake stream.
+// Exercise the actual route, command adapter, process initialization and info
+// parser. The child-process boundary is fake; no CLI or wallet is opened.
 function createWalletInfoHarness({ defaults, failInfo = false } = {}) {
   const forbidden = () => { throw new Error("Unexpected live side effect"); };
   const wallet = { walletId: "fixture-wallet", accountName: "Main", chain: "mainnet" };
   const pendingDefaults = defaults ? [...defaults] : [wallet];
   const effects = { commands: [], initializations: [], walletLookups: [], processParams: [] };
-  const ZingoProcess = load("utils/zingo/ZingoProcess.js", {
-    child_process: { spawn: forbidden }, fs: { existsSync: forbidden },
-  });
-  const zingo = Object.create(ZingoProcess.prototype);
-  zingo.proc = {
+  const proc = Object.assign(new EventEmitter(), {
     stdout: new EventEmitter(), stderr: new EventEmitter(),
-    stdin: {
+    stdin: Object.assign(new EventEmitter(), {
       write(command) {
         effects.commands.push(command);
         queueMicrotask(() => {
           if (failInfo) {
-            zingo.proc.stderr.emit("data", Buffer.from("fixture server unavailable"));
+            proc.stderr.emit("data", Buffer.from("fixture server unavailable"));
           } else {
             // The info command returns JSON; v6 rescan acknowledges in text.
             const response = command === "info\n"
               ? JSON.stringify({ chain_name: "main", block_height: 100 })
               : "Launching rescan...";
-            zingo.proc.stdout.emit("data", Buffer.from(response));
+            proc.stdout.emit("data", Buffer.from(response));
           }
         });
       },
-    },
-  };
+    }),
+  });
+  const ZingoProcess = load("utils/zingo/ZingoProcess.js", {
+    child_process: { spawn: () => proc }, fs: { existsSync: () => true },
+  });
+  const zingo = new ZingoProcess(wallet);
   const executeInfo = load("utils/zingo/zingoLibInfo.js", {
     "./getZingo": { getZingo(params) { effects.processParams.push(params); return zingo; } },
   });
