@@ -10,6 +10,8 @@ function load(relativePath, dependencies) {
     exports: module.exports,
     require(name) {
       if (Object.hasOwn(dependencies, name)) return dependencies[name];
+      // Newer upstream routes import this helper; older branch bases do not.
+      if (name === "../utils/userIdentity") return require("../../utils/userIdentity");
       throw new Error(`Unexpected dependency: ${name}`);
     },
     process: { env: { NODE_ENV: "test" } },
