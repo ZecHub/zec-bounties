@@ -121,10 +121,10 @@ async function canManageBounty(bounty, user) {
 // status transitions or free assignee-roster edits bypass the apply →
 // accept → submit → review pipeline entirely. Only global admins and the
 // bounty's own team OWNER/ADMIN get that.
-async function canAdministerBounty(bounty, user) {
+async function canAdministerBounty(bounty, user, db = prisma) {
   if (user.role === "ADMIN") return true;
   if (bounty.teamId) {
-    const member = await prisma.teamMember.findUnique({
+    const member = await db.teamMember.findUnique({
       where: { teamId_userId: { teamId: bounty.teamId, userId: user.id } },
     });
     if (member && ["OWNER", "ADMIN"].includes(member.role)) return true;
@@ -1259,105 +1259,119 @@ router.patch(
         return res.status(400).json({ error: "Invalid review status" });
       }
 
-      const submission = await prisma.workSubmission.findUnique({
-        where: { id: submissionId },
-        include: {
-          bounty: {
-            select: {
-              id: true,
-              createdBy: true,
-              teamId: true,
-              status: true,
-              assignee: true,
-            },
-          },
-          submitterUser: { select: USER_SELECT_MINIMAL },
-        },
-      });
-      if (!submission)
-        return res.status(404).json({ error: "Submission not found" });
-
-      if (!(await canAdministerBounty(submission.bounty, req.user))) {
-        return res.status(403).json({
-          error: "You do not have permission to review this submission",
-        });
-      }
-
-      let newBountyStatus = submission.bounty.status;
-
-      if (status === "approved") {
-        if (submission.bounty.status !== "DONE") {
-          newBountyStatus = "DONE";
-        }
-      } else if (["rejected", "needs_revision"].includes(status)) {
-        const approvedExists = await prisma.workSubmission.findFirst({
-          where: {
-            bountyId: submission.bounty.id,
-            status: "approved",
-            id: { not: submissionId },
-          },
-          select: { id: true },
-        });
-        if (!approvedExists) newBountyStatus = "IN_PROGRESS";
-      }
-
-      const [updatedSubmission, updatedBounty] = await prisma.$transaction(
-        async (tx) => {
-          const updSub = await tx.workSubmission.update({
-            where: { id: submissionId },
-            data: {
-              status,
-              reviewNotes: reviewNotes?.trim() || null,
-              reviewedBy: userId,
-              reviewedAt: new Date(),
-            },
-            include: {
-              submitterUser: { select: USER_SELECT_BASIC },
-              reviewerUser: { select: USER_SELECT_BASIC },
-            },
-          });
-
-          if (status === "rejected") {
-            await tx.bountyAssignee.deleteMany({
-              where: {
-                bountyId: submission.bounty.id,
-                userId: submission.submittedBy,
+      // Reviews of different submissions share the parent bounty state. Keep
+      // every decision read in the transaction and retry its complete snapshot
+      // on conflict; retrying only the writes would preserve stale decisions.
+      let result;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          result = await prisma.$transaction(async (tx) => {
+            const submission = await tx.workSubmission.findUnique({
+              where: { id: submissionId },
+              include: {
+                bounty: {
+                  select: {
+                    id: true,
+                    createdBy: true,
+                    teamId: true,
+                    status: true,
+                    assignee: true,
+                  },
+                },
+                submitterUser: { select: USER_SELECT_MINIMAL },
               },
             });
-          }
+            if (!submission)
+              return { statusCode: 404, error: "Submission not found" };
 
-          const updBounty = await tx.bounty.update({
-            where: { id: submission.bounty.id },
-            data: {
-              status: newBountyStatus,
-              ...(status === "approved" &&
-                submission.bounty.status !== "DONE" && {
-                  assignee: submission.submittedBy,
-                  completedAt: new Date(),
-                }),
-              ...(status !== "approved" &&
-                submission.bounty.status === "DONE" &&
-                newBountyStatus !== "DONE" && { completedAt: null }),
-              ...(status === "rejected" &&
-                submission.bounty.assignee === submission.submittedBy && {
-                  assignee: null,
-                }),
-            },
-            include: {
-              createdByUser: { select: USER_SELECT_WITH_ROLE },
-              assigneeUser: { select: USER_SELECT_WITH_ROLE },
-              team: { select: { id: true, name: true, logo: true } },
-            },
-          });
+            if (!(await canAdministerBounty(submission.bounty, req.user, tx))) {
+              return {
+                statusCode: 403,
+                error: "You do not have permission to review this submission",
+              };
+            }
 
-          return [updSub, updBounty];
-        },
-      );
+            let newBountyStatus = submission.bounty.status;
+
+            if (status === "approved") {
+              if (submission.bounty.status !== "DONE") {
+                newBountyStatus = "DONE";
+              }
+            } else if (["rejected", "needs_revision"].includes(status)) {
+              const approvedExists = await tx.workSubmission.findFirst({
+                where: {
+                  bountyId: submission.bounty.id,
+                  status: "approved",
+                  id: { not: submissionId },
+                },
+                select: { id: true },
+              });
+              if (!approvedExists) newBountyStatus = "IN_PROGRESS";
+            }
+
+            const updSub = await tx.workSubmission.update({
+              where: { id: submissionId },
+              data: {
+                status,
+                reviewNotes: reviewNotes?.trim() || null,
+                reviewedBy: userId,
+                reviewedAt: new Date(),
+              },
+              include: {
+                submitterUser: { select: USER_SELECT_BASIC },
+                reviewerUser: { select: USER_SELECT_BASIC },
+              },
+            });
+
+            if (status === "rejected") {
+              await tx.bountyAssignee.deleteMany({
+                where: {
+                  bountyId: submission.bounty.id,
+                  userId: submission.submittedBy,
+                },
+              });
+            }
+
+            const updBounty = await tx.bounty.update({
+              where: { id: submission.bounty.id },
+              data: {
+                status: newBountyStatus,
+                ...(status === "approved" &&
+                  submission.bounty.status !== "DONE" && {
+                    assignee: submission.submittedBy,
+                    completedAt: new Date(),
+                  }),
+                ...(status !== "approved" &&
+                  submission.bounty.status === "DONE" &&
+                  newBountyStatus !== "DONE" && { completedAt: null }),
+                ...(status === "rejected" &&
+                  submission.bounty.assignee === submission.submittedBy && {
+                    assignee: null,
+                  }),
+              },
+              include: {
+                createdByUser: { select: USER_SELECT_WITH_ROLE },
+                assigneeUser: { select: USER_SELECT_WITH_ROLE },
+                team: { select: { id: true, name: true, logo: true } },
+              },
+            });
+
+            return { updatedSubmission: updSub, updatedBounty: updBounty };
+          }, { isolationLevel: "Serializable" });
+          break;
+        } catch (error) {
+          if (error.code !== "P2034" || attempt === 2) throw error;
+        }
+      }
+      if (result.error) {
+        return res.status(result.statusCode).json({ error: result.error });
+      }
+      const { updatedSubmission, updatedBounty } = result;
 
       sendRealtimeUpdate("submission_reviewed", updatedSubmission, req.user.id);
       sendRealtimeUpdate("bounty_updated", updatedBounty, req.user.id);
-      await invalidateSubmissions(submission.bounty.id, submission.submittedBy);
-      await invalidateBounty(submission.bounty.id);
+      await invalidateSubmissions(updatedBounty.id, updatedSubmission.submittedBy);
+      await invalidateBounty(updatedBounty.id);
 
       res.json({
         message: "Submission reviewed successfully",
