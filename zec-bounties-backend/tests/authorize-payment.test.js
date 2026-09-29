@@ -64,7 +64,16 @@ stub("middleware/websocket.js", {
 stub("utils/cache.js", {
   delCache: async () => {},
   deleteCacheByPattern: async () => {},
+  // bumpVersion is used by the canonical utils/bountyHelpers.invalidateBounty;
+  // stub it so this suite stays green if the payout path is later routed
+  // through that shared helper (see coordination issue #9).
+  bumpVersion: async () => {},
 });
+// The canonical invalidateBounty also fans out to email + push notifications
+// and web-push's VAPID init throws without keys. Stub both to async noops so
+// requiring the router never triggers those side effects.
+stub("utils/notifyUser.js", async () => {});
+stub("utils/sendMail.js", async () => {});
 stub("helpers/zcash/zcashHelper.js", {
   getDefaultZcashParams: async () => ({
     accountName: "Main",
