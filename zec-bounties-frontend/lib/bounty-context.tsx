@@ -29,6 +29,7 @@ import type {
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
+import { computeHasMoreBounties } from "./bounty-pagination";
 
 interface BountyCategory {
   id: number;
@@ -2820,8 +2821,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       }
 
       setHasMoreBounties(
-        incoming.length === BOUNTIES_PER_PAGE &&
-          bounties.length + incoming.length < total,
+        computeHasMoreBounties({
+          reset,
+          previousCount: bounties.length,
+          incomingCount: incoming.length,
+          total,
+          pageSize: BOUNTIES_PER_PAGE,
+        }),
       );
     } catch (error) {
       console.error("Failed to fetch bounties:", error);
