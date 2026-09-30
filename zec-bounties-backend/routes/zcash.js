@@ -13,7 +13,7 @@ const {
 } = require("../helpers/zcash/zcashHelper.js");
 const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 
-const { sendRealtimeUpdate } = require("../middleware/websocket");
+const { sendToUser } = require("../middleware/websocket");
 
 const router = express.Router();
 
@@ -582,7 +582,7 @@ router.patch(
         { timeout: 10000 },
       );
 
-      sendRealtimeUpdate("default_wallet_updated", updated, userId);
+      sendToUser(userId, "default_wallet_updated", updated);
 
       res.json({ success: true, data: updated });
     } catch (error) {

@@ -42,6 +42,7 @@ const {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  broadcastBountyEvent,
   invalidateBounty,
   ONBOARDED_ROLES,
   requireOnboarded,
@@ -694,12 +695,18 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       return [bountyRow, created];
     });
 
-    sendRealtimeUpdate(
+    await broadcastBountyEvent(
       "bounty_assignees_updated",
       { bountyId, assignees },
+      bountyId,
       req.user.id,
     );
-    sendRealtimeUpdate("bounty_updated", freshBounty, req.user.id); // ← new
+    await broadcastBountyEvent(
+      "bounty_updated",
+      freshBounty,
+      bountyId,
+      req.user.id,
+    );
     await invalidateBounty(bountyId);
     res.status(200).json({ assignees });
 
@@ -835,12 +842,18 @@ router.delete("/:id/assignees/:userId", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate(
+    await broadcastBountyEvent(
       "bounty_assignees_updated",
       { bountyId, removedUserId: userId },
+      bountyId,
       req.user.id,
     );
-    sendRealtimeUpdate("bounty_updated", freshBounty, req.user.id); // ← new
+    await broadcastBountyEvent(
+      "bounty_updated",
+      freshBounty,
+      bountyId,
+      req.user.id,
+    );
     await invalidateBounty(bountyId);
     res.json({ message: "Assignee removed successfully" });
   } catch (error) {
@@ -895,7 +908,12 @@ router.put(
         },
       });
 
-      sendRealtimeUpdate("payment_authorized", updated, req.user.id);
+      await broadcastBountyEvent(
+        "payment_authorized",
+        updated,
+        req.params.id,
+        req.user.id,
+      );
       await invalidateBounty(req.params.id);
       res.json(updated);
     } catch (error) {
@@ -913,7 +931,12 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
       where: { id: req.params.id },
       data: { approved: true },
     });
-    sendRealtimeUpdate("bounty_approved", updated, req.user.id);
+    await broadcastBountyEvent(
+      "bounty_approved",
+      updated,
+      req.params.id,
+      req.user.id,
+    );
     await invalidateBounty(req.params.id);
     res.json(updated);
   } catch (error) {
@@ -996,7 +1019,12 @@ router.patch("/:id/status", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate("bounty_status_changed", updated, req.user.id);
+    await broadcastBountyEvent(
+      "bounty_status_changed",
+      updated,
+      bountyId,
+      req.user.id,
+    );
     await invalidateBounty(bountyId);
     res.json(updated);
   } catch (error) {
@@ -1097,8 +1125,8 @@ router.post("/:id/submit", authenticate, async (req, res) => {
       }),
     ]);
 
-    sendRealtimeUpdate("work_submitted", workSubmission, userId);
-    sendRealtimeUpdate("bounty_updated", updatedBounty, userId);
+    await broadcastBountyEvent("work_submitted", workSubmission, bountyId, userId);
+    await broadcastBountyEvent("bounty_updated", updatedBounty, bountyId, userId);
     await invalidateSubmissions(bountyId, userId);
 
     res.json({
@@ -1354,8 +1382,18 @@ router.patch(
         },
       );
 
-      sendRealtimeUpdate("submission_reviewed", updatedSubmission, req.user.id);
-      sendRealtimeUpdate("bounty_updated", updatedBounty, req.user.id);
+      await broadcastBountyEvent(
+        "submission_reviewed",
+        updatedSubmission,
+        submission.bounty.id,
+        req.user.id,
+      );
+      await broadcastBountyEvent(
+        "bounty_updated",
+        updatedBounty,
+        submission.bounty.id,
+        req.user.id,
+      );
       await invalidateSubmissions(submission.bounty.id, submission.submittedBy);
       await invalidateBounty(submission.bounty.id);
 
@@ -1454,9 +1492,19 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       return [updSub, updBounty];
     });
 
-    sendRealtimeUpdate("submission_edited", updated, userId);
+    await broadcastBountyEvent(
+      "submission_edited",
+      updated,
+      submission.bountyId,
+      userId,
+    );
     if (updatedBounty)
-      sendRealtimeUpdate("bounty_updated", updatedBounty, userId);
+      await broadcastBountyEvent(
+        "bounty_updated",
+        updatedBounty,
+        submission.bountyId,
+        userId,
+      );
     await invalidateSubmissions(submission.bountyId, userId);
     if (wasRevision) await invalidateBounty(submission.bountyId);
 
@@ -1554,7 +1602,7 @@ router.patch(
         }
       });
 
-      sendRealtimeUpdate(
+      await broadcastBountyEvent(
         "submissions_rejected_others",
         {
           bountyId: keptSubmission.bountyId,
@@ -1562,11 +1610,13 @@ router.patch(
           rejectedSubmissionIds: othersPending.map((s) => s.id),
           rejectedUserIds,
         },
+        keptSubmission.bountyId,
         req.user.id,
       );
-      sendRealtimeUpdate(
+      await broadcastBountyEvent(
         "bounty_assignees_updated",
         { bountyId: keptSubmission.bountyId },
+        keptSubmission.bountyId,
         req.user.id,
       );
 
@@ -1980,11 +2030,21 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
     await invalidateBounty(application.bountyId);
 
     // Notify clients about the application change.
-    sendRealtimeUpdate("application_updated", result, req.user.id);
+    await broadcastBountyEvent(
+      "application_updated",
+      result,
+      application.bountyId,
+      req.user.id,
+    );
 
     // When accepted, also notify clients that the bounty itself changed.
     if (updatedBounty) {
-      sendRealtimeUpdate("bounty_updated", updatedBounty, req.user.id);
+      await broadcastBountyEvent(
+        "bounty_updated",
+        updatedBounty,
+        application.bountyId,
+        req.user.id,
+      );
     }
 
     res.json(result);
@@ -2057,9 +2117,10 @@ router.delete(
         application.bountyId,
       );
       await invalidateBounty(application.bountyId);
-      sendRealtimeUpdate(
+      await broadcastBountyEvent(
         "application_deleted",
         { id: applicationId, bountyId: application.bountyId },
+        application.bountyId,
         req.user.id,
       );
       res.json({ message: "Application withdrawn successfully" });
@@ -2119,7 +2180,12 @@ router.post("/apply", authenticate, async (req, res) => {
     await invalidateApplications(applicantId);
     await invalidateBounty(application.bountyId);
 
-    sendRealtimeUpdate("application_created", application, applicantId);
+    await broadcastBountyEvent(
+      "application_created",
+      application,
+      bountyId,
+      applicantId,
+    );
     res.status(201).json(application);
   } catch (err) {
     console.error(err);
@@ -2500,7 +2566,12 @@ router.put("/:id", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate("bounty_updated", updated, req.user.id);
+    await broadcastBountyEvent(
+      "bounty_updated",
+      updated,
+      req.params.id,
+      req.user.id,
+    );
     await invalidateBounty(req.params.id);
     res.json(updated);
 

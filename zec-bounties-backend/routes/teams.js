@@ -2,7 +2,11 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const path = require("path");
 const { promises: fs } = require("fs");
-const { authenticate, optionalAuthenticate } = require("../middleware/auth");
+const {
+  authenticate,
+  optionalAuthenticate,
+  AUTH_USER_SELECT,
+} = require("../middleware/auth");
 const { initZcashOnce, initZcashOnceForTeams } = require("../zcash/init");
 const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
 const { invalidateZingo } = require("../utils/zingo/getZingo");
@@ -37,6 +41,7 @@ const {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  broadcastTeamEvent,
   invalidateBounty,
   ONBOARDED_ROLES,
   requireOnboarded,
@@ -369,7 +374,12 @@ router.post("/", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate("team_created", serializeTeam(team), req.user.id);
+    await broadcastTeamEvent(
+      "team_created",
+      serializeTeam(team),
+      team.id,
+      req.user.id,
+    );
     res.status(201).json(serializeTeam(team));
   } catch (err) {
     if (err.code === "P2002") {
@@ -529,6 +539,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { role: toRole },
+      select: AUTH_USER_SELECT,
     });
 
     // Bust the cached "all users" list — /api/bounties/users won't
@@ -539,7 +550,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
     }
 
-    sendRealtimeUpdate("user_updated", updatedUser, req.user.id);
+    sendToUser(userId, "user_updated", updatedUser);
 
     res.json({
       success: true,
@@ -1047,7 +1058,12 @@ router.post("/:teamId/verify", authenticate, async (req, res) => {
       isVerified,
     };
 
-    sendRealtimeUpdate("team_verification_updated", payload, req.user.id);
+    await broadcastTeamEvent(
+      "team_verification_updated",
+      payload,
+      teamId,
+      req.user.id,
+    );
 
     res.status(201).json({ success: true, ...payload, verifiedByMe: true });
   } catch (err) {
@@ -1082,7 +1098,12 @@ router.delete("/:teamId/verify", authenticate, async (req, res) => {
       isVerified,
     };
 
-    sendRealtimeUpdate("team_verification_updated", payload, req.user.id);
+    await broadcastTeamEvent(
+      "team_verification_updated",
+      payload,
+      teamId,
+      req.user.id,
+    );
 
     res.json({ success: true, ...payload, verifiedByMe: false });
   } catch (err) {
@@ -1229,6 +1250,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { role: "HUNTER" },
+      select: AUTH_USER_SELECT,
     });
 
     // Bust the cached "all users" list — /api/bounties/users won't
@@ -1239,7 +1261,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
     }
 
-    sendRealtimeUpdate("user_updated", updatedUser, req.user.id);
+    sendToUser(userId, "user_updated", updatedUser);
 
     res.json({
       success: true,
@@ -1369,7 +1391,12 @@ router.patch("/:teamId", authenticate, async (req, res) => {
       await invalidateTeamBounties(teamId);
     }
 
-    sendRealtimeUpdate("team_updated", serializeTeam(team), req.user.id);
+    await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(team),
+      team.id,
+      req.user.id,
+    );
     res.json(serializeTeam(team));
   } catch (err) {
     if (err.code === "P2002") {
@@ -1537,13 +1564,15 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
       await syncWalletToMembers(teamId, wallet, userIds);
     }
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_members_updated",
       {
         teamId,
         members,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.status(201).json({
@@ -1594,13 +1623,15 @@ router.patch("/:teamId/members/:userId", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_member_role_updated",
       {
         teamId,
         member,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.json(member);
@@ -1640,13 +1671,15 @@ router.delete("/:teamId/members/:userId", authenticate, async (req, res) => {
       await removeWalletFromMembers(teamId, wallet, [userId]);
     }
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_member_removed",
       {
         teamId,
         userId,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true, extraUserIds: [userId] },
     );
 
     res.json({
@@ -1768,13 +1801,15 @@ router.post("/:teamId/wallet", authenticate, async (req, res) => {
 
     await syncWalletToMembers(teamId, wallet, memberUserIds);
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_wallet_created",
       {
         teamId,
         wallet,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.status(201).json({
@@ -1908,13 +1943,15 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
 
     await syncWalletToMembers(teamId, wallet, memberUserIds);
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_wallet_imported",
       {
         teamId,
         wallet,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.status(201).json({
@@ -2212,10 +2249,12 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
       });
     }
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_payment_sent",
       { teamId, txids: sendResult.txids },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.json({
@@ -2464,7 +2503,7 @@ router.post(
 
       // teamId in the payload lets the frontend WS handler distinguish this
       // from an admin (non-team) payout and refetch the right team's data.
-      sendRealtimeUpdate(
+      await broadcastTeamEvent(
         "payment_authorized",
         {
           teamId,
@@ -2475,7 +2514,9 @@ router.post(
           walletAccountName: wallet.accountName,
           batchKey,
         },
+        teamId,
         req.user.id,
+        { membersOnly: true },
       );
 
       res.json({
@@ -2667,12 +2708,14 @@ router.delete("/:teamId/wallet", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_wallet_deleted",
       {
         teamId,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.json({
@@ -2855,7 +2898,12 @@ router.post(
 
       await invalidateTeamBounties(teamId);
 
-      sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+      await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
       res.json({
         success: true,
         logo: toMediaUrl(cid),
@@ -2910,7 +2958,12 @@ router.delete("/:teamId/logo", authenticate, async (req, res) => {
 
     await invalidateTeamBounties(teamId);
 
-    sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+    await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
     res.json({ success: true, team: serializeTeam(updated) });
   } catch (err) {
     console.error(err);
@@ -2966,7 +3019,12 @@ router.post(
 
       await invalidateTeamBounties(teamId);
 
-      sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+      await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
       res.json({
         success: true,
         banner: toMediaUrl(cid),
@@ -2997,7 +3055,12 @@ router.delete("/:teamId/banner", authenticate, async (req, res) => {
     });
 
     await invalidateTeamBounties(teamId);
-    sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+    await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
 
     res.json({ success: true, team: serializeTeam(updated) });
   } catch (err) {

@@ -12,7 +12,7 @@ const {
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
-const { sendRealtimeUpdate } = require("../middleware/websocket");
+const { sendToUser } = require("../middleware/websocket");
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET;
@@ -220,7 +220,7 @@ router.get("/discord/callback", async (req, res) => {
     });
 
     await delCache("users:all");
-    sendRealtimeUpdate("user_updated", updated, userId);
+    sendToUser(userId, "user_updated", updated);
 
     res.redirect(`${FRONTEND_URL}/profile?discord=success`);
   } catch (err) {
@@ -256,7 +256,7 @@ router.delete("/discord", authenticate, async (req, res) => {
     });
 
     await delCache("users:all");
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendToUser(req.user.id, "user_updated", updated);
 
     res.json({ user: updated });
   } catch (error) {
@@ -355,7 +355,7 @@ router.patch("/update-email-notifications", authenticate, async (req, res) => {
 
     await delCache("users:all");
 
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendToUser(req.user.id, "user_updated", updated);
 
     res.json({ user: updated });
   } catch (error) {
@@ -662,7 +662,7 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
       deleteCacheByPattern("submissions:*"),
     ]);
 
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendToUser(req.user.id, "user_updated", updated);
 
     res.json({ user: updated });
   } catch (error) {
@@ -711,7 +711,7 @@ router.patch("/select-role", authenticate, async (req, res) => {
 
     await delCache("users:all");
 
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendToUser(req.user.id, "user_updated", updated);
 
     const token = signSessionToken(updated);
 
