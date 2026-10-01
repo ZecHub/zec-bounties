@@ -54,6 +54,7 @@ function loadRoutes(prisma) {
     "../utils/constants": { REQUIRED_TEAM_VERIFICATIONS: 3 },
     "../helpers/validateBounty": require("../../helpers/validateBounty"),
     "../utils/userSelects": require("../../utils/userSelects"),
+    "../utils/userIdentity": require("../../utils/userIdentity"),
     "../utils/bountyHelpers": helpers,
     "path": path,
     "multer": Object.assign(() => ({ single: () => noOp }), { memoryStorage: () => ({}) }),
