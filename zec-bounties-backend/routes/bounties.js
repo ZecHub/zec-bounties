@@ -876,35 +876,6 @@ router.get("/:id/assignees", authenticate, async (req, res) => {
   }
 });
 
-// ─── Authorize payment (Admin only) ──────────────────────────────────────────
-router.put(
-  "/:id/authorize-payment",
-  authenticate,
-  isAdmin,
-  async (req, res) => {
-    try {
-      const { paymentAuthorized } = req.body;
-
-      const updated = await prisma.bounty.update({
-        where: { id: req.params.id },
-        data: {
-          ...(paymentAuthorized !== undefined && {
-            paymentAuthorized,
-            paymentAuthorizedAt: paymentAuthorized ? new Date() : null,
-          }),
-        },
-      });
-
-      sendRealtimeUpdate("payment_authorized", updated, req.user.id);
-      await invalidateBounty(req.params.id);
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating bounty:", error);
-      res.status(500).json({ error: "Failed to update bounty" });
-    }
-  },
-);
-
 // ─── Approve bounty (Admin) ───────────────────────────────────────────────────
 // FIX: id was cast to Number() but schema uses cuid strings — removed the cast.
 router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {

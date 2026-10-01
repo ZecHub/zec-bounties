@@ -51,6 +51,17 @@ export function PaymentAuthorizationModal({
     try {
       const result = await authorizeDuePayment([bounty.id]);
 
+      // authorizeDuePayment returns a quiet failure object (no throw) when the
+      // current user is not a platform ADMIN — without this guard the modal
+      // toasted "Payment sent" while nothing was ever broadcast.
+      if (!result.success || result.paidCount === 0) {
+        toast.error(
+          "Payment was not sent — this payout path requires platform-admin authorization.",
+          { duration: 10000 },
+        );
+        return;
+      }
+
       if (result.skipped.length > 0) {
         toast.error(`Payment skipped: ${result.skipped[0].reason}`);
         return;
