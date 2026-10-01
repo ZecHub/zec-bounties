@@ -237,6 +237,13 @@ router.post("/", authenticate, async (req, res) => {
       teamId,
     } = req.body;
 
+    const validation = validateBountyCreate(req.body);
+    if (!validation.valid) return res.status(400).json({ error: validation.error });
+    const categoryValidation = await validateCategory(prisma, categoryId);
+    if (!categoryValidation.valid) {
+      return res.status(400).json({ error: categoryValidation.error });
+    }
+
     // Only admins may create a pre-approved bounty. Non-admin callers'
     // isApproved value is ignored outright, mirroring the guard on PUT /:id.
     const resolvedIsApproved =
@@ -297,7 +304,7 @@ router.post("/", authenticate, async (req, res) => {
         createdBy: req.user.id,
         assignee: resolvedAssignee,
         isApproved: resolvedIsApproved,
-        categoryId,
+        categoryId: categoryId || null,
         ...(chain && { chain }),
         ...(teamId && { teamId }),
         // Denormalized from the team at creation time — a bounty's privacy
@@ -2426,6 +2433,13 @@ router.put("/:id", authenticate, async (req, res) => {
       return res.status(403).json({ error: "Cannot reassign team" });
     }
 
+    const validation = validateBountyUpdate(req.body);
+    if (!validation.valid) return res.status(400).json({ error: validation.error });
+    const categoryValidation = await validateCategory(prisma, req.body.categoryId);
+    if (!categoryValidation.valid) {
+      return res.status(400).json({ error: categoryValidation.error });
+    }
+
     const { notifyUsers = false } = req.body;
     let resolvedIsPrivate;
     if (req.body.teamId !== undefined) {
@@ -2474,9 +2488,11 @@ router.put("/:id", authenticate, async (req, res) => {
       data: {
         ...(req.body.title && { title: req.body.title }),
         ...(req.body.description && { description: req.body.description }),
-        ...(req.body.bountyAmount && { bountyAmount: req.body.bountyAmount }),
+        ...(req.body.bountyAmount !== undefined && {
+          bountyAmount: Number(req.body.bountyAmount),
+        }),
         ...(req.body.timeToComplete && {
-          timeToComplete: req.body.timeToComplete,
+          timeToComplete: new Date(req.body.timeToComplete),
         }),
         ...(req.body.assignee !== undefined && { assignee: req.body.assignee }),
         ...(req.body.chain !== undefined && { chain: req.body.chain }),
