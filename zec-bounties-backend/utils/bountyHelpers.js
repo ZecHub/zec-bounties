@@ -127,8 +127,8 @@ function getAvatarOverrideTier(badges) {
   return null;
 }
 
-async function isGoldStarOrAbove(userId) {
-  const user = await prisma.user.findUnique({
+async function isGoldStarOrAbove(userId, db) {
+  const user = await db.user.findUnique({
     where: { id: userId },
     select: { badges: true },
   });
@@ -136,7 +136,7 @@ async function isGoldStarOrAbove(userId) {
   const overrideTier = getAvatarOverrideTier(user?.badges);
   if (overrideTier !== null) return overrideTier >= GOLD_STAR_THRESHOLD;
 
-  const completed = await prisma.bounty.count({
+  const completed = await db.bounty.count({
     where: { assignee: userId, status: "DONE" },
   });
 
@@ -158,19 +158,54 @@ function getCalendarWeekBounds(date = new Date()) {
   return { start, end };
 }
 
-async function getWeeklyBountyQuota(userId) {
-  const isGold = await isGoldStarOrAbove(userId);
+async function getWeeklyBountyQuota(userId, db = prisma, date = new Date()) {
+  const isGold = await isGoldStarOrAbove(userId, db);
   const limit = isGold
     ? WEEKLY_BOUNTY_LIMIT_GOLD
     : WEEKLY_BOUNTY_LIMIT_STANDARD;
 
-  const { start, end } = getCalendarWeekBounds();
+  const { start, end } = getCalendarWeekBounds(date);
 
-  const used = await prisma.bounty.count({
+  const used = await db.bounty.count({
     where: { createdBy: userId, dateCreated: { gte: start, lt: end } },
   });
 
   return { limit, used, remaining: Math.max(0, limit - used), resetsAt: end };
+}
+
+class WeeklyBountyQuotaError extends Error {
+  constructor(quota) {
+    super(`Weekly bounty creation limit reached (${quota.limit} per week)`);
+    this.quota = quota;
+  }
+}
+
+// Both creation routes must count and insert in the same transaction. A plain
+// transaction at PostgreSQL's default Read Committed isolation still allows
+// simultaneous requests to consume the same last slot.
+async function createBountyWithQuota(user, args) {
+  if (user.role === "ADMIN") return prisma.bounty.create(args);
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // Use one timestamp for the quota window and inserted row, including
+        // when a retry crosses Monday 00:00 UTC.
+        const dateCreated = new Date();
+        const quota = await getWeeklyBountyQuota(user.id, tx, dateCreated);
+        if (quota.remaining <= 0) throw new WeeklyBountyQuotaError(quota);
+
+        return tx.bounty.create({
+          ...args,
+          data: { ...args.data, dateCreated },
+        });
+      }, { isolationLevel: "Serializable" });
+    } catch (error) {
+      // Prisma reports serialization conflicts/deadlocks as P2034. Retry the
+      // entire check, so a losing request observes the newly consumed slot.
+      if (error.code !== "P2034" || attempt >= 4) throw error;
+    }
+  }
 }
 
 module.exports = {
@@ -182,4 +217,6 @@ module.exports = {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  createBountyWithQuota,
+  WeeklyBountyQuotaError,
 };
