@@ -32,6 +32,7 @@ const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 const { randomUUID } = require("crypto");
 
 const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
+const { broadcastBountyEvent } = require("../utils/bountyHelpers");
 
 const path = require("path");
 
@@ -563,9 +564,10 @@ router.post(
       await invalidateBounty(bountyId);
 
       // ✅ Broadcast bounty payment authorization to ALL (shared bounty state)
-      sendRealtimeUpdate(
+      await broadcastBountyEvent(
         "bounty_payment_authorized",
         responseData,
+        bountyId,
         req.user.id,
       );
 
@@ -664,9 +666,10 @@ router.put(
       await invalidateBounty(bountyId);
 
       // ✅ Broadcast bounty payment authorization to ALL (shared bounty state)
-      sendRealtimeUpdate(
+      await broadcastBountyEvent(
         "bounty_payment_authorized",
         responseData,
+        bountyId,
         req.user.id,
       );
 
@@ -862,7 +865,12 @@ router.put("/:id/mark-paid", authenticate, isAdmin, async (req, res) => {
     await invalidateBounty(bountyId);
 
     // ✅ Broadcast bounty paid status to ALL (shared bounty state)
-    sendRealtimeUpdate("bounty_marked_paid", updatedBounty, req.user.id);
+    await broadcastBountyEvent(
+      "bounty_marked_paid",
+      updatedBounty,
+      bountyId,
+      req.user.id,
+    );
 
     res.json(updatedBounty);
   } catch (error) {
@@ -921,13 +929,14 @@ router.post("/pay/:bountyId", authenticate, isAdmin, async (req, res) => {
     await invalidateBounty(bountyId);
 
     // ✅ Broadcast bounty paid to ALL admins (shared event)
-    sendRealtimeUpdate(
+    await broadcastBountyEvent(
       "bounty_paid",
       {
         bountyId,
         txHash,
         amount: bounty.bountyAmountZec,
       },
+      bountyId,
       req.user.id,
     );
 

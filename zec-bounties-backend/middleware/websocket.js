@@ -1,8 +1,31 @@
 const clients = new Map(); // userId -> { ws, userId, userName }
 
+// User fields that must never reach another user's socket. Every name here
+// exists only on the User model, so dropping it by key is safe at any depth
+// (createdByUser, assigneeUser, assignees[].user, full user rows, ...).
+// sendToUser() is exempt: it only ever delivers to the data's owner.
+const PRIVATE_USER_FIELDS = new Set([
+  "email",
+  "password",
+  "z_address",
+  "UA_address",
+  "githubId",
+  "discordUserId",
+  "emailNotifications",
+  "pushNotifications",
+  "ofacVerified",
+  "profileVisibility",
+]);
+
+function serializeForBroadcast(data) {
+  return JSON.stringify(data, (key, value) =>
+    PRIVATE_USER_FIELDS.has(key) ? undefined : value,
+  );
+}
+
 // Broadcast to all connected clients
 function broadcast(data, excludeWs) {
-  const message = JSON.stringify(data);
+  const message = serializeForBroadcast(data);
   console.log(message);
   clients.forEach((client) => {
     if (client.ws !== excludeWs && client.ws.readyState === 1) {
@@ -14,7 +37,7 @@ function broadcast(data, excludeWs) {
 // Broadcast only to a specific set of userIds — used for private-bounty
 // events so the payload never reaches sockets outside that team's community.
 function broadcastToUsers(data, userIds, excludeWs) {
-  const message = JSON.stringify(data);
+  const message = serializeForBroadcast(data);
   const idSet = new Set(userIds);
   clients.forEach((client, userId) => {
     if (!idSet.has(userId)) return;
