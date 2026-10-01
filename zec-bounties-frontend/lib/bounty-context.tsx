@@ -2850,19 +2850,17 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (reset) {
         setBounties(incoming);
         setBountiesPage(2);
+        setHasMoreBounties(incoming.length === BOUNTIES_PER_PAGE && incoming.length < total);
       } else {
         setBounties((prev) => {
           const existingIds = new Set(prev.map((b) => b.id));
           const fresh = incoming.filter((b) => !existingIds.has(b.id));
-          return [...prev, ...fresh];
+          const merged = [...prev, ...fresh];
+          setHasMoreBounties(incoming.length === BOUNTIES_PER_PAGE && merged.length < total);
+          return merged;
         });
         setBountiesPage((p) => p + 1);
       }
-
-      setHasMoreBounties(
-        incoming.length === BOUNTIES_PER_PAGE &&
-          bounties.length + incoming.length < total,
-      );
     } catch (error) {
       console.error("Failed to fetch bounties:", error);
     } finally {
