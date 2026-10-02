@@ -2859,9 +2859,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         setBountiesPage((p) => p + 1);
       }
 
+      // Follow API offsets, not the old list length: resets replace the list,
+      // and live insertions/deduplication can change its size between pages.
       setHasMoreBounties(
         incoming.length === BOUNTIES_PER_PAGE &&
-          bounties.length + incoming.length < total,
+          page * BOUNTIES_PER_PAGE < total,
       );
     } catch (error) {
       console.error("Failed to fetch bounties:", error);
