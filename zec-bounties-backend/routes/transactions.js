@@ -314,69 +314,77 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     try {
       sendResult = await executeZingoQuickSend(paymentList, adminWallet);
     } catch (err) {
-      // quicksend only rejects on timeout — by then the command was
-      // already written to the wallet process, so the send may have gone
-      // through. Outcome unknown: do NOT release the claim, or a retry
-      // could double-pay. Leave paymentInFlight = true and flag for a human.
-      console.error(
-        `⚠️ UNKNOWN payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): ${err.message}`,
-      );
-      await prisma.transaction.updateMany({
-        where: { batchKey },
-        data: { status: "UNKNOWN" },
-      });
-      return res.status(502).json({
+      // quicksend only rejects before anything is written to the wallet
+      // (missing binary, spawn failure, malformed address, a process with
+      // unattributed output pending) — nothing was sent. 503: the request
+      // is safe to retry.
+      await releaseClaim(batchKey, payableIds, err.message);
+      return res.status(503).json({
         success: false,
-        outcome: "unknown",
-        error: "Payment outcome unknown — the send may have completed",
-        details:
-          "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the wallet's transaction history before taking further action.",
-        batchKey,
-      });
-    }
-
-    if (sendResult.timedOut) {
-      console.error(
-        `⚠️ UNKNOWN payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): send timed out`,
-      );
-      await prisma.transaction.updateMany({
-        where: { batchKey },
-        data: { status: "UNKNOWN" },
-      });
-      return res.status(502).json({
-        success: false,
-        outcome: "unknown",
-        error: "Payment outcome unknown — the send may have completed",
-        details:
-          "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the wallet's transaction history before taking further action.",
-        batchKey,
+        error: "Payment failed before sending",
+        details: err.message,
       });
     }
 
     if (sendResult.error) {
       // Structured failure from the tool — nothing was broadcast, safe to
       // release the claim so these bounties become payable again.
-      const errorMessage = sendResult.error || "Unknown payment error";
-      console.error("❌ Zingo payment error:", errorMessage);
+      console.error("❌ Zingo payment error:", sendResult.error);
 
-      await releaseClaim(batchKey, payableIds, errorMessage, sendResult.raw);
+      await releaseClaim(batchKey, payableIds, sendResult.error, sendResult.raw);
 
       return res.status(422).json({
         success: false,
         error: "Payment failed",
-        details: errorMessage,
+        details: sendResult.error,
+      });
+    }
+
+    if (!(sendResult.txids?.length > 0)) {
+      // No txid, no error: the send may or may not be on-chain. Only a txid
+      // proves payment, so keep the bounties locked against a retry that
+      // could double-pay and hand the decision to a human
+      // (POST /records/:id/resolve) once the wallet history is checked.
+      console.error(
+        `⚠️ UNKNOWN payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")})`,
+      );
+      await prisma.transaction.updateMany({
+        where: { batchKey },
+        data: {
+          status: "UNKNOWN",
+          rawResult: sendResult.raw || null,
+          errorDetail: sendResult.timedOut
+            ? "Timed out waiting for zingo output; the transaction may still have been broadcast"
+            : "Zingo produced no recognizable outcome",
+        },
+      });
+      await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+
+      return res.status(502).json({
+        success: false,
+        outcome: "unknown",
+        error: "Payment outcome unknown — the send may have completed",
+        details:
+          "The wallet didn't confirm the send. These bounties are locked and will NOT be auto-retried. Check the wallet's transaction history before taking further action.",
+        batchKey,
       });
     }
 
     // ── Clean success ────────────────────────────────────────────────────
-    const txResult = sendResult[1];
-    const txid = sendResult.txids?.[0] ?? txResult?.txid ?? null;
+    // One shielded tx normally covers the whole batch, so every row gets the
+    // first txid; the full output stays in rawResult in case zingo split it.
+    const txid = sendResult.txids[0];
     const paidAt = new Date();
 
     await prisma.$transaction([
       prisma.transaction.updateMany({
         where: { batchKey },
-        data: { status: "BROADCAST", txid, settledAt: paidAt },
+        data: {
+          status: "BROADCAST",
+          txid,
+          rawResult: sendResult.raw || null,
+          settledAt: paidAt,
+        },
       }),
       prisma.bounty.updateMany({
         where: { id: { in: payableIds } },
@@ -393,7 +401,8 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     sendRealtimeUpdate(
       "payment_authorized",
       {
-        result: txResult,
+        bountyIds: payableIds,
+        txids: sendResult.txids,
         paidCount: payableIds.length,
         skippedCount: skipped.length,
         skipped,
@@ -403,9 +412,10 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       req.user.id, // exclude sender since they get the HTTP response
     );
 
+    // The panel reads txids for its "Payment sent — tx …" toast.
     res.json({
       success: true,
-      result: txResult,
+      txids: sendResult.txids,
       batchKey,
       paidCount: payableIds.length,
       skipped,
