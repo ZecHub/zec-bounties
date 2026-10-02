@@ -1387,6 +1387,7 @@ router.patch(
 // it) — saving resubmits it as "pending" and restarts the 15-min window from
 // that save, so it now behaves like a normal fresh submission again.
 router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
+  const editConflict = new Error("submission-edit-conflict");
   try {
     const { submissionId } = req.params;
     const { description, deliverableUrl } = req.body;
@@ -1402,6 +1403,7 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
         id: true,
         submittedBy: true,
         submittedAt: true,
+        reviewedAt: true,
         bountyId: true,
         status: true,
       },
@@ -1430,8 +1432,16 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
     const wasRevision = submission.status === "needs_revision";
 
     const [updated, updatedBounty] = await prisma.$transaction(async (tx) => {
-      const updSub = await tx.workSubmission.update({
-        where: { id: submissionId },
+      // Recheck eligibility in the write itself: a review may have committed
+      // since the initial read, even while an edit was waiting for this row.
+      const edited = await tx.workSubmission.updateMany({
+        where: {
+          id: submissionId,
+          submittedBy: userId,
+          status: submission.status,
+          submittedAt: submission.submittedAt,
+          reviewedAt: submission.reviewedAt,
+        },
         data: {
           description: description.trim(),
           deliverableUrl: deliverableUrl?.trim() || null,
@@ -1443,16 +1453,27 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
             reviewNotes: null,
           }),
         },
-        include: {
-          submitterUser: { select: USER_SELECT_BASIC },
-        },
+      });
+      if (edited.count !== 1) throw editConflict;
+      const updSub = await tx.workSubmission.findUnique({
+        where: { id: submissionId },
+        include: { submitterUser: { select: USER_SELECT_BASIC } },
       });
 
       let updBounty = null;
       if (wasRevision) {
-        updBounty = await tx.bounty.update({
-          where: { id: submission.bountyId },
+        // Another submission's approval or a cancellation must not be undone.
+        // Throwing also rolls back the submission edit and cleared review fields.
+        const reopened = await tx.bounty.updateMany({
+          where: {
+            id: submission.bountyId,
+            status: { in: ["TO_DO", "IN_PROGRESS", "IN_REVIEW"] },
+          },
           data: { status: "IN_REVIEW" },
+        });
+        if (reopened.count !== 1) throw editConflict;
+        updBounty = await tx.bounty.findUnique({
+          where: { id: submission.bountyId },
           include: {
             createdByUser: { select: USER_SELECT_WITH_ROLE },
             assigneeUser: { select: USER_SELECT_WITH_ROLE },
@@ -1475,6 +1496,11 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       ...(updatedBounty && { bounty: updatedBounty }),
     });
   } catch (error) {
+    if (error === editConflict) {
+      return res.status(409).json({
+        error: "Submission or bounty changed while editing. Refresh and try again.",
+      });
+    }
     console.error("Error editing submission:", error);
     res.status(500).json({ error: "Failed to edit submission" });
   }
