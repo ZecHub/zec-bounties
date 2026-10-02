@@ -701,7 +701,7 @@ router.get("/info", authenticate, isAdmin, async (req, res) => {
       });
     }
 
-    const info = await executeZingoCliInfo("rescan", params);
+    const info = await executeZingoCliInfo("info", params);
 
     res.json(info);
   } catch (error) {
