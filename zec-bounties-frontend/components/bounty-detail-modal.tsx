@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../lib/errors";
 "use client";
 
 import { Bounty, WorkSubmission, User, Notice } from "@/lib/types";
@@ -339,7 +340,7 @@ export function BountyDetailModal({
       toast.success("Submission updated");
     } catch (error) {
       console.error("Failed to edit submission:", error);
-      toast.error("Failed to update submission");
+      toast.error(getErrorMessage(error, "Failed to update submission"));
     } finally {
       setIsSavingEdit(false);
     }
@@ -369,7 +370,7 @@ export function BountyDetailModal({
           url,
         });
         return;
-      } catch (err) {
+      } catch (error) {
         if ((err as Error).name === "AbortError") return;
         // fall through to clipboard on other errors
       }
@@ -381,7 +382,7 @@ export function BountyDetailModal({
       toast.success("Link copied");
       setTimeout(() => setLinkCopied(false), 2000);
     } catch {
-      toast.error("Couldn't copy link");
+      toast.error(getErrorMessage(error, "Couldn't copy link"));
     }
   };
 
@@ -480,7 +481,7 @@ export function BountyDetailModal({
       toast.success("Application submitted");
     } catch (error) {
       console.error("Failed to apply:", error);
-      toast.error("Failed to submit application");
+      toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
     }
@@ -537,7 +538,7 @@ export function BountyDetailModal({
       toast.success("Work submitted");
     } catch (error) {
       console.error("Failed to submit work:", error);
-      toast.error("Failed to submit work");
+      toast.error(getErrorMessage(error, "Failed to submit work"));
     } finally {
       setIsSubmitting(false);
     }

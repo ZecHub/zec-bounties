@@ -1,3 +1,4 @@
+import { getErrorMessage } from "../../lib/errors";
 "use client";
 
 import { Bounty, WorkSubmission, User } from "@/lib/types";
@@ -201,7 +202,7 @@ export function BountyDetailModal({
       toast.success("Application submitted successfully!");
     } catch (error) {
       console.error("Failed to apply:", error);
-      toast.error("Failed to submit application");
+      toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
     }
@@ -231,7 +232,7 @@ export function BountyDetailModal({
       toast.success("Work submitted successfully!");
     } catch (error) {
       console.error("Failed to submit work:", error);
-      toast.error("Failed to submit work");
+      toast.error(getErrorMessage(error, "Failed to submit work"));
     } finally {
       setIsSubmitting(false);
     }
