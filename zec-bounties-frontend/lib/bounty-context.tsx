@@ -15,6 +15,7 @@ import type {
   BountyFormData,
   BountyApplication,
   WorkSubmission,
+  SubmissionReviewMessage,
   ZcashParamsFormData,
   ZcashParams,
   Team,
@@ -256,6 +257,8 @@ interface BountyContextType {
     data: { description: string; deliverableUrl?: string },
   ) => Promise<WorkSubmission>;
   rejectOtherSubmissions: (submissionId: string) => Promise<void>;
+  fetchReviewThread: (submissionId: string) => Promise<SubmissionReviewMessage[]>;
+  postReviewMessage: (submissionId: string, body: string) => Promise<SubmissionReviewMessage>;
 
   // Fetch methods
   fetchUserApplications: () => Promise<void>;
@@ -575,6 +578,30 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
     };
+  };
+
+  const fetchReviewThread = async (submissionId: string): Promise<SubmissionReviewMessage[]> => {
+    const res = await fetch(`${backendUrl}/api/bounties/submissions/${submissionId}/review-thread`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || "Failed to load review thread");
+    }
+    return res.json();
+  };
+
+  const postReviewMessage = async (submissionId: string, body: string): Promise<SubmissionReviewMessage> => {
+    const res = await fetch(`${backendUrl}/api/bounties/submissions/${submissionId}/review-thread`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || "Failed to post review message");
+    }
+    return res.json();
   };
 
   // Helper function to get public headers (no auth required)
@@ -4014,6 +4041,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         loadMoreTeamBounties,
         editSubmission,
         rejectOtherSubmissions,
+        fetchReviewThread,
+        postReviewMessage,
         fetchMyBounties,
         myBounties,
         myBountiesLoading,

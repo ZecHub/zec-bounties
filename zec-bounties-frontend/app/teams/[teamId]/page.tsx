@@ -1,5 +1,7 @@
 "use client";
 
+import { SubmissionReviewThread } from "@/components/submission-review-thread";
+
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
@@ -1231,6 +1233,11 @@ function OverviewTab({
                       {submission.deliverableUrl}
                     </a>
                   )}
+
+                  <SubmissionReviewThread
+                    submissionId={submission.id}
+                    submitterId={submission.submittedBy}
+                  />
 
                   {submission.status === "pending" && (
                     <div className="border-t pt-3 space-y-2.5">

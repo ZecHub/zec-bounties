@@ -1,5 +1,7 @@
 "use client";
 
+import { SubmissionReviewThread } from "@/components/submission-review-thread";
+
 import { Bounty, WorkSubmission, User, Notice } from "@/lib/types";
 import {
   Dialog,
@@ -195,7 +197,7 @@ export function BountyDetailModal({
     const isAssigned =
       bounty.assignees?.some((a) => a.userId === currentUser.id) ||
       bounty.assignee === currentUser.id;
-    if (!isAssigned) return;
+    if (!isAssigned && bounty.createdBy !== currentUser.id) return;
     setSubmissionsLoading(true);
     fetchWorkSubmissions(bounty.id)
       .then((data) => setWorkSubmissions(data ?? []))
@@ -1098,6 +1100,13 @@ export function BountyDetailModal({
                     </p>
                   </div>
                 )}
+                {userWorkSubmission && (
+                  <SubmissionReviewThread
+                    submissionId={userWorkSubmission.id}
+                    submitterId={userWorkSubmission.submittedBy}
+                    canPost={!!isAssignedToCurrentUser}
+                  />
+                )}
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-green-600 dark:text-green-400">
                   <span>
                     {canEditSubmission
@@ -1121,6 +1130,26 @@ export function BountyDetailModal({
                 </div>
               </>
             )}
+          </section>
+        )}
+
+        {bounty.createdBy === currentUser?.id && workSubmissions.length > 0 && (
+          <section className="mt-5 space-y-3 border-t pt-4">
+            <h3 className="text-sm font-semibold">Submitted work</h3>
+            {workSubmissions.map((submission) => (
+              <div key={submission.id} className="space-y-2 rounded-lg border p-3">
+                <p className="text-xs font-medium">
+                  {submission.submitterUser?.nickname || submission.submitterUser?.name || "Contributor"}
+                </p>
+                <p className="whitespace-pre-wrap break-words text-xs">{submission.description}</p>
+                {submission.deliverableUrl && (
+                  <a href={submission.deliverableUrl} target="_blank" rel="noopener noreferrer" className="block break-all text-xs text-primary underline">
+                    {submission.deliverableUrl}
+                  </a>
+                )}
+                <SubmissionReviewThread submissionId={submission.id} submitterId={submission.submittedBy} />
+              </div>
+            ))}
           </section>
         )}
 
