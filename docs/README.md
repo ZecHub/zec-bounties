@@ -15,6 +15,7 @@ Markdown mirrors of the in-app docs at [https://bounties.zechub.wiki/docs](https
 | Privacy & payments | [privacy-payments.md](privacy-payments.md) |
 | Badges | [badges.md](badges.md) |
 | FAQ | [faq.md](faq.md) |
+| Glossary | [glossary.md](glossary.md) |
 
 Live site: https://bounties.zechub.wiki  
 Repository: https://github.com/ZecHub/zec-bounties
