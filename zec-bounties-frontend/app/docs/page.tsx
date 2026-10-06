@@ -46,9 +46,24 @@ const LINKS = [
     desc: "How to suggest a ZEC reward using implicit USD intervals",
   },
   {
+    href: "/docs/privacy-payments",
+    title: "Privacy & payments",
+    desc: "How shielded payouts work",
+  },
+  {
     href: "/docs/badges",
     title: "Badges",
     desc: "Task stars and specialty role badges",
+  },
+  {
+    href: "/docs/faq",
+    title: "FAQ",
+    desc: "Common questions",
+  },
+  {
+    href: "/docs/glossary",
+    title: "Glossary",
+    desc: "Account roles, bounty statuses, and payment flags",
   },
 ];
 
