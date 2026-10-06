@@ -999,10 +999,16 @@ export function BountyDetailModal({
                 aria-invalid={Boolean(submissionErrors.deliverableUrl)}
                 aria-describedby={
                   submissionErrors.deliverableUrl
-                    ? "deliverable-url-error"
-                    : undefined
+                    ? "deliverable-url-help deliverable-url-error"
+                    : "deliverable-url-help"
                 }
               />
+              <p
+                id="deliverable-url-help"
+                className="text-xs text-muted-foreground"
+              >
+                Share a link where your completed work can be reviewed.
+              </p>
               {submissionErrors.deliverableUrl && (
                 <p
                   id="deliverable-url-error"
