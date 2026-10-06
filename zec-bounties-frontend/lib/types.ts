@@ -142,6 +142,7 @@ export interface BountyApplication {
 
 export interface Bounty {
   id: string;
+  updatedAt?: Date | string;
   title: string;
   description: string;
   createdBy: string; // User ID

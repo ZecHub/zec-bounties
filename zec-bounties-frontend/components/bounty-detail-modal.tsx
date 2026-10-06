@@ -196,17 +196,24 @@ export function BountyDetailModal({
       bounty.assignees?.some((a) => a.userId === currentUser.id) ||
       bounty.assignee === currentUser.id;
     if (!isAssigned) return;
+    let cancelled = false;
     setSubmissionsLoading(true);
     fetchWorkSubmissions(bounty.id)
-      .then((data) => setWorkSubmissions(data ?? []))
+      .then((data) => {
+        if (!cancelled) setWorkSubmissions(data ?? []);
+      })
       .catch((err) => {
+        if (cancelled) return;
         if (!err?.message?.includes("permission")) {
           console.error("Failed to load submissions:", err);
         }
         setWorkSubmissions([]);
       })
-      .finally(() => setSubmissionsLoading(false));
-  }, [open, bounty?.id, currentUser?.id]);
+      .finally(() => {
+        if (!cancelled) setSubmissionsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, bounty?.id, bounty?.status, currentUser?.id]);
 
   if (!bounty) return null;
 
