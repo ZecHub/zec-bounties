@@ -118,6 +118,17 @@ interface BountyContextType {
   bounties: Bounty[];
   bountiesLoading: boolean;
   createBounty: (data: BountyFormData) => Promise<void>;
+  reviewBountySuggestion: (
+    id: string,
+    data: {
+      action: "approve" | "edit" | "decline";
+      reason: string;
+      title?: string;
+      description?: string;
+      bountyAmount?: number;
+      timeToComplete?: Date;
+    },
+  ) => Promise<Bounty>;
   bountyQuota: {
     limit: number | null;
     used: number;
@@ -3074,10 +3085,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     if (!currentUser) return;
 
     try {
-      // Team bounties go through the dedicated team route (recipients-scoped
-      // broadcast, team membership + verification checks, team-cache aware).
-      // Everything else still goes through the general marketplace route.
-      const url = data.teamId
+      const hunterSuggestion =
+        currentUser.role === "HUNTER" && Boolean(data.teamId);
+      const useTeamRoute = Boolean(data.teamId) && !hunterSuggestion;
+      const url = useTeamRoute
         ? `${backendUrl}/api/teams/${data.teamId}/bounties`
         : `${backendUrl}/api/bounties`;
 
@@ -3091,15 +3102,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           timeToComplete: data.timeToComplete,
           assignee:
             data.assignee === "none"
-              ? currentUser.role === "ADMIN" || data.teamId
+              ? currentUser.role === "ADMIN" || (data.teamId && !hunterSuggestion)
                 ? null
                 : currentUser.id
               : data.assignee,
           categoryId: data.category,
           chain: data.chain,
-          // teamId is now in the URL for team bounties, not the body — the
-          // backend route already knows which team from req.params.
-          ...(!data.teamId && { teamId: null }),
+          ...(!useTeamRoute && { teamId: data.teamId ?? null }),
         }),
       });
 
@@ -3127,6 +3136,33 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to create bounty:", error);
       throw error;
     }
+  };
+
+  const reviewBountySuggestion = async (
+    id: string,
+    data: {
+      action: "approve" | "edit" | "decline";
+      reason: string;
+      title?: string;
+      description?: string;
+      bountyAmount?: number;
+      timeToComplete?: Date;
+    },
+  ): Promise<Bounty> => {
+    const res = await fetch(
+      `${backendUrl}/api/bounties/${id}/suggestion-review`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      },
+    );
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to review suggestion");
+
+    setBounties((prev) => prev.map((bounty) => (bounty.id === id ? json : bounty)));
+    patchTeamBounty(json);
+    return json;
   };
 
   const updateBounty = async (
@@ -3901,6 +3937,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         bounties: populatedBounties,
         bountiesLoading,
         createBounty,
+        reviewBountySuggestion,
         bountyQuota,
         fetchBountyQuota,
         updateBounty,

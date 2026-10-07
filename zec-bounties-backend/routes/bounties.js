@@ -28,6 +28,7 @@ const {
   validateBountyUpdate,
   validateCategory,
 } = require("../helpers/validateBounty");
+const { buildSuggestionReviewUpdate } = require("../utils/bountySuggestionReview");
 const {
   USER_SELECT,
   USER_SELECT_PUBLIC,
@@ -255,8 +256,8 @@ router.post("/", authenticate, async (req, res) => {
       return res.status(400).json({ error: "Invalid chain value" });
     }
 
-    // If a teamId was given, confirm it exists and the creator is actually
-    // a member (global admins can post on behalf of any team). `team` is
+    // If a teamId was given, confirm it exists. Hunters submit suggestions
+    // without team membership; other non-admin creators must be members. `team` is
     // declared here (not with `const` inside the `if`) so it's still in
     // scope below when we denormalize its privacy flag onto the bounty.
     let team = null;
@@ -272,7 +273,7 @@ router.post("/", authenticate, async (req, res) => {
         });
       }
 
-      if (req.user.role !== "ADMIN") {
+      if (!["ADMIN", "HUNTER"].includes(req.user.role)) {
         const membership = await prisma.teamMember.findUnique({
           where: { teamId_userId: { teamId, userId: req.user.id } },
         });
@@ -302,6 +303,7 @@ router.post("/", authenticate, async (req, res) => {
         createdBy: req.user.id,
         assignee: resolvedAssignee,
         isApproved: resolvedIsApproved,
+        ...(isHunter && { suggestionReviewStatus: "PENDING" }),
         categoryId,
         ...(chain && { chain }),
         ...(teamId && { teamId }),
@@ -928,6 +930,75 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to approve bounty" });
+  }
+});
+
+router.patch("/:id/suggestion-review", authenticate, async (req, res) => {
+  try {
+    const bounty = await prisma.bounty.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        teamId: true,
+        status: true,
+        suggestionReviewStatus: true,
+      },
+    });
+    if (!bounty) return res.status(404).json({ error: "Bounty not found" });
+    if (!(await canAdministerBounty(bounty, req.user))) {
+      return res.status(403).json({ error: "Team admin access required" });
+    }
+    if (bounty.suggestionReviewStatus !== "PENDING") {
+      return res.status(409).json({ error: "Suggestion is no longer pending" });
+    }
+
+    let reviewUpdate;
+    try {
+      reviewUpdate = buildSuggestionReviewUpdate(req.body);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    const data = { ...reviewUpdate };
+    if (req.body.action === "edit") {
+      const changes = {};
+      for (const field of ["title", "description", "bountyAmount", "timeToComplete"]) {
+        if (req.body[field] !== undefined) changes[field] = req.body[field];
+      }
+      if (!Object.keys(changes).length) {
+        return res.status(400).json({ error: "Provide at least one bounty field to edit" });
+      }
+
+      const validation = validateBountyUpdate(changes);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+      if (changes.bountyAmount !== undefined) {
+        changes.bountyAmount = Number(changes.bountyAmount);
+      }
+      if (changes.timeToComplete !== undefined) {
+        changes.timeToComplete = new Date(changes.timeToComplete);
+      }
+      Object.assign(data, changes);
+    }
+
+    const updated = await prisma.bounty.update({
+      where: { id: bounty.id },
+      data,
+      include: {
+        createdByUser: { select: USER_SELECT_WITH_ROLE },
+        assignees: { include: { user: { select: USER_SELECT } } },
+        assigneeUser: { select: USER_SELECT_FULL },
+        team: { select: { id: true, name: true, logo: true } },
+      },
+    });
+
+    sendRealtimeUpdate("bounty_updated", updated, req.user.id);
+    await invalidateBounty(bounty.id);
+    return res.json(updated);
+  } catch (error) {
+    console.error("Failed to review bounty suggestion:", error);
+    return res.status(500).json({ error: "Failed to review bounty suggestion" });
   }
 });
 

@@ -92,6 +92,8 @@ model Bounty {
   exportedAt        DateTime?
   exportedBy        String?
   discordThreadId  String?
+  suggestionReviewStatus String?
+  suggestionReviewReason String?
 
 
   @@index([status])
@@ -101,6 +103,7 @@ model Bounty {
   @@index([isPaid, paidAt])
   @@index([completedAt])
   @@index([teamId])
+  @@index([teamId, suggestionReviewStatus])
   @@index([isPrivate])
 }
 

@@ -36,3 +36,10 @@ restore.md
 alpha
 uploads
 zecbounties_backup.dump
+
+!prisma/migrations/
+!./prisma/migrations/
+!prisma/migrations/20261007000000_team_bounty_suggestions/
+!./prisma/migrations/20261007000000_team_bounty_suggestions/
+!prisma/migrations/20261007000000_team_bounty_suggestions/migration.sql
+!./prisma/migrations/20261007000000_team_bounty_suggestions/migration.sql
