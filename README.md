@@ -1,3 +1,39 @@
+# ZEC Bounties
+
+ZEC Bounties is ZecHub's bounty platform. Communities post tasks, contributors apply and deliver the work, and payouts go out as shielded ZEC transactions with the transaction ID recorded on the bounty.
+
+Live site: https://bounties.zechub.wiki
+
+## Tech stack
+
+- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4, Radix UI, Playwright (accessibility and pagination tests)
+- **Backend:** Node.js, Express 5, Prisma (PostgreSQL), Redis, WebSockets (`ws`), `node:test`
+- **Zcash:** Zebrad, Zaino and Zingo-cli for shielded payments
+
+## Repository structure
+
+| Path | Contents |
+|------|----------|
+| `zec-bounties-frontend/` | Next.js app, including the in-app docs under `app/docs/` |
+| `zec-bounties-backend/` | REST API, Prisma schema (`prisma/schema.prisma`), payment and wallet code |
+| `docs/` | Markdown mirrors of the in-app docs ([index](docs/README.md)) |
+
+## Documentation
+
+User docs live at https://bounties.zechub.wiki/docs, mirrored in this repo:
+
+- [Overview](docs/overview.md) · [Getting started](docs/getting-started.md) · [Addresses](docs/addresses.md)
+- [Hunters](docs/hunters.md) · [Teams](docs/teams.md) · [Contributors](docs/contributors.md) · [Task statuses](docs/task-statuses.md) · [Creators](docs/creators.md)
+- [Bounty amounts](docs/bounty-amounts.md) · [Privacy & payments](docs/privacy-payments.md) · [Badges](docs/badges.md) · [FAQ](docs/faq.md)
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start. In short: propose the work as a bounty on the platform, wait for approval, then open one PR per bounty against `main`.
+
+The backend's environment variables are listed by name in `zec-bounties-backend/.env.example` and summarised in [Environment Variables](#environment-variables) below. Never commit real values.
+
+---
+
 # Zec Bounties - Local Development Setup
 
 Bounty Platform with Native ZEC Payments
