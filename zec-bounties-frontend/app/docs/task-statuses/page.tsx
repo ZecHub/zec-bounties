@@ -122,7 +122,7 @@ export default function TaskStatusesPage() {
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">New bounties</h2>
         <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
-          <li>New bounties are posted every Monday.</li>
+          <li>New bounties are usually posted on Mondays.</li>
           <li>
             Suggest a bounty only for work that is not already listed. Check
             the board first.

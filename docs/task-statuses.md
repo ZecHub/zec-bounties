@@ -64,7 +64,7 @@ Why: the bounty fund is limited, so admins approve the suggestions that are most
 
 ## New bounties
 
-- New bounties are posted every Monday.
+- New bounties are usually posted on Mondays.
 - Suggest a bounty only for work that is not already listed. Check the board first.
 
 ## Next

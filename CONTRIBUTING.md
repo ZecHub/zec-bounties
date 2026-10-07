@@ -4,7 +4,7 @@ Thanks for helping build ZEC Bounties. Work on this repo is paid through the pla
 
 ## 1. Propose the work first
 
-1. Check the board at https://bounties.zechub.wiki for an existing bounty. New bounties are posted every Monday.
+1. Check the board at https://bounties.zechub.wiki for an existing bounty. New bounties are usually posted on Mondays.
 2. If the work is not listed, create a bounty with **New Bounty**: a clear title, description, acceptance criteria and a ZEC amount picked from the [Bounty amounts](docs/bounty-amounts.md) intervals.
 3. **Wait for an admin to approve it before you start.** A new bounty stays in To Do with approval pending until then. See [Task statuses](docs/task-statuses.md).
 4. Set a shielded Unified Address in your Profile so you can be paid — see [Addresses](docs/addresses.md).
@@ -38,19 +38,21 @@ Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
 
 ## 4. Check your work before opening the PR
 
-Frontend (`zec-bounties-frontend/`, uses Yarn):
+Frontend (`zec-bounties-frontend/`):
 
 ```bash
-yarn lint
-yarn build
-yarn test:a11y
+npx tsc --noEmit
+npx next build
 ```
 
-Backend (`zec-bounties-backend/`, uses npm):
+Backend (`zec-bounties-backend/`):
 
 ```bash
+npx prisma generate
 npm test
 ```
+
+Linting isn't configured yet.
 
 Run the checks for every part you changed. See the [README](README.md) for local setup. Do not mix package managers: the frontend uses `yarn.lock`, the backend uses `package-lock.json`.
 

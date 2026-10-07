@@ -102,7 +102,7 @@ const FAQS = [
         </Link>
         . Then apply to an open bounty on the board, or suggest one with{" "}
         <strong>New Bounty</strong> and wait for an admin to approve it. New
-        bounties are posted every Monday — only suggest work that is not
+        bounties are usually posted on Mondays — only suggest work that is not
         already listed. See{" "}
         <Link
           href="/docs/contributors"
