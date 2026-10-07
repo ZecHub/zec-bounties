@@ -67,6 +67,16 @@ export default function ContributorsPage() {
           is a shielded transaction to your registered address. A transaction ID
           is recorded for verification.
         </Step>
+        <p className="text-sm text-muted-foreground">
+          What each status means and what moves a bounty between them:{" "}
+          <Link
+            href="/docs/task-statuses"
+            className="text-primary hover:underline"
+          >
+            Task statuses
+          </Link>
+          .
+        </p>
       </section>
 
       <section className="space-y-3">

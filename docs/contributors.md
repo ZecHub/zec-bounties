@@ -31,6 +31,8 @@ Complete the task, then submit the deliverable (usually a link: PR, doc, design,
 
 After approval the bounty is marked done / ready for payout. Payment is a shielded transaction to your registered address. A transaction ID is recorded for verification.
 
+What each status means and what moves a bounty between them: [Task statuses](task-statuses.md).
+
 ## Tips
 
 - Match scope and quality to the description — unclear submissions slow review.
