@@ -8,17 +8,22 @@ export const metadata: Metadata = {
 };
 
 const FLOW = `To Do (approval pending)
-  │  admin approves, or an assignee is added
+  │ admin approves, or
+  │ an assignee is added
   ▼
-In Progress ◄──────────────┐
-  │  assignee submits work │  submission rejected /
-  ▼                        │  needs revision
-In Review ─────────────────┘
-  │  submission approved
+In Progress ◄─────────────┐
+  │ assignee submits work │ rejected /
+  ▼                       │ needs revision
+In Review ────────────────┘
+  │ submission approved
   ▼
-Done ──► payment authorized ──► paid (txid recorded)
+Done
+  │ admin authorizes payment
+  ▼
+Paid (txid recorded)
 
-Cancelled ◄── approval removed, or all assignees removed`;
+Cancelled ◄── approval removed, or
+              all assignees removed`;
 
 export default function TaskStatusesPage() {
   return (

@@ -30,17 +30,22 @@ Platform admins can change any status. For team bounties, the team's OWNER and A
 
 ```
 To Do (approval pending)
-  │  admin approves, or an assignee is added
+  │ admin approves, or
+  │ an assignee is added
   ▼
-In Progress ◄──────────────┐
-  │  assignee submits work │  submission rejected /
-  ▼                        │  needs revision
-In Review ─────────────────┘
-  │  submission approved
+In Progress ◄─────────────┐
+  │ assignee submits work │ rejected /
+  ▼                       │ needs revision
+In Review ────────────────┘
+  │ submission approved
   ▼
-Done ──► payment authorized ──► paid (txid recorded)
+Done
+  │ admin authorizes payment
+  ▼
+Paid (txid recorded)
 
-Cancelled ◄── approval removed, or all assignees removed
+Cancelled ◄── approval removed, or
+              all assignees removed
 ```
 
 ## Done is not the same as paid
