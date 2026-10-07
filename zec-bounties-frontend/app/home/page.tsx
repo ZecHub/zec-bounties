@@ -11,13 +11,17 @@ import {
   List,
   Grid3X3,
   Plus,
-  Filter,
   ArrowRight,
   Loader2,
   ChevronsDown,
+  Search,
+  X,
+  ArrowUpDown,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { Bounty } from "@/lib/types";
@@ -34,7 +38,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-// import { useRoleGuard } from "@/hooks/use-role-guard";
 
 const KANBAN_COLUMNS: {
   status: BountyStatus;
@@ -95,6 +98,9 @@ const STATUS_ORDER: BountyStatus[] = [
   "CANCELLED",
 ];
 
+type StatusFilterOption = "ALL" | "OPEN" | "IN_PROGRESS" | "COMPLETED";
+type SortOption = "newest" | "highest_reward" | "deadline";
+
 function HomeContent() {
   const {
     bounties,
@@ -111,10 +117,16 @@ function HomeContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [activeStatus, setActiveStatus] = useState<StatusFilterOption>("ALL");
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
+
+  // View state
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -122,30 +134,95 @@ function HomeContent() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
 
-  // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
-  const displayCategories = ["All", ...categories.map((c) => c.name)];
+  // 300ms Debounce for Search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
+  const displayCategories = useMemo(
+    () => ["All", ...categories.map((c) => c.name)],
+    [categories]
+  );
+
+  // Filtered and Sorted Bounties
   const filteredBounties = useMemo(() => {
     let filtered = bounties;
+
+    // Filter by Team
     if (activeTeamId) {
       filtered = filtered.filter((b) => b.teamId === activeTeamId);
     }
-    if (activeCategory !== "All")
-      filtered = filtered.filter((b) => b.categoryId === activeCategory);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+
+    // Filter by Category
+    if (activeCategory !== "All") {
       filtered = filtered.filter(
         (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.description.toLowerCase().includes(q) ||
-          b.createdByUser?.name?.toLowerCase().includes(q),
+          b.category?.name?.toLowerCase() === activeCategory.toLowerCase() ||
+          b.categoryId === activeCategory
       );
     }
-    return filtered.sort(
-      (a, b) =>
-        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
-    );
-  }, [bounties, searchQuery, activeCategory, activeTeamId]);
+
+    // Filter by Status
+    if (activeStatus === "OPEN") {
+      filtered = filtered.filter((b) => b.status === "TO_DO");
+    } else if (activeStatus === "IN_PROGRESS") {
+      filtered = filtered.filter((b) => b.status === "IN_PROGRESS");
+    } else if (activeStatus === "COMPLETED") {
+      filtered = filtered.filter(
+        (b) => b.status === "DONE" || b.status === "IN_REVIEW"
+      );
+    }
+
+    // Search Query (Title, Description, Category, Creator)
+    if (debouncedSearchQuery.trim()) {
+      const tokens = debouncedSearchQuery.toLowerCase().trim().split(/\s+/);
+      filtered = filtered.filter((b) => {
+        const title = b.title.toLowerCase();
+        const description = (b.description || "").toLowerCase();
+        const author = (b.createdByUser?.name || "").toLowerCase();
+        const cat = (b.category?.name || "").toLowerCase();
+
+        return tokens.every(
+          (token) =>
+            title.includes(token) ||
+            description.includes(token) ||
+            author.includes(token) ||
+            cat.includes(token)
+        );
+      });
+    }
+
+    // Sorting Logic
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "highest_reward") {
+        return (b.bountyAmount || 0) - (a.bountyAmount || 0);
+      }
+      if (sortBy === "deadline") {
+        const now = Date.now();
+        const timeA = new Date(a.timeToComplete).getTime();
+        const timeB = new Date(b.timeToComplete).getTime();
+        const isAFuture = timeA >= now;
+        const isBFuture = timeB >= now;
+        if (isAFuture && !isBFuture) return -1;
+        if (!isAFuture && isBFuture) return 1;
+        return timeA - timeB;
+      }
+      // Default: "newest"
+      return (
+        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+      );
+    });
+  }, [
+    bounties,
+    debouncedSearchQuery,
+    activeCategory,
+    activeStatus,
+    sortBy,
+    activeTeamId,
+  ]);
 
   const kanbanGroups = useMemo(
     () =>
@@ -153,7 +230,7 @@ function HomeContent() {
         ...col,
         bounties: filteredBounties.filter((b) => b.status === col.status),
       })),
-    [filteredBounties],
+    [filteredBounties]
   );
 
   const defragBounties = useMemo(() => {
@@ -167,8 +244,6 @@ function HomeContent() {
     });
   }, [filteredBounties]);
 
-  const missingUA = !currentUser?.UA_address;
-
   // Open a bounty and reflect it in the URL
   const openBounty = (bounty: Bounty) => {
     setSelectedBounty(bounty);
@@ -178,13 +253,17 @@ function HomeContent() {
 
   const closeBounty = () => {
     setIsDetailModalOpen(false);
-    router.push(pathname, { scroll: false }); // strips the query param
+    router.push(pathname, { scroll: false });
   };
 
   const getCategoryCount = (name: string) =>
     name === "All"
       ? bounties.length
-      : bounties.filter((b) => b.categoryId === name).length;
+      : bounties.filter(
+          (b) =>
+            b.category?.name?.toLowerCase() === name.toLowerCase() ||
+            b.categoryId === name
+        ).length;
 
   const handleLoadMore = useCallback(async () => {
     setIsLoadingMore(true);
@@ -210,10 +289,26 @@ function HomeContent() {
     setIsNewBountyModalOpen(true);
   };
 
+  const isFiltered =
+    searchQuery.trim() !== "" ||
+    activeCategory !== "All" ||
+    activeStatus !== "ALL" ||
+    sortBy !== "newest" ||
+    activeTeamId !== null;
+
+  const resetAllFilters = () => {
+    setSearchQuery("");
+    setActiveCategory("All");
+    setActiveStatus("ALL");
+    setSortBy("newest");
+    setActiveTeamId(null);
+  };
+
   const canLoadMore =
     hasMoreBounties &&
     !searchQuery &&
     activeCategory === "All" &&
+    activeStatus === "ALL" &&
     !activeTeamId;
 
   useEffect(() => {
@@ -227,7 +322,7 @@ function HomeContent() {
           handleLoadMore();
         }
       },
-      { rootMargin: "400px" }, // start loading a bit before it's fully in view
+      { rootMargin: "400px" }
     );
 
     observer.observe(node);
@@ -239,7 +334,6 @@ function HomeContent() {
     const bountyId = searchParams.get("bounty");
     if (!bountyId) return;
 
-    // Prefer the copy already in the list (avoids a flash of stale data)
     const inMemory = bounties.find((b) => b.id === bountyId);
     if (inMemory) {
       setSelectedBounty(inMemory);
@@ -247,8 +341,6 @@ function HomeContent() {
       return;
     }
 
-    // Fall back to a direct fetch — handles deep links before bounties load,
-    // or bounties the current filtered list doesn't include
     fetchBountyById(bountyId).then((bounty) => {
       if (bounty) {
         setSelectedBounty(bounty);
@@ -258,7 +350,7 @@ function HomeContent() {
   }, [searchParams, bounties, fetchBountyById]);
 
   return (
-    <main className="min-h-screen bg-background text-foregroun pb-20 md:pb-0">
+    <main className="min-h-screen bg-background text-foreground pb-20 md:pb-0">
       <Sheet open={isTeamsSheetOpen} onOpenChange={setIsTeamsSheetOpen}>
         <SheetContent
           side="bottom"
@@ -272,7 +364,7 @@ function HomeContent() {
               activeTeamId={activeTeamId}
               onSelectTeam={(id) => {
                 setActiveTeamId(id);
-                setIsTeamsSheetOpen(false); // close after picking, feels more native
+                setIsTeamsSheetOpen(false);
               }}
             />
           </div>
@@ -286,10 +378,11 @@ function HomeContent() {
       />
       <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
-      <div className="xl:container xl:mx-auto px-3 imd:px-4 py-6 imd:py-8">
+      <div className="xl:container xl:mx-auto px-3 sm:px-4 py-6 sm:py-8">
         <HeroCarousel onNewBounty={handleNewBounty} />
 
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 imd:mb-12">
+        {/* Welcome Section */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 sm:mb-10">
           <div className="space-y-2 min-w-0">
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight">
               Welcome!
@@ -299,7 +392,7 @@ function HomeContent() {
               ZEC for it.
             </p>
           </div>
-          <div className="hidden imd:grid imd:grid-cols-2 gap-2 imd:gap-3 shrink-0">
+          <div className="hidden sm:grid sm:grid-cols-2 gap-2 sm:gap-3 shrink-0">
             <Button
               className="w-full sm:w-auto rounded-full shadow-lg shadow-primary/20"
               onClick={handleNewBounty}
@@ -326,13 +419,11 @@ function HomeContent() {
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={(open) =>
-            open ? setIsDetailModalOpen(true) : closeBounty()
-          }
+          onOpenChange={(open) => (open ? setIsDetailModalOpen(true) : closeBounty())}
         />
 
-        <div className="flex flex-col imd:flex-row gap-6 imd:gap-8 min-w-0">
-          <aside className="hidden imd:block imd:w-auto shrink-0">
+        <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 min-w-0">
+          <aside className="hidden sm:block sm:w-auto shrink-0">
             <FavoriteTeamsSidebar
               activeTeamId={activeTeamId}
               onSelectTeam={setActiveTeamId}
@@ -340,249 +431,340 @@ function HomeContent() {
           </aside>
 
           <div className="space-y-6 min-w-0 flex-1">
-            <div
-              className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
-              style={{
-                scrollbarWidth: "none",
-                msOverflowStyle: "none",
-              }}
-            >
-              {displayCategories.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setActiveCategory(cat)}
-                  className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 h-9 text-sm transition ${
-                    activeCategory === cat
-                      ? "border-primary bg-primary/10 font-semibold text-primary"
-                      : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
-                  }`}
-                >
-                  {cat}
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] h-4 px-1.5 leading-none"
-                  >
-                    {getCategoryCount(cat)}
-                  </Badge>
-                </button>
-              ))}
-            </div>
+            {/* Explorer Search, Filters & Controls Bar */}
+            <div className="rounded-xl border bg-card/60 backdrop-blur-sm p-3 sm:p-4 space-y-4 shadow-sm">
+              <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+                {/* Search input with debounce */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search bounties by title, description or author..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-8 h-9.5 bg-background text-sm rounded-lg"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
 
-            <div className="space-y-6 min-w-0 flex-1">
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b">
-                <h2 className="truncate text-base sm:text-xl font-bold">
-                  {activeTeamId
-                    ? `${communities.find((c) => c.id === activeTeamId)?.name ?? "Team"} Bounties`
-                    : activeCategory === "All"
-                      ? "All Bounties"
-                      : `${activeCategory} Bounties`}
-                </h2>
-
-                <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                  <Button
-                    variant={viewMode === "grid" ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setViewMode("grid")}
-                    title="Grid view"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === "list" ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setViewMode("list")}
-                    title="List view"
-                  >
-                    <List className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === "defrag" ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setViewMode("defrag")}
-                    title="Defrag map view"
-                  >
-                    <Grid3X3 className="h-4 w-4" />
-                  </Button>
-                  {canLoadMore && (
-                    <div className="relative group">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handleLoadMore}
-                        disabled={isLoadingMore || bountiesLoading}
+                {/* Status and Sort Controls */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Status Filter */}
+                  <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border text-xs">
+                    {(
+                      [
+                        { key: "ALL", label: "All" },
+                        { key: "OPEN", label: "Open" },
+                        { key: "IN_PROGRESS", label: "In Progress" },
+                        { key: "COMPLETED", label: "Completed" },
+                      ] as const
+                    ).map((status) => (
+                      <button
+                        key={status.key}
+                        type="button"
+                        onClick={() => setActiveStatus(status.key)}
+                        className={`px-2.5 py-1 rounded-md transition font-medium cursor-pointer ${
+                          activeStatus === status.key
+                            ? "bg-background text-foreground shadow-sm font-semibold"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
                       >
-                        {isLoadingMore || bountiesLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ChevronsDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
-                        Load more
-                      </span>
-                    </div>
+                        {status.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Sort By Dropdown */}
+                  <div className="relative flex items-center">
+                    <ArrowUpDown className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as SortOption)}
+                      className="h-9 pl-8 pr-3 text-xs rounded-lg border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none cursor-pointer"
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="highest_reward">Highest reward</option>
+                      <option value="deadline">Approaching deadline</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Filters button */}
+                  {isFiltered && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetAllFilters}
+                      className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                      title="Reset all filters"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Reset</span>
+                    </Button>
                   )}
                 </div>
               </div>
 
-              {bountiesLoading && bounties.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 sm:py-20">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                  <p className="text-muted-foreground">Loading bounties...</p>
-                </div>
-              ) : filteredBounties.length === 0 ? (
-                <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20">
-                  <p className="text-muted-foreground">
-                    No bounties found
-                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                    {searchQuery ? " matching your search" : ""}.
-                  </p>
-                </div>
-              ) : viewMode === "grid" ? (
-                <div className="overflow-x-auto pb-4 -mx-1 px-1">
-                  <div className="flex gap-3 sm:gap-4 items-start min-w-max snap-x snap-mandatory">
-                    {kanbanGroups.map((col) => (
-                      <div
-                        key={col.status}
-                        className="snap-start flex flex-col gap-3 w-[80vw] max-w-72 sm:w-72 flex-shrink-0"
-                      >
-                        <div
-                          className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                            />
-                            <span className="text-sm font-semibold">
-                              {col.label}
-                            </span>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] h-5 px-1.5"
-                          >
-                            {col.bounties.length}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-col gap-3">
-                          {col.bounties.length === 0 ? (
-                            <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
-                              <p className="text-xs text-muted-foreground">
-                                No bounties
-                              </p>
-                            </div>
-                          ) : (
-                            col.bounties.map((bounty) => (
-                              <BountyCard
-                                key={bounty.id}
-                                bounty={bounty}
-                                viewMode="kanban"
-                                onClick={() => openBounty(bounty)}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))}
+              {/* Category Pills */}
+              <div
+                className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                {displayCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 h-8 text-xs sm:text-sm transition cursor-pointer ${
+                      activeCategory === cat
+                        ? "border-primary bg-primary/10 font-semibold text-primary"
+                        : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
+                    }`}
+                  >
+                    {cat}
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] h-4 px-1.5 leading-none"
+                    >
+                      {getCategoryCount(cat)}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* View Header with Result Count & Layout Switcher */}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 border-b">
+              <div className="flex items-center gap-2 truncate">
+                <h2 className="truncate text-base sm:text-lg font-bold">
+                  {activeTeamId
+                    ? `${
+                        communities.find((c) => c.id === activeTeamId)?.name ??
+                        "Team"
+                      } Bounties`
+                    : activeCategory === "All"
+                    ? "All Bounties"
+                    : `${activeCategory} Bounties`}
+                </h2>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  ({filteredBounties.length} found)
+                </span>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+                <Button
+                  variant={viewMode === "grid" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setViewMode("grid")}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === "list" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setViewMode("list")}
+                  title="List view"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === "defrag" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setViewMode("defrag")}
+                  title="Defrag map view"
+                >
+                  <Grid3X3 className="h-4 w-4" />
+                </Button>
+
+                {canLoadMore && (
+                  <div className="relative group">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={handleLoadMore}
+                      disabled={isLoadingMore || bountiesLoading}
+                    >
+                      {isLoadingMore || bountiesLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ChevronsDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
+                      Load more
+                    </span>
                   </div>
-                </div>
-              ) : viewMode === "list" ? (
-                <div className="space-y-8">
-                  {kanbanGroups
-                    .filter((col) => col.bounties.length > 0)
-                    .map((col) => (
-                      <div key={col.status} className="space-y-3">
+                )}
+              </div>
+            </div>
+
+            {/* Bounties Rendering */}
+            {bountiesLoading && bounties.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 sm:py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                <p className="text-muted-foreground">Loading bounties...</p>
+              </div>
+            ) : filteredBounties.length === 0 ? (
+              <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20 space-y-3">
+                <p className="text-muted-foreground text-sm sm:text-base">
+                  No bounties found
+                  {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
+                  {activeStatus !== "ALL" ? ` with status ${activeStatus}` : ""}
+                  {debouncedSearchQuery ? ` matching "${debouncedSearchQuery}"` : ""}.
+                </p>
+                {isFiltered && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetAllFilters}
+                    className="rounded-full text-xs"
+                  >
+                    Clear all filters
+                  </Button>
+                )}
+              </div>
+            ) : viewMode === "grid" ? (
+              <div className="overflow-x-auto pb-4 -mx-1 px-1">
+                <div className="flex gap-3 sm:gap-4 items-start min-w-max snap-x snap-mandatory">
+                  {kanbanGroups.map((col) => (
+                    <div
+                      key={col.status}
+                      className="snap-start flex flex-col gap-3 w-[80vw] max-w-72 sm:w-72 flex-shrink-0"
+                    >
+                      <div
+                        className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
+                      >
                         <div className="flex items-center gap-2">
                           <span
                             className={`h-2 w-2 rounded-full ${col.dotColor}`}
                           />
-                          <h3 className="text-sm font-semibold">{col.label}</h3>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] h-5 px-1.5"
-                          >
-                            {col.bounties.length}
-                          </Badge>
-                          <div className="flex-1 border-t border-border/50 ml-1" />
+                          <span className="text-sm font-semibold">
+                            {col.label}
+                          </span>
                         </div>
-                        <div className="flex flex-col gap-2">
-                          {col.bounties.map((bounty) => (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] h-5 px-1.5"
+                        >
+                          {col.bounties.length}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        {col.bounties.length === 0 ? (
+                          <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
+                            <p className="text-xs text-muted-foreground">
+                              No bounties
+                            </p>
+                          </div>
+                        ) : (
+                          col.bounties.map((bounty) => (
                             <BountyCard
                               key={bounty.id}
                               bounty={bounty}
-                              viewMode="list"
+                              viewMode="kanban"
                               onClick={() => openBounty(bounty)}
                             />
-                          ))}
-                        </div>
+                          ))
+                        )}
                       </div>
-                    ))}
-                </div>
-              ) : (
-                // defrag view
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                    {DEFRAG_LEGEND.map((item) => (
-                      <div
-                        key={item.status}
-                        className="flex items-center gap-1.5"
-                      >
-                        <span
-                          className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
-                        />
-                        <span>{item.label}</span>
-                      </div>
-                    ))}
-                    <span className="w-full sm:w-auto sm:ml-auto text-[11px] opacity-70">
-                      {filteredBounties.length} bounties · click a block to open
-                    </span>
-                  </div>
-                  <div
-                    className="rounded border border-border bg-black p-1.5 overflow-hidden"
-                    style={{
-                      // Classic dense map look
-                      imageRendering: "pixelated",
-                    }}
-                  >
-                    <div className="grid gap-px [grid-template-columns:repeat(auto-fill,10px)] sm:[grid-template-columns:repeat(auto-fill,14px)] justify-start">
-                      {defragBounties.map((bounty) => {
-                        const color =
-                          DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
-                        return (
-                          <button
-                            key={bounty.id}
-                            type="button"
-                            title={`${bounty.title} — ${formatStatus(bounty.status)}`}
-                            onClick={() => openBounty(bounty)}
-                            className={`
-                              relative h-[10px] w-[10px] sm:h-[14px] sm:w-[14px]
-                              border border-black/90 ${color}
-                              hover:z-10 hover:scale-[1.8] hover:border-white
-                              focus:outline-none focus:ring-1 focus:ring-white
-                              transition-transform duration-75
-                              cursor-pointer
-                            `}
-                          >
-                            {/* center "data" pixel for Done / In Progress (classic map look) */}
-                            {(bounty.status === "DONE" ||
-                              bounty.status === "IN_PROGRESS") && (
-                              <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
-                            )}
-                          </button>
-                        );
-                      })}
                     </div>
+                  ))}
+                </div>
+              </div>
+            ) : viewMode === "list" ? (
+              <div className="space-y-8">
+                {kanbanGroups
+                  .filter((col) => col.bounties.length > 0)
+                  .map((col) => (
+                    <div key={col.status} className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2 w-2 rounded-full ${col.dotColor}`}
+                        />
+                        <h3 className="text-sm font-semibold">{col.label}</h3>
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] h-5 px-1.5"
+                        >
+                          {col.bounties.length}
+                        </Badge>
+                        <div className="flex-1 border-t border-border/50 ml-1" />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {col.bounties.map((bounty) => (
+                          <BountyCard
+                            key={bounty.id}
+                            bounty={bounty}
+                            viewMode="list"
+                            onClick={() => openBounty(bounty)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              /* defrag view */
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                  {DEFRAG_LEGEND.map((item) => (
+                    <div
+                      key={item.status}
+                      className="flex items-center gap-1.5"
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                  <span className="w-full sm:w-auto sm:ml-auto text-[11px] opacity-70">
+                    {filteredBounties.length} bounties · click a block to open
+                  </span>
+                </div>
+                <div
+                  className="rounded border border-border bg-black p-1.5 overflow-hidden"
+                  style={{ imageRendering: "pixelated" }}
+                >
+                  <div className="grid gap-px [grid-template-columns:repeat(auto-fill,10px)] sm:[grid-template-columns:repeat(auto-fill,14px)] justify-start">
+                    {defragBounties.map((bounty) => {
+                      const color =
+                        DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
+                      return (
+                        <button
+                          key={bounty.id}
+                          type="button"
+                          title={`${bounty.title} — ${formatStatus(
+                            bounty.status
+                          )}`}
+                          onClick={() => openBounty(bounty)}
+                          className={`relative h-[10px] w-[10px] sm:h-[14px] sm:w-[14px] border border-black/90 ${color} hover:z-10 hover:scale-[1.8] hover:border-white focus:outline-none focus:ring-1 focus:ring-white transition-transform duration-75 cursor-pointer`}
+                        >
+                          {(bounty.status === "DONE" ||
+                            bounty.status === "IN_PROGRESS") && (
+                            <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {canLoadMore && <div ref={sentinelRef} className="h-4" />}
-            </div>
+            {canLoadMore && <div ref={sentinelRef} className="h-4" />}
           </div>
         </div>
       </div>
@@ -591,7 +773,6 @@ function HomeContent() {
 }
 
 export default function HomePage() {
-  // useRoleGuard("CLIENT");
   return (
     <ProtectedRoute blockAdmin blockTeam>
       <HomeContent />
