@@ -2616,6 +2616,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             setTeams((prev) =>
               prev.map((t) => {
                 if (t.id !== msg.payload.teamId) return t;
+                // Broadcasts carry public profile fields only, so keep any
+                // details (e.g. email) we already had for existing members.
                 const merged = [
                   ...t.members.filter(
                     (m) =>
@@ -2623,11 +2625,24 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                         (nm: TeamMember) => nm.userId === m.userId,
                       ),
                   ),
-                  ...msg.payload.members,
+                  ...msg.payload.members.map((nm: TeamMember) => {
+                    const existing = t.members.find(
+                      (m) => m.userId === nm.userId,
+                    );
+                    return existing
+                      ? {
+                          ...existing,
+                          ...nm,
+                          user: { ...(existing as any).user, ...(nm as any).user },
+                        }
+                      : nm;
+                  }),
                 ];
                 return { ...t, members: merged };
               }),
             );
+            // Reload so new members' details come from the authenticated API.
+            fetchTeams();
             // Re-fetch params in case team wallet was auto-assigned to new members
             fetchZcashParams();
             break;
