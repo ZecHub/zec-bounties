@@ -1247,6 +1247,17 @@ export function BountyDetailModal({
           </section>
         )}
 
+        {bounty.suggestionReviewReason && (
+          <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
+            <p className="text-sm font-medium">
+              Team review: {bounty.suggestionReviewStatus?.toLowerCase() ?? "updated"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {bounty.suggestionReviewReason}
+            </p>
+          </div>
+        )}
+
         {/* Application status */}
         {hasApplied && (
           <section className="mt-5 space-y-2.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3">

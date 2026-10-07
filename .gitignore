@@ -28,3 +28,10 @@ yarn-error.log*
 next-env.d.ts
 
 .DS_Store
+
+# Local bounty idea research and exports
+/IDEAS_README.md
+/bounties-export-2026-10-02-trimmed.json
+/bounties-export-2026-10-02.json
+/ideas.txt
+/sample-bounty-ideas.md

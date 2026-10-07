@@ -145,6 +145,8 @@ export interface Bounty {
   isApproved: boolean;
   isPaid: boolean;
   isPrivate: boolean;
+  suggestionReviewStatus?: "PENDING" | "APPROVED" | "DECLINED" | null;
+  suggestionReviewReason?: string | null;
   paymentAuthorized: boolean;
   paymentScheduled?: PaymentSchedule;
   paymentBatchId?: string;
@@ -198,6 +200,7 @@ export interface BountyFormData {
   timeToComplete: Date;
   category: string;
   chain?: "MAIN" | "TEST";
+  teamId?: string;
 }
 
 export interface ZcashParamsFormData {
