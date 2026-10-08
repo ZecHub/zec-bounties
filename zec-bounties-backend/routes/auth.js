@@ -413,7 +413,12 @@ router.get("/has-zcash-params", authenticate, async (req, res) => {
 router.patch("/update-zaddress", authenticate, async (req, res) => {
   const { z_address } = req.body;
 
-  const validAddress = true;
+  if (!z_address) {
+    return res.status(400).json({ error: "z_address is required" });
+  }
+
+  const params = getSystemWalletParams();
+  const validAddress = await verifyZaddress(z_address, params);
 
   if (!validAddress) {
     return res.status(400).json({ error: "Invalid z_address" });
@@ -580,6 +585,15 @@ router.patch("/update-ua-address", authenticate, async (req, res) => {
   const { UA_address } = req.body;
 
   if (!UA_address?.startsWith("u1")) {
+    return res.status(400).json({
+      error: "Invalid mainnet unified address",
+    });
+  }
+
+  const params = getSystemWalletParams();
+  const validAddress = await verifyUaddress(UA_address, params);
+
+  if (!validAddress) {
     return res.status(400).json({
       error: "Invalid mainnet unified address",
     });
