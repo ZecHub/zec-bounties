@@ -37,7 +37,6 @@ export const DEFAULT_VISIBILITY: Required<ProfileVisibility> = {
   showRecentBounties: false,
   showRole: false,
   showGithub: false,
-  showDiscord: false,
 };
 
 const TOGGLE_GROUPS: {
