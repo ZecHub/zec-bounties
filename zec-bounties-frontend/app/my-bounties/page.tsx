@@ -82,7 +82,8 @@ type ViewMode = "bounties" | "earnings";
 export default function MyBountiesPage() {
   const { myBounties, myBountiesLoading, fetchMyBounties, currentUser } =
     useBounty();
-  const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [selectedBountyId, setSelectedBountyId] = useState<string | null>(null);
+  const selectedBounty = myBounties.find((b) => b.id === selectedBountyId) ?? null;
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("bounties");
@@ -161,7 +162,7 @@ export default function MyBountiesPage() {
   const missingUA = !currentUser?.UA_address;
 
   const openBounty = (bounty: Bounty) => {
-    setSelectedBounty(bounty);
+    setSelectedBountyId(bounty.id);
     setIsDetailModalOpen(true);
   };
 

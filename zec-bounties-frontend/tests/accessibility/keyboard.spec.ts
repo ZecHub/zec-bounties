@@ -445,6 +445,11 @@ test.describe("keyboard accessibility", () => {
       "Accessibility Work Submission Fixture",
     );
 
+    const deliverable = dialog.locator("#deliverable-url");
+    const helpText = "Share a link where your completed work can be reviewed.";
+    await expect(dialog.locator("#deliverable-url-help")).toHaveText(helpText);
+    await expect(deliverable).toHaveAccessibleDescription(helpText);
+
     const submit = dialog.getByRole("button", {
       name: "Submit Work",
     });
@@ -460,7 +465,6 @@ test.describe("keyboard accessibility", () => {
     );
 
     const description = dialog.locator("#submission-description");
-    const deliverable = dialog.locator("#deliverable-url");
 
     await expect(description).toBeFocused();
     await expect(description).toHaveAttribute("aria-invalid", "true");
@@ -482,6 +486,18 @@ test.describe("keyboard accessibility", () => {
     await expect(dialog.locator("#deliverable-url-error")).toHaveText(
       "Enter a deliverable URL.",
     );
+    await expect(deliverable).toHaveAccessibleDescription(
+      `${helpText} Enter a deliverable URL.`,
+    );
+
+    await deliverable.fill("https://example.invalid/completed-work");
+    await expect(deliverable).toHaveAttribute("aria-invalid", "false");
+    await expect(dialog.locator("#deliverable-url-error")).toHaveCount(0);
+    await expect(deliverable).toHaveAttribute(
+      "aria-describedby",
+      "deliverable-url-help",
+    );
+    await expect(deliverable).toHaveAccessibleDescription(helpText);
   });
 
 
