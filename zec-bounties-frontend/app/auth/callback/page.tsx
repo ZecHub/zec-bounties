@@ -32,7 +32,13 @@ export default function GithubCallback() {
       })
       .then((user) => {
         setCurrentUser(user);
-        router.push(user.role === "ADMIN" ? "/admin" : "/home");
+        router.push(
+          user.role === "ADMIN"
+            ? "/admin"
+            : user.role === "CLIENT"
+              ? "/onboarding"
+              : "/home",
+        );
       })
       .catch((error) => {
         localStorage.removeItem("authToken");

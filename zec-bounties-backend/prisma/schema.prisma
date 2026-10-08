@@ -28,6 +28,7 @@ model User {
   UA_address           String?
   avatar               String?
   githubId             String?
+  googleId             String?             @unique
 
   discordUserId        String?   @unique
   discordUsername      String?

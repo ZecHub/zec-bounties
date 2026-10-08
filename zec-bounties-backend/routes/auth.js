@@ -2,6 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("node:crypto");
 const prisma = require("../prisma/client");
 const {
   authenticate,
@@ -18,6 +19,11 @@ const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const { sendRealtimeUpdate } = require("../middleware/websocket");
+const {
+  AccountOnboardingError,
+  changeSelfServeRole,
+  findOrCreateGoogleUser,
+} = require("../helpers/accountOnboarding");
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET;
@@ -25,14 +31,135 @@ const SECRET = process.env.JWT_SECRET;
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI =
+  process.env.GOOGLE_REDIRECT_URI || `${BACKEND_URL}/auth/google/callback`;
+const GOOGLE_STATE_COOKIE = "google_oauth_state";
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_REDIRECT_URI = `${process.env.BACKEND_URL || "http://localhost:5000"}/auth/discord/callback`;
 
+router.get("/providers", (_req, res) => {
+  res.json({
+    github: Boolean(GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET),
+    google: Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
+  });
+});
+
 router.get("/github", (req, res) => {
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=user:email`;
   res.redirect(githubAuthUrl);
+});
+
+router.get("/google", (_req, res) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    return res.redirect(`${FRONTEND_URL}/login?error=google_not_configured`);
+  }
+
+  const state = crypto.randomBytes(32).toString("hex");
+  const cookieParts = [
+    `${GOOGLE_STATE_COOKIE}=${state}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    "Path=/auth/google/callback",
+    "Max-Age=600",
+  ];
+  if (process.env.NODE_ENV === "production") cookieParts.push("Secure");
+  res.setHeader("Set-Cookie", cookieParts.join("; "));
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+  });
+  return res.redirect(
+    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+  );
+});
+
+router.get("/google/callback", async (req, res) => {
+  const cookie = req.headers.cookie
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${GOOGLE_STATE_COOKIE}=`))
+    ?.slice(GOOGLE_STATE_COOKIE.length + 1);
+  const clearStateCookie = () => {
+    const cookieParts = [
+      `${GOOGLE_STATE_COOKIE}=`,
+      "HttpOnly",
+      "SameSite=Lax",
+      "Path=/auth/google/callback",
+      "Max-Age=0",
+    ];
+    if (process.env.NODE_ENV === "production") cookieParts.push("Secure");
+    res.setHeader("Set-Cookie", cookieParts.join("; "));
+  };
+  const redirectToLogin = (error) =>
+    res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent(error)}`);
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    clearStateCookie();
+    return redirectToLogin("google_not_configured");
+  }
+
+  if (req.query.error || typeof req.query.code !== "string") {
+    clearStateCookie();
+    return redirectToLogin("google_sign_in_cancelled");
+  }
+
+  const state = req.query.state;
+  if (
+    typeof state !== "string" ||
+    typeof cookie !== "string" ||
+    state.length !== cookie.length ||
+    !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(cookie))
+  ) {
+    clearStateCookie();
+    return redirectToLogin("google_state_invalid");
+  }
+  clearStateCookie();
+
+  try {
+    const tokenResponse = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        code: req.query.code,
+        grant_type: "authorization_code",
+        redirect_uri: GOOGLE_REDIRECT_URI,
+      }),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+    );
+    const accessToken = tokenResponse.data.access_token;
+    if (!accessToken) {
+      throw new Error("Google did not return an access token");
+    }
+
+    const profileResponse = await axios.get(
+      "https://openidconnect.googleapis.com/v1/userinfo",
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const user = await findOrCreateGoogleUser(prisma, profileResponse.data);
+    const token = signSessionToken(user);
+    return res.redirect(
+      `${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}`,
+    );
+  } catch (error) {
+    console.error("Google OAuth error:", error.message);
+    const errorCode =
+      error instanceof AccountOnboardingError && error.statusCode === 409
+        ? "google_account_conflict"
+        : error instanceof AccountOnboardingError
+          ? "google_email_unverified"
+          : "google_sign_in_failed";
+    return redirectToLogin(errorCode);
+  }
 });
 
 // GitHub callback
@@ -678,7 +805,29 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
   }
 });
 
-// Self-serve role selection
+// Change between hunter and team without discarding account data.
+router.patch("/change-role", authenticate, async (req, res) => {
+  try {
+    const user = await changeSelfServeRole(prisma, {
+      userId: req.user.id,
+      currentRole: req.user.role,
+      targetRole: req.body.role,
+      isRobin: req.user.isRobin,
+    });
+    await delCache("users:all");
+    sendRealtimeUpdate("user_updated", user, req.user.id);
+
+    return res.json({ user, token: signSessionToken(user) });
+  } catch (error) {
+    if (error instanceof AccountOnboardingError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    console.error("Failed to change account role:", error);
+    return res.status(500).json({ error: "Failed to change account role" });
+  }
+});
+
+// Initial role choice for accounts still in onboarding.
 router.patch("/select-role", authenticate, async (req, res) => {
   try {
     const { role } = req.body;

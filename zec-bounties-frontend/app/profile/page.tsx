@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
@@ -33,6 +43,7 @@ import {
   Settings2,
   BellRing,
   Wallet,
+  ArrowRightLeft,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -51,6 +62,8 @@ export default function ProfilePage() {
   const router = useRouter();
   const {
     currentUser,
+    changeAccountRole,
+    isChangingAccountRole,
     zAddressUpdate,
     uaAddressUpdate,
     verifyZaddress,
@@ -63,6 +76,7 @@ export default function ProfilePage() {
 
   // ── Additional settings visibility ─────────────────────────────────────────
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [roleChangeOpen, setRoleChangeOpen] = useState(false);
 
   // ── Public profile settings: bio + visibility, fetched once here ─────────
   // (shared with PrivacySettingsCard — both edit the same backend record)
@@ -170,6 +184,26 @@ export default function ProfilePage() {
       }
     }
   }, [currentUser, emailNotifSaving, nicknameDirty]);
+
+  const nextRole =
+    currentUser?.role === "TEAM" ? "HUNTER" : "TEAM";
+
+  const handleRoleChange = async (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    try {
+      await changeAccountRole(nextRole);
+      setRoleChangeOpen(false);
+      toast.success(`You are now using ZEC Bounties as a ${nextRole.toLowerCase()}.`);
+      router.push(nextRole === "TEAM" ? "/teams" : "/home");
+    } catch (error) {
+      toast.error("Couldn't change your role", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  };
 
   // ── Profile (nickname + bio) handlers ─────────────────────────────────────
 
@@ -434,6 +468,63 @@ export default function ProfilePage() {
               </div>
             </CardContent>
           </Card>
+
+          {(currentUser?.role === "HUNTER" ||
+            currentUser?.role === "TEAM") && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base font-medium">
+                  <ArrowRightLeft className="h-4 w-4" />
+                  Work mode
+                </CardTitle>
+                <CardDescription>
+                  Current role: {currentUser.role === "TEAM" ? "Team" : "Hunter"}.
+                  Switch roles here. Team owners and admins must transfer their
+                  responsibilities before switching to Hunter.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  variant="outline"
+                  onClick={() => setRoleChangeOpen(true)}
+                  disabled={isChangingAccountRole}
+                >
+                  Switch to {nextRole === "TEAM" ? "Team" : "Hunter"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          <AlertDialog
+            open={roleChangeOpen}
+            onOpenChange={(open) => {
+              if (!isChangingAccountRole) setRoleChangeOpen(open);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Switch to {nextRole === "TEAM" ? "Team" : "Hunter"}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {nextRole === "TEAM"
+                    ? "This enables team features on your account. Your hunter history and bounty records are kept."
+                    : "This changes your account to Hunter. Your teams and bounty history are kept, but you must transfer team ownership and remove team admin roles before switching."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isChangingAccountRole}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleRoleChange}
+                  disabled={isChangingAccountRole}
+                >
+                  {isChangingAccountRole ? "Switching..." : "Confirm switch"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* ── Profile: nickname + bio, saved together ─────────────────────── */}
           <Card>

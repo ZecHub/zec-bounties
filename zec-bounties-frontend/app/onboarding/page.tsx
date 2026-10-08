@@ -100,7 +100,8 @@ export default function OnboardingPage() {
             Choose how you work the board
           </h1>
           <p className="text-muted-foreground text-lg">
-            This sets your role on ZEC Bounties. You'll act as one from here on.
+            Choose the role that fits what you want to do. You can change it
+            later in your profile settings.
           </p>
         </div>
 
@@ -175,8 +176,9 @@ export default function OnboardingPage() {
         {error && <p className="mt-5 text-xs text-destructive">{error}</p>}
 
         <p className="mt-8 max-w-xl text-center text-xs text-muted-foreground">
-          This choice sets your account type. Contact an admin if you need it
-          changed later.
+          You can switch between Hunter and Team later from your profile. Team
+          owners and admins need to transfer their team responsibilities before
+          switching away from Team.
         </p>
       </div>
     </>

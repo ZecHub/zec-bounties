@@ -31,9 +31,9 @@ export default function GettingStartedPage() {
               <Link href="/login" className="text-primary hover:underline">
                 Sign in
               </Link>{" "}
-              and authorize the app. Your GitHub identity is used for
-              authentication and profile basics. New accounts start as{" "}
-              <strong>Client</strong>.
+              and choose GitHub or Google when Google sign-in is enabled. Your
+              provider identity is used for authentication and profile basics.
+              New accounts start in setup.
             </p>
           </div>
         </li>
@@ -67,8 +67,9 @@ export default function GettingStartedPage() {
           <div>
             <p className="font-medium">Choose how you work the board</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Onboarding asks you to pick <strong>one</strong> role. Normal
-              accounts cannot change it later.{" "}
+              Onboarding asks you to pick Hunter or Team. You can change between
+              them later from your profile. Team owners and admins must transfer
+              their responsibilities before switching to Hunter.{" "}
               <Link
                 href="/docs/hunters"
                 className="text-primary hover:underline"

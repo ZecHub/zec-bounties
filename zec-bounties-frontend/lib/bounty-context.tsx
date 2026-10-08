@@ -100,6 +100,8 @@ interface BountyContextType {
   ) => Promise<RecoveryData>;
   nicknameUpdate: (nickname: string) => Promise<boolean | undefined>;
   selectRole: (role: "HUNTER" | "TEAM") => Promise<boolean>;
+  changeAccountRole: (role: "HUNTER" | "TEAM") => Promise<void>;
+  isChangingAccountRole: boolean;
   disconnectDiscord: () => Promise<boolean>;
 
   // Role switching (isRobin users only)
@@ -455,6 +457,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSwitchingRole, setIsSwitchingRole] = useState(false);
+  const [isChangingAccountRole, setIsChangingAccountRole] = useState(false);
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [bountiesLoading, setBountiesLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -3461,6 +3464,27 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const changeAccountRole = async (role: "HUNTER" | "TEAM") => {
+    if (!currentUser) throw new Error("Sign in before changing your role");
+    setIsChangingAccountRole(true);
+    try {
+      const res = await fetch(`${backendUrl}/auth/change-role`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to change account role");
+      }
+      localStorage.setItem("authToken", data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem("currentUser", JSON.stringify(data.user));
+    } finally {
+      setIsChangingAccountRole(false);
+    }
+  };
+
   const disconnectDiscord = async () => {
     if (!currentUser) return false;
     try {
@@ -3891,6 +3915,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         verifyRecoveryOtp,
         nicknameUpdate,
         selectRole,
+        changeAccountRole,
+        isChangingAccountRole,
         disconnectDiscord,
         categories,
         categoriesLoading,

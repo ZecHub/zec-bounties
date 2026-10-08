@@ -63,6 +63,10 @@ async function getTeamMember(teamId, userId) {
  */
 async function requireTeamAdmin(teamId, req, res) {
   if (req.user.role === "ADMIN") return true;
+  if (req.user.role !== "TEAM") {
+    res.status(403).json({ error: "Switch to the Team role to manage teams" });
+    return false;
+  }
 
   const member = await getTeamMember(teamId, req.user.id);
 
@@ -363,6 +367,12 @@ async function getTeamDonationAddress(teamId) {
 
 router.post("/", authenticate, async (req, res) => {
   try {
+    if (!["TEAM", "ADMIN"].includes(req.user.role)) {
+      return res
+        .status(403)
+        .json({ error: "Switch to the Team role to create a team" });
+    }
+
     const { name, description, twitterUrl, discordUrl, additionalLinks } =
       req.body;
 
@@ -732,6 +742,11 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
 router.post("/:teamId/bounties", authenticate, async (req, res) => {
   try {
     if (!requireOnboarded(req, res)) return;
+    if (!["TEAM", "ADMIN"].includes(req.user.role)) {
+      return res
+        .status(403)
+        .json({ error: "Switch to the Team role to post team bounties" });
+    }
 
     const { teamId } = req.params;
 
@@ -1486,6 +1501,12 @@ router.patch("/:teamId", authenticate, async (req, res) => {
 router.delete("/:teamId", authenticate, async (req, res) => {
   try {
     const { teamId } = req.params;
+
+    if (req.user.role !== "ADMIN" && req.user.role !== "TEAM") {
+      return res
+        .status(403)
+        .json({ error: "Switch to the Team role to manage teams" });
+    }
 
     if (req.user.role !== "ADMIN") {
       const member = await getTeamMember(teamId, req.user.id);
