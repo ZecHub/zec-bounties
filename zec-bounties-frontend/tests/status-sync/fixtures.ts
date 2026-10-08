@@ -96,11 +96,17 @@ export class Backend {
       let json: any = [];
       if (method !== "GET") {
         const input = req.postDataJSON() ?? {};
+        const bountyMatch = pathname.match(/^\/api\/bounties\/(sync-\d+)$/);
         const statusMatch = pathname.match(/^\/api\/bounties\/(sync-\d+)\/status$/);
         const submitMatch = pathname.match(/^\/api\/bounties\/(sync-\d+)\/submit$/);
         const reviewMatch = pathname.match(/^\/api\/bounties\/submissions\/([^/]+)\/review$/);
         const editMatch = pathname.match(/^\/api\/bounties\/submissions\/([^/]+)$/);
-        if (method === "PATCH" && statusMatch) {
+        if (method === "PUT" && bountyMatch) {
+          const current = this.rows.find(b => b.id === bountyMatch[1])!;
+          json = this.change(current.id, current.status);
+          json.isApproved = input.isApproved;
+          this.broadcast("bounty_updated", json, user.id);
+        } else if (method === "PATCH" && statusMatch) {
           json = this.change(statusMatch[1], input.status);
           this.broadcast("bounty_status_changed", json, user.id);
         } else if (method === "POST" && submitMatch) {
