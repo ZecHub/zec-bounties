@@ -997,9 +997,9 @@ router.patch("/:id/status", authenticate, async (req, res) => {
       },
       include: {
         ...ASSIGNEE_INCLUDE,
-        assigneeUser: { select: USER_SELECT_FULL },
+        assigneeUser: { select: USER_SELECT },
         createdByUser: {
-          select: USER_SELECT_WITH_ROLE,
+          select: USER_SELECT,
         },
         team: { select: { id: true, name: true, logo: true } },
       },
@@ -1081,7 +1081,7 @@ router.post("/:id/submit", authenticate, async (req, res) => {
         },
         include: {
           submitterUser: {
-            select: USER_SELECT_BASIC,
+            select: USER_SELECT,
           },
         },
       }),
@@ -1091,15 +1091,15 @@ router.post("/:id/submit", authenticate, async (req, res) => {
         include: {
           ...ASSIGNEE_INCLUDE,
           createdByUser: {
-            select: USER_SELECT_WITH_ROLE,
+            select: USER_SELECT,
           },
           assigneeUser: {
-            select: USER_SELECT_WITH_ROLE,
+            select: USER_SELECT,
           },
           workSubmissions: {
             include: {
               submitterUser: {
-                select: USER_SELECT_BASIC,
+                select: USER_SELECT,
               },
             },
           },
@@ -1324,8 +1324,8 @@ router.patch(
               reviewedAt: new Date(),
             },
             include: {
-              submitterUser: { select: USER_SELECT_BASIC },
-              reviewerUser: { select: USER_SELECT_BASIC },
+              submitterUser: { select: USER_SELECT },
+              reviewerUser: { select: USER_SELECT },
             },
           });
 
@@ -1357,8 +1357,8 @@ router.patch(
             },
             include: {
               ...ASSIGNEE_INCLUDE,
-              createdByUser: { select: USER_SELECT_WITH_ROLE },
-              assigneeUser: { select: USER_SELECT_WITH_ROLE },
+              createdByUser: { select: USER_SELECT },
+              assigneeUser: { select: USER_SELECT },
               team: { select: { id: true, name: true, logo: true } },
             },
           });
@@ -1448,7 +1448,7 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
           }),
         },
         include: {
-          submitterUser: { select: USER_SELECT_BASIC },
+          submitterUser: { select: USER_SELECT },
         },
       });
 
@@ -1459,8 +1459,8 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
           data: { status: "IN_REVIEW" },
           include: {
             ...ASSIGNEE_INCLUDE,
-            createdByUser: { select: USER_SELECT_WITH_ROLE },
-            assigneeUser: { select: USER_SELECT_WITH_ROLE },
+            createdByUser: { select: USER_SELECT },
+            assigneeUser: { select: USER_SELECT },
           },
         });
       }

@@ -43,6 +43,26 @@ test("My Bounties updates counts and filters without adding unrelated records", 
 });
 
 for (const path of ["/home", "/my-bounties"]) {
+  test(path + " ignores an unversioned event before the first dated update", async ({ page }) => {
+    const api = new Backend();
+    await api.open(page, path);
+    api.broadcast("bounty_updated", { ...api.rows[0], status: "DONE", updatedAt: undefined });
+    // A following dated, partial event proves both messages were processed.
+    // Its missing status must come from the current record, not the rejected event.
+    const updated = api.change("sync-1", "IN_PROGRESS");
+    api.broadcast("bounty_updated", {
+      id: updated.id, updatedAt: updated.updatedAt, title: "After unversioned update",
+    });
+    await expect(page.getByText("After unversioned update", { exact: true })).toBeVisible();
+    if (path === "/home") {
+      await expect(column(page, "In Progress").getByText("After unversioned update", { exact: true })).toBeVisible();
+      await expect(column(page, "Done").getByText("After unversioned update", { exact: true })).toHaveCount(0);
+    } else {
+      await expect(pill(page, "In Progress")).toHaveText("In Progress1");
+      await expect(pill(page, "Done")).toHaveText("Done0");
+    }
+  });
+
   test(path + " keeps open bounty details current after remote changes", async ({ page }) => {
     const api = new Backend();
     api.rows[0] = bounty(1, "TO_DO");

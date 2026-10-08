@@ -30,6 +30,7 @@ import type {
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
+import { bountyUpdatedAt, mergeBounty } from "./bounty-merge";
 
 interface BountyCategory {
   id: number;
@@ -449,15 +450,6 @@ interface BountyContextType {
 
 const BountyContext = createContext<BountyContextType | undefined>(undefined);
 
-// Status payloads may omit relations. Preserve those fields and reject older
-// versions (for example, an HTTP response overtaken by a WebSocket event).
-const bountyUpdatedAt = (bounty: Bounty) =>
-  bounty.updatedAt ? new Date(bounty.updatedAt).getTime() : 0;
-const mergeBounty = (current: Bounty, update: Bounty): Bounty =>
-  bountyUpdatedAt(update) && bountyUpdatedAt(update) < bountyUpdatedAt(current)
-    ? current
-    : { ...current, ...update };
-
 export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [bountyChain, setBountyChain] = useState<"MAIN" | "TEST" | "ALL">(
     "MAIN",
@@ -551,8 +543,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     });
 
   const applyBountyUpdate = (update: Bounty) => {
+    if (!update.updatedAt) return;
     const previous = bountyUpdates.current.get(update.id);
-    const latest = previous ? mergeBounty(previous, update) : update;
+    const latest = mergeBounty(previous ?? update, update);
     if (latest === previous) return;
     bountyUpdates.current.set(update.id, latest);
     const patch = (list: Bounty[]) =>

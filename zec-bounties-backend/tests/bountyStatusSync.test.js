@@ -3,6 +3,17 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
+function privateFieldPaths(value, path = "$", found = []) {
+  if (value && typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = path + "." + key;
+      if (["email", "z_address", "UA_address"].includes(key)) found.push(childPath);
+      privateFieldPaths(child, childPath, found);
+    }
+  }
+  return found;
+}
+
 // Load the actual route module with an in-memory database and cache. No server,
 // Redis, wallet, notifications, or production credentials are used.
 function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
@@ -12,9 +23,32 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     method, (path, ...handlers) => routes.set(method + " " + path, handlers.at(-1)),
   ]));
   const row = { id: "bounty", status, isApproved: true, createdBy: "creator", assignee: "hunter", teamId: null };
-  const assignees = [{ userId: "hunter", user: { id: "hunter" } }];
+  const assignees = [{ userId: "hunter" }];
   const submission = { id: "submission", bountyId: row.id, submittedBy: "hunter", status: submissionStatus,
-    description: "Fixture work", submittedAt: new Date(), submitterUser: { id: "hunter" } };
+    description: "Fixture work", submittedAt: new Date() };
+  // Seed private fields and honor the route's actual Prisma user selections.
+  // Otherwise a privacy assertion on the old id-only mocks would always pass.
+  const selectUser = (id, select) => {
+    const user = { id, name: id, nickname: id, avatar: null, role: "HUNTER",
+      email: id + "@example.invalid", z_address: "fixture-shielded", UA_address: "fixture-unified" };
+    return Object.fromEntries(Object.entries(user).filter(([key]) => !select || select[key]));
+  };
+  const submissionWithRelations = (include = {}) => ({
+    ...submission,
+    ...(include.submitterUser && { submitterUser: selectUser(submission.submittedBy, include.submitterUser.select) }),
+    ...(include.reviewerUser && { reviewerUser: submission.reviewedBy
+      ? selectUser(submission.reviewedBy, include.reviewerUser.select) : null }),
+  });
+  const bountyWithRelations = (include = {}) => ({
+    ...row,
+    ...(include.createdByUser && { createdByUser: selectUser(row.createdBy, include.createdByUser.select) }),
+    ...(include.assigneeUser && { assigneeUser: row.assignee
+      ? selectUser(row.assignee, include.assigneeUser.select) : null }),
+    ...(include.assignees && { assignees: assignees.map(a => ({
+      ...a, user: selectUser(a.userId, include.assignees.include?.user?.select),
+    })) }),
+    ...(include.workSubmissions && { workSubmissions: [submissionWithRelations(include.workSubmissions.include)] }),
+  });
   let version = 1;
   const cachedVersion = version;
   const cached = { ...row };
@@ -23,7 +57,7 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
       findUnique: async () => ({ ...row, assignees: [...assignees], workSubmissions: [] }),
       update: async ({ data, include }) => {
         Object.assign(row, data);
-        return { ...row, ...(include?.assignees && { assignees: [...assignees] }) };
+        return bountyWithRelations(include);
       },
     },
     bountyAssignee: {
@@ -31,10 +65,16 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
       deleteMany: async () => { assignees.length = 0; },
     },
     workSubmission: {
-      create: async ({ data }) => ({ id: "submission", ...data }),
+      create: async ({ data, include }) => {
+        Object.assign(submission, data);
+        return submissionWithRelations(include);
+      },
       findUnique: async () => ({ ...submission, bounty: { ...row } }),
       findFirst: async () => null,
-      update: async ({ data }) => Object.assign(submission, data),
+      update: async ({ data, include }) => {
+        Object.assign(submission, data);
+        return submissionWithRelations(include);
+      },
     },
     $transaction: async work => typeof work === "function" ? work(prisma) : Promise.all(work),
   };
@@ -56,7 +96,7 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     "../utils/discord/discordAssignWebhook": {},
     "../utils/constants": {},
     "../helpers/validateBounty": {},
-    "../utils/userSelects": {},
+    "../utils/userSelects": require("../utils/userSelects"),
     "../utils/userIdentity": {},
     "../utils/bountyHelpers": {
       requireOnboarded: () => true,
@@ -109,5 +149,7 @@ for (const scenario of [
     assert.ok(invalidateIndex >= 0 && invalidateIndex < eventIndex, "invalidate bounty caches before any event can trigger a read");
     assert.ok(Array.isArray(updatedBounty.assignees), "keep assignment-dependent open details authoritative");
     if (scenario.input.status === "rejected") assert.equal(updatedBounty.assignees.length, 0);
+    assert.deepEqual(privateFieldPaths({ response: result, broadcasts: api.trace.filter(e => e.type).map(e => e.payload) }),
+      [], "JSON responses and broadcast payloads must not expose private user fields at any depth");
   });
 }
