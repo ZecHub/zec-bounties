@@ -44,6 +44,7 @@ model User {
   bountyApplications   BountyApplication[] @relation("ApplicantUser")
   reviewedWork         WorkSubmission[]    @relation("ReviewedWork")
   submittedWork        WorkSubmission[]    @relation("SubmittedWork")
+  reviewMessages       SubmissionReviewMessage[]
   zcashParams          ZcashParams[]       @relation("UserZcashParams")
   bountyAssignments    BountyAssignee[]    @relation("BountyAssignees")
   ofacVerified         Boolean             @default(false)
@@ -176,12 +177,26 @@ model WorkSubmission {
   reviewerUser   User?     @relation("ReviewedWork", fields: [reviewedBy], references: [id])
   submitterUser  User      @relation("SubmittedWork", fields: [submittedBy], references: [id])
   bounty         Bounty    @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  reviewMessages SubmissionReviewMessage[]
 
   @@map("work_submissions")
 
   @@index([bountyId, status])
   @@index([submittedBy])
 
+}
+
+model SubmissionReviewMessage {
+  id           String         @id @default(cuid())
+  submissionId String
+  authorId     String
+  body         String
+  createdAt    DateTime       @default(now())
+  submission   WorkSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  author       User           @relation(fields: [authorId], references: [id])
+
+  @@index([submissionId, createdAt, id])
+  @@map("submission_review_messages")
 }
 
 model ZcashParams {

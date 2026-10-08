@@ -81,3 +81,9 @@ On a fresh database, this returns `{"data":[],"total":0,"page":1,"limit":10}`.
 `.env.example` lists every variable the backend reads, each with a placeholder and a one-line description, marked `[required]` or `[optional]`.
 
 For local development you only need `DATABASE_URL`, `JWT_SECRET`, `PORT`, and the three `VAPID_*` values. Everything else (GitHub and Discord login, email, Pinata uploads, and Zcash wallets and payments) can keep its example value or stay blank until you work on that feature.
+
+## Submission review threads
+
+After updating the Prisma schema, run `npx prisma db push` and `npx prisma generate` before starting the backend. This repository uses `db push` rather than checked-in migration files.
+
+Authenticated participants can use `GET /api/bounties/submissions/:submissionId/review-thread` to read messages in chronological order and `POST` to the same path with `{ "body": "Feedback or reply" }` to add one. Bounty creators, global admins, and team owners/admins can review. A submission's contributor can read their own history and can reply while they remain assigned to that bounty. Other users cannot access the thread. Messages are plain text, limited to 5,000 characters, and scoped to one submission.

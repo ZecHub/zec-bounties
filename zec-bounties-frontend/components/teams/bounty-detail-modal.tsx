@@ -1,5 +1,7 @@
 "use client";
 
+import { SubmissionReviewThread } from "@/components/submission-review-thread";
+
 import { Bounty, WorkSubmission, User } from "@/lib/types";
 import {
   Dialog,
@@ -438,6 +440,13 @@ export function BountyDetailModal({
                         </p>
                       </div>
                     )}
+                  {userWorkSubmission && (
+                    <SubmissionReviewThread
+                      submissionId={userWorkSubmission.id}
+                      submitterId={userWorkSubmission.submittedBy}
+                      canPost={!!isAssignedToCurrentUser}
+                    />
+                  )}
                 </div>
               </div>
             )}

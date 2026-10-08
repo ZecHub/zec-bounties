@@ -257,6 +257,15 @@ export interface WorkSubmission {
   bounty?: { id: string; title: string };
 }
 
+export interface SubmissionReviewMessage {
+  id: string;
+  submissionId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+  author: Pick<User, "id" | "name" | "nickname" | "avatar">;
+}
+
 export interface BountyAssignee {
   id: string;
   bountyId: string;

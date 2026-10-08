@@ -31,6 +31,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/auth", require("./routes/auth"));
+app.use("/api/bounties/submissions", require("./routes/submissionReview"));
 app.use("/api/bounties", require("./routes/bounties"));
 app.use("/api/transactions", require("./routes/transactions"));
 app.use("/api/zcash", require("./routes/zcash"));

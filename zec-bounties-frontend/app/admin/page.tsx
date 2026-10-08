@@ -1,5 +1,7 @@
 "use client";
 
+import { SubmissionReviewThread } from "@/components/submission-review-thread";
+
 import { useState, useEffect, useMemo, useRef } from "react";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import {
@@ -2289,6 +2291,11 @@ export default function AdminDashboard() {
                         {submission.reviewNotes}
                       </div>
                     )}
+
+                    <SubmissionReviewThread
+                      submissionId={submission.id}
+                      submitterId={submission.submittedBy}
+                    />
 
                     {submission.status === "pending" && (
                       <div className="space-y-2.5 border-t border-border pt-3">
