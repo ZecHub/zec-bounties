@@ -771,7 +771,6 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
       categoryId,
       chain,
     } = req.body;
-
     if (chain && !["MAIN", "TEST"].includes(chain)) {
       return res.status(400).json({ error: "Invalid chain value" });
     }
@@ -781,7 +780,6 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
     const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
     const resolvedAssignee =
       canAssignOthers && assignee !== "none" ? assignee : null;
-
     const bounty = await prisma.bounty.create({
       data: {
         title,

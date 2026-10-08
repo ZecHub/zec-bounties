@@ -54,6 +54,7 @@ import {
 import { format } from "date-fns";
 import { formatStatus } from "@/lib/utils";
 import { PaymentAuthorizationModal } from "./payment-authorization-modal";
+import { BountySuggestionCheckPanel } from "@/components/bounty-suggestion-check-panel";
 import { useState, useEffect } from "react";
 
 interface UnifiedAdminBountyCardProps {
@@ -1314,6 +1315,14 @@ export function BountyAdminCard({
                   {bounty.description}
                 </p>
               </div>
+              {bounty.suggestionCheck && (
+                <div>
+                  <h4 className="font-semibold mb-2">Suggestion pre-check</h4>
+                  <BountySuggestionCheckPanel
+                    result={bounty.suggestionCheck}
+                  />
+                </div>
+              )}
 
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Quick Actions</h3>

@@ -66,6 +66,10 @@ npx prisma migrate dev --name init
 npx prisma db push
 ```
 
+Run `npx prisma db push` after pulling schema changes as well. Bounty records
+store the advisory pre-check shown before suggestion submission so reviewers can
+see the same result.
+
 ### 7. Start the backend
 
 ```bash
@@ -142,6 +146,31 @@ DEV_EMAIL_FALLBACK=mail
 ```
 
 Update these values to match your local environment.
+
+## AI bounty suggestion review
+
+Only bounty suggestions submitted by hunters run the AI review. Configure one
+or more provider keys in the backend `.env`; the service tries OpenAI,
+Anthropic, then Gemini, moving to the next configured provider if one fails:
+
+```env
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GEMINI_API_KEY=
+```
+
+All three keys are optional, but at least one is needed for AI judgment. Model
+names can be overridden with `OPENAI_MODEL`, `ANTHROPIC_MODEL`, and
+`GEMINI_MODEL`. Duplicate search scores every bounty record locally, including
+private, cancelled, pending, in-progress, in-review, and completed records.
+The full title, description, and status of every bounty are sent with the
+suggestion to the configured AI provider for duplicate judgment; this includes
+private bounty text. The hunter sees only a generic indication that a
+possibly matching bounty was previously submitted or completed, plus a
+similarity score — never the matching bounty's title, description, or ID.
+Admins and team managers see the same anonymized pre-check with the bounty. If
+no provider is configured or all providers fail, local checks remain advisory
+and submission is still allowed. No automated decision rejects a bounty.
 
 ---
 

@@ -29,6 +29,10 @@ const {
   validateCategory,
 } = require("../helpers/validateBounty");
 const {
+  createBountySuggestionCheck,
+  verifyBountySuggestionCheck,
+} = require("../helpers/bountySuggestionCheck");
+const {
   USER_SELECT,
   USER_SELECT_PUBLIC,
   USER_SELECT_FULL,
@@ -216,6 +220,41 @@ function getCalendarWeekBounds(date = new Date()) {
 }
 
 // ─── Create bounty ────────────────────────────────────────────────────────────
+router.post("/suggestion-check", authenticate, async (req, res) => {
+  try {
+    if (!requireOnboarded(req, res)) return;
+    if (req.user.role !== "HUNTER") {
+      return res.status(403).json({ error: "Hunter suggestions only" });
+    }
+    const { title, description, bountyAmount } = req.body;
+    if (
+      typeof title !== "string" ||
+      title.trim().length < 3 ||
+      title.trim().length > 200 ||
+      typeof description !== "string" ||
+      description.trim().length < 10 ||
+      description.trim().length > 10000 ||
+      !Number.isFinite(Number(bountyAmount)) ||
+      Number(bountyAmount) <= 0
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Valid title, description, and reward are required" });
+    }
+
+    const result = await createBountySuggestionCheck(prisma, {
+      title,
+      description,
+      bountyAmount,
+      userId: req.user.id,
+    });
+    return res.json(result);
+  } catch (error) {
+    console.error("Failed to check bounty suggestion:", error);
+    return res.status(500).json({ error: "Failed to check bounty suggestion" });
+  }
+});
+
 router.post("/", authenticate, async (req, res) => {
   try {
     if (!requireOnboarded(req, res)) return;
@@ -241,7 +280,6 @@ router.post("/", authenticate, async (req, res) => {
       chain,
       teamId,
     } = req.body;
-
     // Only admins may create a pre-approved bounty. Non-admin callers'
     // isApproved value is ignored outright, mirroring the guard on PUT /:id.
     const resolvedIsApproved =
@@ -284,6 +322,27 @@ router.post("/", authenticate, async (req, res) => {
       }
     }
 
+    let suggestionCheck = null;
+    if (req.user.role === "HUNTER") {
+      const suggestionInput = {
+        title,
+        description,
+        bountyAmount,
+      };
+      suggestionCheck =
+        verifyBountySuggestionCheck(
+          req.body.suggestionCheckToken,
+          req.user.id,
+          suggestionInput,
+        ) ??
+        (
+          await createBountySuggestionCheck(prisma, {
+            ...suggestionInput,
+            userId: req.user.id,
+          })
+        ).result;
+    }
+
     const isHunter = req.user.role === "HUNTER";
     const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
 
@@ -303,6 +362,7 @@ router.post("/", authenticate, async (req, res) => {
         assignee: resolvedAssignee,
         isApproved: resolvedIsApproved,
         categoryId,
+        ...(suggestionCheck && { suggestionCheck }),
         ...(chain && { chain }),
         ...(teamId && { teamId }),
         // Denormalized from the team at creation time — a bounty's privacy

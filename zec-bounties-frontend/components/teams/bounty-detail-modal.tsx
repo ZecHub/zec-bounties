@@ -26,6 +26,7 @@ import {
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
+import { BountySuggestionCheckPanel } from "@/components/bounty-suggestion-check-panel";
 import { format } from "date-fns";
 import Link from "next/link";
 import { Notice } from "@/lib/types";
@@ -39,12 +40,14 @@ interface BountyDetailModalProps {
   bounty: Bounty | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canReview?: boolean;
 }
 
 export function BountyDetailModal({
   bounty,
   open,
   onOpenChange,
+  canReview = false,
 }: BountyDetailModalProps) {
   const {
     currentUser,
@@ -317,6 +320,14 @@ export function BountyDetailModal({
                 {renderDescriptionWithLinks(bounty.description)}
               </p>
             </div>
+            {canReview && bounty.suggestionCheck && (
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                  Suggestion pre-check
+                </h4>
+                <BountySuggestionCheckPanel result={bounty.suggestionCheck} />
+              </div>
+            )}
 
             {/* Submit Work */}
             {canSubmitWork && (

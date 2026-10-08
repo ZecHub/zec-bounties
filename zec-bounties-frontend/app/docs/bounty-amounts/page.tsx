@@ -174,6 +174,16 @@ export default function BountyAmountsPage() {
         <p className="text-sm text-muted-foreground leading-relaxed">
           Stay inside the band. Do not treat the top as the default.
         </p>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Before a suggestion is submitted, an advisory pre-check compares its
+          reward with these bands using a current ZEC/USD rate and looks for
+          possible duplicates, clear completion criteria, and Zcash relevance.
+          The check may be imprecise; it never blocks submission, and reviewers
+          see the same result. For hunter suggestions, the suggestion and
+          the full text and status of all public and private bounty records
+          are sent to configured AI providers. Match details are not shown; only a
+          generic submitted/completed label and similarity score are returned.
+        </p>
       </section>
 
       <section className="space-y-3">

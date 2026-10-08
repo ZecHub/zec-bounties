@@ -172,9 +172,9 @@ export function TeamsNewBountyModal({
               <input
                 id="title"
                 value={formData.title}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, title: e.target.value }))
-                }
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, title: e.target.value }));
+                }}
                 placeholder="e.g. Fix z-address validation edge case"
                 autoComplete="off"
                 required
@@ -190,12 +190,12 @@ export function TeamsNewBountyModal({
                 <select
                   id="category"
                   value={formData.category}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData((prev) => ({
                       ...prev,
                       category: e.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   required
                   className={`${fieldInput} appearance-none`}
                 >
@@ -220,12 +220,12 @@ export function TeamsNewBountyModal({
                   step="any"
                   min={0}
                   value={formData.bountyAmount}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData((prev) => ({
                       ...prev,
                       bountyAmount: Number.parseFloat(e.target.value) || 0,
-                    }))
-                  }
+                    }));
+                  }}
                   placeholder="0.00"
                   required
                   className={fieldInput}
@@ -260,12 +260,12 @@ export function TeamsNewBountyModal({
               <textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) =>
+                onChange={(e) => {
                   setFormData((prev) => ({
                     ...prev,
                     description: e.target.value,
-                  }))
-                }
+                  }));
+                }}
                 placeholder="Requirements, deliverables, and any specifics a contributor needs to get started…"
                 rows={4}
                 required

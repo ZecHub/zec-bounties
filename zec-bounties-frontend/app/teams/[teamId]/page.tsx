@@ -1412,6 +1412,7 @@ function BountyProgramTab({
         bounty={selectedBounty}
         open={isDetailModalOpen}
         onOpenChange={setIsDetailModalOpen}
+        canReview={canManage}
       />
     </div>
   );

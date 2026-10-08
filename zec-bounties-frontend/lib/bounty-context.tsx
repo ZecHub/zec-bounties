@@ -12,6 +12,8 @@ import {
 import type {
   User,
   Bounty,
+  BountySuggestionCheck,
+  BountySuggestionCheckResponse,
   BountyFormData,
   BountyApplication,
   WorkSubmission,
@@ -117,7 +119,15 @@ interface BountyContextType {
   // Bounties
   bounties: Bounty[];
   bountiesLoading: boolean;
-  createBounty: (data: BountyFormData) => Promise<void>;
+  createBounty: (
+    data: BountyFormData & {
+      teamId?: string;
+      suggestionCheckToken?: string | null;
+    },
+  ) => Promise<void>;
+  checkBountySuggestion: (
+    data: Pick<BountyFormData, "title" | "description" | "bountyAmount">,
+  ) => Promise<BountySuggestionCheckResponse>;
   bountyQuota: {
     limit: number | null;
     used: number;
@@ -3070,7 +3080,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const createBounty = async (data: BountyFormData & { teamId?: string }) => {
+  const createBounty = async (
+    data: BountyFormData & {
+      teamId?: string;
+      suggestionCheckToken?: string | null;
+    },
+  ) => {
     if (!currentUser) return;
 
     try {
@@ -3097,6 +3112,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               : data.assignee,
           categoryId: data.category,
           chain: data.chain,
+          ...(data.suggestionCheckToken && {
+            suggestionCheckToken: data.suggestionCheckToken,
+          }),
           // teamId is now in the URL for team bounties, not the body — the
           // backend route already knows which team from req.params.
           ...(!data.teamId && { teamId: null }),
@@ -3127,6 +3145,23 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to create bounty:", error);
       throw error;
     }
+  };
+
+  const checkBountySuggestion = async (
+    data: Pick<BountyFormData, "title" | "description" | "bountyAmount">,
+  ): Promise<BountySuggestionCheckResponse> => {
+    const res = await fetch(`${backendUrl}/api/bounties/suggestion-check`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to check bounty suggestion");
+    }
+
+    return res.json();
   };
 
   const updateBounty = async (
@@ -3901,6 +3936,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         bounties: populatedBounties,
         bountiesLoading,
         createBounty,
+        checkBountySuggestion,
         bountyQuota,
         fetchBountyQuota,
         updateBounty,

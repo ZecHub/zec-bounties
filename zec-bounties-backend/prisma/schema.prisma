@@ -92,6 +92,7 @@ model Bounty {
   exportedAt        DateTime?
   exportedBy        String?
   discordThreadId  String?
+  suggestionCheck  Json?
 
 
   @@index([status])

@@ -121,6 +121,35 @@ export interface BountyCategory {
   name: string;
 }
 
+export interface BountySuggestionCheck {
+  evaluatedAt: string;
+  zecUsd: number | null;
+  estimatedUsd: number | null;
+  estimatedBand: string | null;
+  similarBounties: Array<{
+    stage: "completed" | "submitted";
+    similarity: number;
+  }>;
+  flags: Array<{
+    code: string;
+    severity: "warning" | "suggestion";
+    message: string;
+  }>;
+  aiReview?: {
+    status: "completed" | "unavailable" | "not_configured";
+    provider: "openai" | "anthropic" | "gemini" | null;
+    model: string | null;
+    confidence?: number;
+    attempted?: boolean;
+  };
+  adviceOnly: true;
+}
+
+export interface BountySuggestionCheckResponse {
+  result: BountySuggestionCheck;
+  verificationToken: string | null;
+}
+
 export interface BountyApplication {
   id: string;
   bountyId: string;
@@ -163,6 +192,7 @@ export interface Bounty {
   assignees?: BountyAssignee[];
   teamId?: string | null;
   team?: { id: string; name: string; logo?: string | null } | null;
+  suggestionCheck?: BountySuggestionCheck | null;
 }
 
 // One row per bounty per payout attempt, from /api/transactions/records.

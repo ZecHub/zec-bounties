@@ -23,11 +23,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
-import type { BountyFormData } from "@/lib/types";
+import type { BountyFormData, BountySuggestionCheck } from "@/lib/types";
 import { Loader2, Plus, Clock, Tag, AlignLeft } from "lucide-react";
 import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
+import {
+  BountySuggestionCheckPanel,
+  unavailableBountySuggestionCheck,
+} from "@/components/bounty-suggestion-check-panel";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -50,6 +54,7 @@ export function NewBountyModal({
 }: CreateBountyFormProps) {
   const {
     createBounty,
+    checkBountySuggestion,
     currentUser,
     categories,
     bountyQuota,
@@ -64,6 +69,11 @@ export function NewBountyModal({
     category: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [suggestionCheck, setSuggestionCheck] =
+    useState<BountySuggestionCheck | null>(null);
+  const [suggestionCheckToken, setSuggestionCheckToken] = useState<
+    string | null
+  >(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [errorSummary, setErrorSummary] = useState("");
   const openerRef = useRef<HTMLElement | null>(null);
@@ -84,8 +94,13 @@ export function NewBountyModal({
   }, [open]);
 
   const isAdmin = currentUser?.role === "ADMIN";
+  const isHunter = currentUser?.role === "HUNTER";
   const atLimit =
   !isAdmin && bountyQuota?.remaining !== null && bountyQuota?.remaining === 0;
+  const clearSuggestionCheck = () => {
+    setSuggestionCheck(null);
+    setSuggestionCheckToken(null);
+  };
 
     const validateForm = () => {
     const nextErrors: FieldErrors = {};
@@ -144,7 +159,17 @@ export function NewBountyModal({
 
     setIsSubmitting(true);
     try {
-      await createBounty(formData);
+      if (isHunter && !suggestionCheck) {
+        const check = await checkBountySuggestion(formData);
+        setSuggestionCheck(check.result);
+        setSuggestionCheckToken(check.verificationToken);
+        return;
+      }
+
+      await createBounty({
+        ...formData,
+        ...(isHunter && { suggestionCheckToken }),
+      });
       toast.success("Bounty created!", {
         description: `"${formData.title}" is now live.`,
       });
@@ -156,10 +181,19 @@ export function NewBountyModal({
         timeToComplete: new Date(),
         category: "",
       });
+      setSuggestionCheck(null);
+      setSuggestionCheckToken(null);
     } catch (error: any) {
-      toast.error("Failed to create bounty", {
-        description: error?.message,
-      });
+      if (isHunter && !suggestionCheck) {
+        setSuggestionCheck(unavailableBountySuggestionCheck());
+        toast.warning("Pre-check unavailable", {
+          description: "You can still submit for human review.",
+        });
+      } else {
+        toast.error("Failed to create bounty", {
+          description: error?.message,
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -206,7 +240,9 @@ export function NewBountyModal({
                 Create New Bounty
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
-                Provide the details for your technical challenge.
+                {isHunter
+                  ? "Provide your suggestion. The pre-check sends it and the full text and status of every private and public bounty to configured AI providers; match details are not revealed in the result."
+                  : "Provide the details for your technical challenge."}
               </DialogDescription>
             </div>
                 {!isAdmin && bountyQuota && (
@@ -253,6 +289,7 @@ export function NewBountyModal({
                 value={formData.title}
                 onChange={(e) => {
                   setFormData((prev) => ({ ...prev, title: e.target.value }));
+                  clearSuggestionCheck();
                   clearFieldError("title");
                 }}
                 placeholder="Enter bounty title..."
@@ -283,6 +320,7 @@ export function NewBountyModal({
                   value={formData.category}
                   onValueChange={(value) => {
                     setFormData((prev) => ({ ...prev, category: value }));
+                    clearSuggestionCheck();
                     clearFieldError("category");
                   }}
                   required
@@ -331,6 +369,7 @@ export function NewBountyModal({
                       ...prev,
                       bountyAmount: Number.parseFloat(e.target.value) || 0,
                     }));
+                    clearSuggestionCheck();
                     clearFieldError("reward");
                   }}
                   placeholder="0.00"
@@ -380,6 +419,7 @@ export function NewBountyModal({
                       ...prev,
                       description: e.target.value,
                     }));
+                    clearSuggestionCheck();
                     clearFieldError("description");
                   }}
                   placeholder="Describe the bounty requirements, deliverables, and any specific instructions..."
@@ -399,6 +439,11 @@ export function NewBountyModal({
                 )}
                 </div>
                 </div>
+          {isHunter && suggestionCheck && (
+            <div className="px-5 pb-4 sam:px-6">
+              <BountySuggestionCheckPanel result={suggestionCheck} />
+            </div>
+          )}
           <DialogFooter className="flex-col-reverse gap-3 border-t border-border px-5 py-4 imd:flex-row imd:items-center imd:justify-end sam:px-6">
             {onCancel && (
               <Button
@@ -419,12 +464,14 @@ export function NewBountyModal({
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  {suggestionCheck || !isHunter ? "Creating..." : "Checking..."}
                 </>
               ) : atLimit ? (
                 "Weekly limit reached"
-              ) : (
+              ) : !isHunter ? (
                 "Create Bounty"
+              ) : (
+                suggestionCheck ? "Submit suggestion" : "Run quick check"
               )}
             </Button>
           </DialogFooter>
