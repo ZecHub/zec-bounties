@@ -65,7 +65,7 @@ If you change user-facing docs, update both the page in `zec-bounties-frontend/a
 - Screenshots (or a short recording) for any UI change, ideally at mobile and desktop widths and in light and dark mode
 - How you tested it
 
-After the PR is merged, submit the PR link as your deliverable on the bounty.
+After the PR is merged, submit the PR link as your deliverable on the bounty. Once the bounty is Done, payouts are batched and usually go out the following Sunday to the payout UA in your Profile.
 
 ## 6. Never commit secrets
 

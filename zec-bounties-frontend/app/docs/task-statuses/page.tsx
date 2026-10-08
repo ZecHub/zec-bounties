@@ -82,10 +82,12 @@ export default function TaskStatusesPage() {
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Done is not the same as paid</h2>
         <p className="text-sm text-muted-foreground">
-          Payment is a separate step after Done. An admin authorizes a shielded
-          payment to the assignee&apos;s registered UA, and the transaction ID
-          is recorded on the bounty. Until then a Done bounty is approved but
-          unpaid. See{" "}
+          After Done, payouts are batched and usually go out the following
+          Sunday to the payout UA set in Profile. The hunter has nothing else
+          to do. Payment is still a separate step: an admin authorizes a
+          shielded payment to the assignee&apos;s registered UA, and the
+          transaction ID is recorded on the bounty. Until then a Done bounty is
+          approved but unpaid. See{" "}
           <Link
             href="/docs/privacy-payments"
             className="text-primary hover:underline"

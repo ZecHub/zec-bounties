@@ -137,7 +137,10 @@ const FAQS = [
     q: "My work was approved but I have not been paid.",
     a: (
       <>
-        Done and paid are separate steps — see{" "}
+        Payouts are batched and usually go out the Sunday after a bounty is
+        marked Done, to the payout UA set in Profile — you have nothing else
+        to do. Done and paid are separate steps (an admin authorizes the
+        shielded payment and the txid is recorded) — see{" "}
         <Link
           href="/docs/task-statuses"
           className="text-primary hover:underline"

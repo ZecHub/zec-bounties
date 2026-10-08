@@ -50,7 +50,7 @@ Cancelled ◄── approval removed, or
 
 ## Done is not the same as paid
 
-Payment is a separate step after Done. An admin authorizes a shielded payment to the assignee's registered UA, and the transaction ID is recorded on the bounty. Until then a Done bounty is approved but unpaid. See [Privacy & payments](privacy-payments.md).
+After Done, payouts are batched and usually go out the following Sunday to the payout UA set in Profile. The hunter has nothing else to do. Payment is still a separate step: an admin authorizes a shielded payment to the assignee's registered UA, and the transaction ID is recorded on the bounty. Until then a Done bounty is approved but unpaid. See [Privacy & payments](privacy-payments.md).
 
 ## Suggested is not a status
 

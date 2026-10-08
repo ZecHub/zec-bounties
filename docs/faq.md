@@ -43,7 +43,7 @@ A Suggested task was created by a hunter and is assigned to that hunter. It show
 
 ## My work was approved but I have not been paid.
 
-Done and paid are separate steps — see [Task statuses](task-statuses.md). Confirm the bounty is marked done / payment authorized. If it stays stuck, contact the bounty creator or ZecHub admins. Check that your registered UA is still valid.
+Payouts are batched and usually go out the Sunday after a bounty is marked Done, to the payout UA set in Profile — you have nothing else to do. Done and paid are separate steps (an admin authorizes the shielded payment and the txid is recorded) — see [Task statuses](task-statuses.md). Confirm the bounty is marked done / payment authorized. If it stays stuck, contact the bounty creator or ZecHub admins. Check that your registered UA is still valid.
 
 ## Do I need to share my seed phrase?
 
