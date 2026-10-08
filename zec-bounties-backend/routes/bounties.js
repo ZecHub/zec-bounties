@@ -1,5 +1,6 @@
 const express = require("express");
 const prisma = require("../prisma/client");
+const { rankSimilar } = require("../helpers/similarBounties");
 const { formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
@@ -2358,6 +2359,58 @@ router.patch(
 );
 
 // ─── Get single bounty ────────────────────────────────────────────────────
+// Warn a creator that they may be posting a duplicate.
+//
+// Non-blocking by design: it returns matches and says nothing about whether
+// the bounty may be created. The form shows up to three and lets the creator
+// decide — the board has real duplicates ("ZecWeekly Indonesian Translation
+// Vol.34" twice, "Add a FROST / threshold custody explainer page" twice) and
+// the cause is nobody being told, not anybody being stopped.
+//
+// Candidate window, per the same reasoning: still open, OR created in the last
+// 90 days whatever their status. A duplicate of a bounty that was completed
+// last month is still a duplicate worth knowing about. That window is why this
+// cannot be done in the browser against the board's paginated list.
+//
+// Public: reads are already public on this router, and a creator typing into
+// the form may not have a token attached to the request yet.
+router.get("/similar", optionalAuthenticate, async (req, res) => {
+  try {
+    const title = String(req.query.title || "").trim();
+    if (title.length < 4) return res.json({ similar: [] });
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const chainParam = String(req.query.chain || "MAIN").toUpperCase();
+    const chain = ["MAIN", "TEST"].includes(chainParam) ? chainParam : "MAIN";
+
+    const candidates = await prisma.bounty.findMany({
+      where: {
+        chain,
+        isPrivate: false,
+        OR: [{ status: "TO_DO" }, { dateCreated: { gte: ninetyDaysAgo } }],
+      },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        isApproved: true,
+        dateCreated: true,
+        bountyAmount: true,
+      },
+      // Bounded so a large board cannot turn a keystroke into a slow query.
+      // Scoring happens in memory over this window.
+      take: 500,
+      orderBy: { dateCreated: "desc" },
+    });
+
+    res.json({ similar: rankSimilar(title, candidates) });
+  } catch (err) {
+    // A warning must never break the form. Log and return nothing.
+    console.error("GET /api/bounties/similar failed:", err);
+    res.json({ similar: [] });
+  }
+});
+
 router.get("/:id", optionalAuthenticate, async (req, res) => {
   try {
     const bountyId = req.params.id;
