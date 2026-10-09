@@ -33,8 +33,13 @@ export default function AdminLeaderboardPage() {
   const myEntry = leaderboard.find(isMe);
 
   // `zec` is the raw ZEC amount; alternates with USD when a price is available.
-  const formatEarned = (zec: number) =>
-    `${zec.toLocaleString(undefined, { maximumFractionDigits: 4 })} ZEC`;
+  const formatEarned = (zec: number | null) =>
+    zec === null
+      ? "Private"
+      : `${zec.toLocaleString(undefined, { maximumFractionDigits: 4 })} ZEC`;
+
+  const formatCompleted = (count: number | null, noun: string) =>
+    count === null ? "Private" : `${count} ${noun}`;
 
   const displayNameFor = (entry: (typeof leaderboard)[number]) =>
     entry.nickname || entry.name;
@@ -88,10 +93,12 @@ export default function AdminLeaderboardPage() {
               <p className="mt-4 text-sm text-muted-foreground">
                 You're ranked{" "}
                 <span className="font-bold text-primary">#{myEntry.rank}</span>{" "}
-                <span className="hidden md:inline">
-                  {" "}
-                  with {myEntry.points.toLocaleString()} pts
-                </span>
+                {myEntry.points !== null && (
+                  <span className="hidden md:inline">
+                    {" "}
+                    with {myEntry.points.toLocaleString()} pts
+                  </span>
+                )}
               </p>
             ) : currentUser ? (
               <p className="mt-4 text-sm text-muted-foreground">
@@ -144,12 +151,14 @@ export default function AdminLeaderboardPage() {
                               entry.rank === 1
                                 ? "border-primary"
                                 : "border-muted"
-                            } ${!mine ? "blur-sm" : ""}`}
+                            }`}
                           >
                             <AvatarImage
                               src={entry.avatar || "/placeholder.svg"}
                             />
-                            <AvatarFallback>{"None"}</AvatarFallback>
+                            <AvatarFallback>
+                              {displayNameFor(entry).charAt(0).toUpperCase()}
+                            </AvatarFallback>
                           </Avatar>
                           <div
                             className={`absolute -bottom-2 -right-2 h-8 w-8 rounded-full flex items-center justify-center font-bold text-sm ${
@@ -161,15 +170,9 @@ export default function AdminLeaderboardPage() {
                             #{entry.rank}
                           </div>
                         </div>
-                        <h3
-                          className={`text-lg font-bold mb-1 ${
-                            !mine ? "blur-sm select-none" : ""
-                          }`}
-                        >
+                        <h3 className="text-lg font-bold mb-1">
                           {(() => {
-                            const full = mine
-                              ? displayNameFor(entry)
-                              : "Hidden Hunter";
+                            const full = displayNameFor(entry);
                             return (
                               <>
                                 <span className="md:hidden">
@@ -182,15 +185,17 @@ export default function AdminLeaderboardPage() {
                         </h3>
                         <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mb-4">
                           <Target className="h-3 w-3" />
-                          <span>{entry.completed} Bounties</span>
+                          <span>{formatCompleted(entry.completed, "Bounties")}</span>
                         </div>
-                        <div className="flex items-center justify-center gap-1.5 mb-4">
-                          <BadgeIcons
-                            completed={entry.completed}
-                            badges={entry.badges}
-                            role={entry.role}
-                          />
-                        </div>
+                        {entry.completed !== null && (
+                          <div className="flex items-center justify-center gap-1.5 mb-4">
+                            <BadgeIcons
+                              completed={entry.completed}
+                              badges={entry.badges}
+                              role={entry.role}
+                            />
+                          </div>
+                        )}
                         <div className="text-2xl font-black text-primary">
                           {formatEarned(entry.earned)}
                         </div>
@@ -211,8 +216,8 @@ export default function AdminLeaderboardPage() {
                   <CardDescription className="flex items-center gap-1 flex-wrap">
                     Rankings based on total earnings and bounties completed
                     <span className="inline-flex items-center gap-1 ml-2 text-xs">
-                      <Lock className="h-3 w-3" /> Other hunters' identities are
-                      private
+                      <Lock className="h-3 w-3" /> Privacy settings are
+                      enforced by the leaderboard API
                     </span>
                   </CardDescription>
                 </CardHeader>
@@ -232,24 +237,18 @@ export default function AdminLeaderboardPage() {
                           <div className="w-8 text-center font-mono font-bold text-muted-foreground">
                             #{entry.rank}
                           </div>
-                          <Avatar
-                            className={`h-10 w-10 border ${!mine ? "blur-sm" : ""}`}
-                          >
+                          <Avatar className="h-10 w-10 border">
                             <AvatarImage
                               src={entry.avatar || "/placeholder.svg"}
                             />
-                            <AvatarFallback>{"None"}</AvatarFallback>
+                            <AvatarFallback>
+                              {displayNameFor(entry).charAt(0).toUpperCase()}
+                            </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
-                            <p
-                              className={`font-bold leading-none flex items-center gap-2 ${
-                                !mine ? "blur-sm select-none" : ""
-                              }`}
-                            >
+                            <p className="font-bold leading-none flex items-center gap-2">
                               {(() => {
-                                const full = mine
-                                  ? displayNameFor(entry)
-                                  : "Hidden Hunter";
+                                const full = displayNameFor(entry);
                                 return (
                                   <>
                                     <span className="md:hidden">
@@ -271,16 +270,18 @@ export default function AdminLeaderboardPage() {
                               )}
                             </p>
                             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                              <span className="hidden md:flex items-center gap-1">
-                                <BadgeIcons
-                                  completed={entry.completed}
-                                  badges={entry.badges}
-                                  role={entry.role}
-                                />
-                              </span>
+                              {entry.completed !== null && (
+                                <span className="hidden md:flex items-center gap-1">
+                                  <BadgeIcons
+                                    completed={entry.completed}
+                                    badges={entry.badges}
+                                    role={entry.role}
+                                  />
+                                </span>
+                              )}
                               <span className="flex items-center gap-1">
-                                <Target className="h-3 w-3" /> {entry.completed}{" "}
-                                Completed
+                                <Target className="h-3 w-3" />
+                                {formatCompleted(entry.completed, "Completed")}
                               </span>
                             </div>
                           </div>

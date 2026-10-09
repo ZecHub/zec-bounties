@@ -1,42 +1,15 @@
 const express = require("express");
 const prisma = require("../prisma/client");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { delCache } = require("../utils/cache");
+const { delCache, bumpVersion } = require("../utils/cache");
 const { userIdentityWhere } = require("../utils/userIdentity");
+const {
+  DEFAULT_VISIBILITY,
+  VISIBILITY_KEYS,
+  mergeVisibility,
+} = require("../utils/profileVisibility");
 
 const router = express.Router();
-
-/** Privacy-first defaults: only avatar + display name on by default. */
-const DEFAULT_VISIBILITY = {
-  showAvatar: true,
-  showDisplayName: true,
-  showBio: false,
-  showBadges: false,
-  showCompleted: false,
-  showCreated: false,
-  showEarnings: false,
-  showCompletionRate: false,
-  showAddressType: false,
-  showMemberSince: false,
-  showRecentBounties: false,
-  showRole: false,
-  showGithub: false,
-  showDiscord: false,
-};
-
-const VISIBILITY_KEYS = Object.keys(DEFAULT_VISIBILITY);
-
-function mergeVisibility(raw) {
-  const incoming =
-    raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const out = { ...DEFAULT_VISIBILITY };
-  for (const key of VISIBILITY_KEYS) {
-    if (typeof incoming[key] === "boolean") {
-      out[key] = incoming[key];
-    }
-  }
-  return out;
-}
 
 function hasUA(addr) {
   return typeof addr === "string" && addr.startsWith("u1");
@@ -636,6 +609,9 @@ router.patch("/me/profile", authenticate, async (req, res) => {
     });
 
     await delCache("users:all").catch(() => {});
+    if (profileVisibility !== undefined) {
+      await bumpVersion("profiles");
+    }
 
     res.json({
       id: updated.id,
@@ -654,3 +630,5 @@ router.patch("/me/profile", authenticate, async (req, res) => {
 module.exports = router;
 module.exports.DEFAULT_VISIBILITY = DEFAULT_VISIBILITY;
 module.exports.mergeVisibility = mergeVisibility;
+
+[executed on device: ayobami-Latitude-7490 (7d1414a3-3c53-4ca4-bd2e-0634cf62f6c1)]

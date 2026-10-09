@@ -694,7 +694,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const res = await fetch(
         `${backendUrl}/api/leaderboard?${query.toString()}`,
-        { headers: getPublicHeaders() }, // public route, no auth required
+        { headers: getAuthHeaders() }
       );
 
       if (!res.ok) throw new Error("Failed to fetch leaderboard");
@@ -4186,3 +4186,5 @@ export function useBounty() {
   }
   return context;
 }
+
+[executed on device: ayobami-Latitude-7490 (7d1414a3-3c53-4ca4-bd2e-0634cf62f6c1)]

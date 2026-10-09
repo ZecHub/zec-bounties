@@ -3,6 +3,9 @@ const express = require("express");
 const prisma = require("../prisma/client");
 const { optionalAuthenticate } = require("../middleware/auth");
 const { getCache, setCache, getVersion } = require("../utils/cache");
+const {
+  serializeLeaderboardEntry,
+} = require("../utils/leaderboardPrivacy");
 
 const router = express.Router();
 
@@ -18,8 +21,12 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     }
     const limit = Math.min(parseInt(req.query.limit) || 25, 100);
 
-    const version = await getVersion("bounties"); // busts with invalidateBounty
-    const cacheKey = `leaderboard:v${version}:${timeRange}:${chainParam}:${limit}`;
+    const [bountyVersion, profileVersion] = await Promise.all([
+      getVersion("bounties"),
+      getVersion("profiles"),
+    ]);
+    const viewerScope = isAdmin ? "admin" : "public";
+    const cacheKey = `leaderboard:v${bountyVersion}:p${profileVersion}:${viewerScope}:${timeRange}:${chainParam}:${limit}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -50,20 +57,19 @@ router.get("/", optionalAuthenticate, async (req, res) => {
 
     const users = await prisma.user.findMany({
       where: { id: { in: grouped.map((g) => g.assignee) } },
-      select: { id: true, name: true, nickname: true, avatar: true },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        avatar: true,
+        profileVisibility: true,
+      },
     });
     const byId = new Map(users.map((u) => [u.id, u]));
 
-    const result = grouped.map((g, i) => ({
-      id: g.assignee,
-      rank: i + 1,
-      name: byId.get(g.assignee)?.name ?? "Unknown",
-      nickname: byId.get(g.assignee)?.nickname ?? null,
-      avatar: byId.get(g.assignee)?.avatar ?? null,
-      completed: g._count.id,
-      earned: g._sum.bountyAmount ?? 0,
-      points: Math.round((g._sum.bountyAmount ?? 0) * 100) + g._count.id * 10,
-    }));
+    const result = grouped.map((g, i) =>
+      serializeLeaderboardEntry(g, byId.get(g.assignee), i, isAdmin),
+    );
 
     await setCache(cacheKey, result, 60);
     res.json(result);
