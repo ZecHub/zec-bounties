@@ -116,13 +116,18 @@ export function EditBountyModal({
       const assigneesChanged =
         selectedUserIds.length !== existingIds.length ||
         selectedUserIds.some((id) => !existingIds.includes(id));
+      // Preserve unchanged deadlines, including expired dates and their time of day.
+      const originalDeadline = bounty.timeToComplete
+        ? toDateInputValue(new Date(bounty.timeToComplete))
+        : "";
       await updateBounty(bounty.id, {
         title,
         description,
         bountyAmount: parseFloat(bountyAmount),
-        timeToComplete: timeToComplete
-          ? parseDateInputValue(timeToComplete)
-          : undefined,
+        timeToComplete:
+          timeToComplete && timeToComplete !== originalDeadline
+            ? parseDateInputValue(timeToComplete)
+            : undefined,
         chain,
         notifyUsers,
         ...(assigneesChanged && { userIds: selectedUserIds }),

@@ -26,6 +26,7 @@ const executeZingoCliSync = require("../utils/zingo/zingoLibSync");
 const { randomUUID } = require("crypto");
 const { uploadToPinata, pinataUrl } = require("../utils/ipfs/pinata");
 const { REQUIRED_TEAM_VERIFICATIONS } = require("../utils/constants");
+const { validateBountyCreate, validateCategory } = require("../helpers/validateBounty");
 const {
   USER_SELECT,
   USER_SELECT_PUBLIC,
@@ -772,6 +773,13 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
       chain,
     } = req.body;
 
+    const validation = validateBountyCreate(req.body);
+    if (!validation.valid) return res.status(400).json({ error: validation.error });
+    const categoryValidation = await validateCategory(prisma, categoryId);
+    if (!categoryValidation.valid) {
+      return res.status(400).json({ error: categoryValidation.error });
+    }
+
     if (chain && !["MAIN", "TEST"].includes(chain)) {
       return res.status(400).json({ error: "Invalid chain value" });
     }
@@ -791,7 +799,7 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
         createdBy: req.user.id,
         assignee: resolvedAssignee,
         isApproved: true,
-        categoryId,
+        categoryId: categoryId || null,
         ...(chain && { chain }),
         teamId,
         isPrivate: team.isPrivate,
