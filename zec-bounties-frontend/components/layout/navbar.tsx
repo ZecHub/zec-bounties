@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   Moon,
   Sun,
-  Bell,
   Search,
   Wallet,
   Menu,
@@ -50,6 +49,7 @@ import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/theme/theme-picker";
+import { NotificationsInbox } from "@/components/notifications-inbox";
 
 // ── Role toggle button ────────────────────────────────────────────────────────
 const ROLE_OPTIONS = [
@@ -194,10 +194,12 @@ export function Navbar({
               className="transition-colors hover:text-primary"
             >
               <img
-                src="/ZecHubBlue.png"
-                alt="ZecHubBlue.png"
-                style={{ height: "3rem" }}
-              />
+              src="/ZecHubBlue.png"
+              alt="ZecHub"
+              width={32}
+              height={32}
+              className="h-8 w-8 shrink-0 object-contain"
+            />
             </Link>
             <Link
               href={currentUser ? "/home" : "/"}
@@ -295,9 +297,7 @@ export function Navbar({
             <ThemePicker />
 
             {currentUser && (
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Bell className="h-4 w-4" />
-              </Button>
+              <NotificationsInbox />
             )}
 
             {!currentUser ? (
@@ -462,10 +462,7 @@ export function Navbar({
 
                       <RoleToggleButton compact />
 
-                      <Button variant="outline" className="gap-2 justify-start">
-                        <Bell className="h-4 w-4" />
-                        Notifications
-                      </Button>
+                      <NotificationsInbox fullWidth />
 
                       <div className="border-t" />
 

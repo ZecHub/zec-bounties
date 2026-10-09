@@ -50,6 +50,11 @@ const LINKS = [
     title: "Badges",
     desc: "Task stars and specialty role badges",
   },
+  {
+    href: "/docs/api",
+    title: "API",
+    desc: "Methods, how to call them, and what responses actually hide",
+  },
 ];
 
 export default function DocsOverviewPage() {

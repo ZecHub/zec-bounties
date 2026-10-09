@@ -45,6 +45,7 @@ import {
   bountyCreatorInitial,
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
+import { ProfileLink } from "@/components/profile-link";
 
 function isNewBounty(dateCreated: Date | string): boolean {
   const created = new Date(dateCreated);
@@ -264,9 +265,11 @@ export function BountyCard({
                   />
                   <AvatarFallback className="text-[9px]">?</AvatarFallback>
                 </Avatar>
-                <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
-                  {bountyCreatorName(bounty)}
-                </span>
+                <ProfileLink user={bounty.team ? null : bounty.createdByUser}>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
+                    {bountyCreatorName(bounty)}
+                  </span>
+                </ProfileLink>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {dueDateLabel && (
@@ -427,9 +430,11 @@ export function BountyCard({
                   </Badge>
                 )}
               </h3>
-              <p className="text-xs text-muted-foreground truncate">
-                {bountyCreatorName(bounty)}
-              </p>
+              <ProfileLink user={bounty.team ? null : bounty.createdByUser}>
+                <p className="text-xs text-muted-foreground truncate">
+                  {bountyCreatorName(bounty)}
+                </p>
+              </ProfileLink>
               {/* Description shown only below imd */}
               <p className="imd:hidden text-xs text-muted-foreground line-clamp-1 mt-0.5 opacity-80">
                 {bounty.description}
@@ -444,17 +449,18 @@ export function BountyCard({
                 </span>
                 <div className="flex items-center gap-1">
                   {bounty.assignees.slice(0, 3).map((a) => (
-                    <Avatar
-                      key={a.userId}
-                      className="h-5 w-5 border -ml-1 first:ml-0"
-                    >
-                      <AvatarImage
-                        src={a.user?.avatar || "/placeholder-user.jpg"}
-                      />
-                      <AvatarFallback className="text-[9px]">
-                        {a.user?.name?.[0]}
-                      </AvatarFallback>
-                    </Avatar>
+                    <ProfileLink key={a.userId} user={a.user}>
+                      <Avatar
+                        className="h-5 w-5 border -ml-1 first:ml-0"
+                      >
+                        <AvatarImage
+                          src={a.user?.avatar || "/placeholder-user.jpg"}
+                        />
+                        <AvatarFallback className="text-[9px]">
+                          {a.user?.name?.[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                    </ProfileLink>
                   ))}
                   {bounty.assignees.length > 3 && (
                     <span className="text-[10px] text-muted-foreground ml-1">
@@ -641,9 +647,11 @@ export function BountyCard({
               <AvatarFallback>{bountyCreatorInitial(bounty)}</AvatarFallback>
             </Avatar>
             <div>
-              <p className="text-xs text-muted-foreground font-medium">
-                {bountyCreatorName(bounty)}
-              </p>
+              <ProfileLink user={bounty.team ? null : bounty.createdByUser}>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {bountyCreatorName(bounty)}
+                </p>
+              </ProfileLink>
               <h3 className="font-semibold line-clamp-1 leading-tight group-hover:text-primary transition-colors">
                 {bounty.title}
               </h3>
@@ -712,17 +720,18 @@ export function BountyCard({
             {bounty.assignees && bounty.assignees.length > 0 ? (
               <div className="flex items-center gap-1">
                 {bounty.assignees.slice(0, 3).map((a) => (
-                  <Avatar
-                    key={a.userId}
-                    className="h-5 w-5 border ring-1 ring-background -ml-1 first:ml-0"
-                  >
-                    <AvatarImage
-                      src={a.user?.avatar || "/placeholder-user.jpg"}
-                    />
-                    <AvatarFallback className="text-[9px]">
-                      {a.user?.name?.[0]}
-                    </AvatarFallback>
-                  </Avatar>
+                  <ProfileLink key={a.userId} user={a.user}>
+                    <Avatar
+                      className="h-5 w-5 border ring-1 ring-background -ml-1 first:ml-0"
+                    >
+                      <AvatarImage
+                        src={a.user?.avatar || "/placeholder-user.jpg"}
+                      />
+                      <AvatarFallback className="text-[9px]">
+                        {a.user?.name?.[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                  </ProfileLink>
                 ))}
                 {bounty.assignees.length > 3 && (
                   <span className="text-[10px] text-muted-foreground ml-1">

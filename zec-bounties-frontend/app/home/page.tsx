@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Loader2,
   ChevronsDown,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -168,6 +169,7 @@ function HomeContent() {
   }, [filteredBounties]);
 
   const missingUA = !currentUser?.UA_address;
+  const taskCreationBlocked = currentUser?.canCreateTasks === false;
 
   // Open a bounty and reflect it in the URL
   const openBounty = (bounty: Bounty) => {
@@ -196,6 +198,12 @@ function HomeContent() {
   }, [loadMoreBounties]);
 
   const handleNewBounty = () => {
+    if (taskCreationBlocked) {
+      toast.error("Task creation disabled", {
+        description: "An admin has blocked your account from creating tasks.",
+      });
+      return;
+    }
     if (!currentUser?.UA_address) {
       toast.warning("Unified Address required", {
         description: "Add a UA to your profile before creating a bounty.",
@@ -281,6 +289,7 @@ function HomeContent() {
 
       <BottomTabBar
         onNewBounty={handleNewBounty}
+        newBountyBlocked={taskCreationBlocked}
         onOpenTeams={() => setIsTeamsSheetOpen(true)}
         teamsActive={!!activeTeamId}
       />
@@ -288,6 +297,24 @@ function HomeContent() {
 
       <div className="xl:container xl:mx-auto px-3 imd:px-4 py-6 imd:py-8">
         <HeroCarousel onNewBounty={handleNewBounty} />
+
+        {/* {taskCreationBlocked && (
+          <div
+            role="alert"
+            className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
+          >
+            <Ban className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div>
+              <p className="text-sm font-semibold text-destructive">
+                You can't create tasks
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                An admin has disabled task creation for your account. You can
+                still browse bounties, apply, and submit work.
+              </p>
+            </div>
+          </div>
+        )} */}
 
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 imd:mb-12">
           <div className="space-y-2 min-w-0">
@@ -301,10 +328,22 @@ function HomeContent() {
           </div>
           <div className="hidden imd:grid imd:grid-cols-2 gap-2 imd:gap-3 shrink-0">
             <Button
-              className="w-full sm:w-auto rounded-full shadow-lg shadow-primary/20"
+              title={
+                taskCreationBlocked
+                  ? "An admin has disabled task creation for your account"
+                  : undefined
+              }
+              className={`w-full sm:w-auto rounded-full shadow-lg shadow-primary/20 ${
+                taskCreationBlocked ? "opacity-50" : ""
+              }`}
               onClick={handleNewBounty}
             >
-              <Plus className="mr-2 h-4 w-4" /> New Bounty
+              {taskCreationBlocked ? (
+                <Ban className="mr-2 h-4 w-4" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}{" "}
+              New Bounty
             </Button>
             <Link href="/my-bounties" className="w-full sm:w-auto">
               <Button

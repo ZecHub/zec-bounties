@@ -1,4 +1,3 @@
-// components/new-bounty-modal.tsx
 "use client";
 
 import type React from "react";

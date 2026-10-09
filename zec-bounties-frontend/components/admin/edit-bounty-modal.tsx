@@ -23,6 +23,8 @@ import {
   Coins,
   FileText,
   UserPlus,
+  MessageSquare,
+  History,
 } from "lucide-react";
 import {
   Select,
@@ -32,10 +34,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
-import { Bounty } from "@/lib/types";
+import { Bounty, BountyActivity } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 import { ZecToUsd } from "../ZecToUsd";
+import { BountyChat } from "@/components/bounty-chat";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -44,17 +47,66 @@ interface EditBountyModalProps {
   defaultSection?: "details" | "assignees";
 }
 
+const fmtStatus = (s?: string) => (s ?? "").replace(/_/g, " ").toLowerCase();
+
+function describeActivity(a: BountyActivity, bounty: Bounty): string {
+  const m = a.meta ?? {};
+  switch (a.type) {
+    case "CREATED":
+      return "created this bounty";
+    case "APPROVED":
+      return "approved this bounty";
+    case "UNAPPROVED":
+      return "revoked approval";
+    case "EDITED":
+      return `edited ${(m.fields ?? []).join(", ")}`;
+    case "STATUS_CHANGED": {
+      const winner = m.winnerId
+        ? bounty.assignees?.find((x) => x.userId === m.winnerId)?.user
+        : null;
+      return `changed status from ${fmtStatus(m.from)} to ${fmtStatus(m.to)}${
+        winner ? ` (winner: ${displayName(winner as any)})` : ""
+      }`;
+    }
+    case "ASSIGNEES_UPDATED": {
+      const parts = [];
+      if (m.added?.length) parts.push(`added ${m.added.join(", ")}`);
+      if (m.removed?.length) parts.push(`removed ${m.removed.join(", ")}`);
+      return `updated assignees: ${parts.join("; ")}`;
+    }
+    case "WORK_SUBMITTED":
+      return "submitted work";
+    case "SUBMISSION_APPROVED":
+      return `accepted ${m.submitter ?? "a"}'s submission`;
+    case "SUBMISSION_REJECTED":
+      return `rejected ${m.submitter ?? "a"}'s submission`;
+    case "SUBMISSION_NEEDS_REVISION":
+      return `requested revision on ${m.submitter ?? "a"}'s submission`;
+    case "APPLICATION_ACCEPTED":
+      return `accepted ${m.applicant ?? "an"}'s application`;
+    case "APPLICATION_REJECTED":
+      return `rejected ${m.applicant ?? "an"}'s application`;
+    case "PAYMENT_AUTHORIZED":
+      return "authorized payment";
+    default:
+      return a.type.toLowerCase().replace(/_/g, " ");
+  }
+}
+
 export function EditBountyModal({
   bounty,
   open,
   onOpenChange,
   defaultSection = "details",
 }: EditBountyModalProps) {
-  const { updateBounty, nonAdminUsers } = useBounty();
+  const { updateBounty, nonAdminUsers, currentUser, fetchBountyActivity } =
+    useBounty();
   const [isSaving, setIsSaving] = useState(false);
-  const [activeSection, setActiveSection] = useState<"details" | "assignees">(
-    defaultSection,
-  );
+  const [activeSection, setActiveSection] = useState<
+    "details" | "assignees" | "activity" | "chat"
+  >(defaultSection);
+  const [activity, setActivity] = useState<BountyActivity[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [bountyAmount, setBountyAmount] = useState("");
@@ -81,6 +133,33 @@ export function EditBountyModal({
     setNotifyUsers(false);
     setActiveSection(defaultSection);
   }, [bounty, open, defaultSection]);
+
+  useEffect(() => {
+    if (!open || !bounty || activeSection !== "activity") return;
+    let cancelled = false;
+    setActivityLoading(true);
+    fetchBountyActivity(bounty.id).then((rows) => {
+      if (cancelled) return;
+      setActivity(rows);
+      setActivityLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, bounty?.id, activeSection]);
+
+  useEffect(() => {
+    if (!open || !bounty) return;
+    const onActivity = (e: Event) => {
+      const row = (e as CustomEvent<BountyActivity>).detail;
+      if (row.bountyId !== bounty.id) return;
+      setActivity((prev) =>
+        prev.some((a) => a.id === row.id) ? prev : [row, ...prev],
+      );
+    };
+    window.addEventListener("bounty-activity", onActivity);
+    return () => window.removeEventListener("bounty-activity", onActivity);
+  }, [open, bounty?.id]);
 
   const toggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
@@ -157,29 +236,36 @@ export function EditBountyModal({
         </DialogHeader>
 
         <div className="flex border-b shrink-0">
-          {(["details", "assignees"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveSection(tab)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${
-                activeSection === tab
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab === "details" ? (
-                <FileText className="h-4 w-4" />
-              ) : (
-                <Users className="h-4 w-4" />
-              )}
-              {tab}
-              {tab === "assignees" && selectedUserIds.length > 0 && (
-                <span className="ml-1 bg-primary/15 text-primary text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                  {selectedUserIds.length}
-                </span>
-              )}
-            </button>
-          ))}
+          {(["details", "assignees", "activity", "chat"] as const).map(
+            (tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveSection(tab)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium border-b-2 transition-colors capitalize ${
+                  activeSection === tab
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab === "details" ? (
+                  <FileText className="h-4 w-4" />
+                ) : tab === "assignees" ? (
+                  <Users className="h-4 w-4" />
+                ) : tab === "activity" ? (
+                  <History className="h-4 w-4" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
+                {tab}
+                {tab === "assignees" && selectedUserIds.length > 0 && (
+                  <span className="ml-1 bg-primary/15 text-primary text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                    {selectedUserIds.length}
+                  </span>
+                )}
+              </button>
+            ),
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -427,48 +513,107 @@ export function EditBountyModal({
               )}
             </div>
           )}
+
+          {activeSection === "activity" && (
+            <div className="space-y-1">
+              {activityLoading ? (
+                <div className="py-10 flex justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : activity.length === 0 ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No activity recorded yet
+                </p>
+              ) : (
+                activity.map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-start gap-3 py-2.5 border-b last:border-0"
+                  >
+                    <Avatar className="h-7 w-7 border shrink-0">
+                      <AvatarImage
+                        src={a.actor?.avatar || "/placeholder-user.jpg"}
+                      />
+                      <AvatarFallback className="text-[10px]">
+                        {a.actor ? displayName(a.actor as any)[0] : "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        <span className="font-medium">
+                          {a.actor
+                            ? displayName(a.actor as any)
+                            : "Deleted user"}
+                        </span>{" "}
+                        {describeActivity(a, bounty)}
+                      </p>
+                      {a.meta?.notes && (
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                          “{a.meta.notes}”
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(a.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {activeSection === "chat" && currentUser && (
+            <BountyChat
+              bountyId={bounty.id}
+              active={open}
+              currentUserId={currentUser.id}
+              closed={bounty.status === "DONE"}
+            />
+          )}
         </div>
 
-        <div className="px-6 py-4 border-t flex flex-col gap-3 shrink-0 bg-muted/20">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={notifyUsers}
-              onChange={(e) => setNotifyUsers(e.target.checked)}
-            />
-            Notify assignees about this update
-          </label>
-          <div className="grid grid-cols-1 imd:flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
-              {activeSection === "assignees"
-                ? `${selectedUserIds.length} assignee${selectedUserIds.length !== 1 ? "s" : ""} selected`
-                : `Last updated: ${bounty.dateCreated ? new Date(bounty.dateCreated).toLocaleDateString() : "—"}`}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={isSaving || !title.trim() || hasAddressWarning}
-                className="gap-2 min-w-[90px]"
-              >
-                {isSaving ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Save className="h-3.5 w-3.5" />
-                )}
-                {isSaving ? "Saving…" : "Save changes"}
-              </Button>
+        {activeSection !== "chat" && (
+          <div className="px-6 py-4 border-t flex flex-col gap-3 shrink-0 bg-muted/20">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={notifyUsers}
+                onChange={(e) => setNotifyUsers(e.target.checked)}
+              />
+              Notify assignees about this update
+            </label>
+            <div className="grid grid-cols-1 imd:flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                {activeSection === "assignees"
+                  ? `${selectedUserIds.length} assignee${selectedUserIds.length !== 1 ? "s" : ""} selected`
+                  : `Last updated: ${bounty.dateCreated ? new Date(bounty.dateCreated).toLocaleDateString() : "—"}`}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onOpenChange(false)}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={isSaving || !title.trim() || hasAddressWarning}
+                  className="gap-2 min-w-[90px]"
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  {isSaving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );

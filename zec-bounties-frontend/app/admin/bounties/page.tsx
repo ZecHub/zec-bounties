@@ -30,11 +30,15 @@ import { AdminBountyModal } from "@/components/admin-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
+import { bountyMatchesQuery, parseUserSearchQuery } from "@/lib/userIdentity";
 import type { BountyStatus } from "@/lib/types";
 import { formatStatus } from "@/lib/utils";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Input } from "@/components/ui/input";
 import { WalletGuard } from "@/components/settings/wallet-guard";
+import { backendUrl } from "@/lib/configENV";
+import { profileHref } from "@/lib/profileHref";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const STATUS_DOT: Record<BountyStatus, string> = {
   TO_DO: "bg-slate-400",
@@ -92,6 +96,7 @@ export default function MarketplacePage() {
     categories,
     createCategory,
     fetchBountyById,
+    fetchBounties,
   } = useBounty();
 
   const router = useRouter();
@@ -101,6 +106,62 @@ export default function MarketplacePage() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const serverUser = parseUserSearchQuery(searchQuery).user;
+  const [people, setPeople] = useState<
+    Array<{
+      id: string;
+      name?: string | null;
+      nickname?: string | null;
+      avatar?: string | null;
+      role?: string | null;
+      discordUsername?: string | null;
+    }>
+  >([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+
+  useEffect(() => {
+    if (!fetchBounties) return;
+    const t = setTimeout(() => {
+      fetchBounties(true, serverUser ? { user: serverUser } : { user: "" });
+    }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverUser]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setPeople([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setPeopleLoading(true);
+      try {
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem("authToken")
+            : null;
+        const res = await fetch(
+          `${backendUrl}/api/users/search?q=${encodeURIComponent(q.replace(/^@/, "").replace(/^user:/i, ""))}`,
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          },
+        );
+        if (!res.ok) {
+          setPeople([]);
+          return;
+        }
+        const json = await res.json();
+        setPeople(Array.isArray(json.data) ? json.data : []);
+      } catch {
+        setPeople([]);
+      } finally {
+        setPeopleLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   const [statusFilter, setStatusFilter] = useState<BountyStatus | "all">("all");
   const [isAdminBountyModalOpen, setIsAdminBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
@@ -182,12 +243,8 @@ export default function MarketplacePage() {
     }
 
     if (searchQuery.trim()) {
-      const searchLower = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (bounty) =>
-          bounty.title.toLowerCase().includes(searchLower) ||
-          bounty.description.toLowerCase().includes(searchLower) ||
-          bounty.createdByUser?.name?.toLowerCase().includes(searchLower),
+      filtered = filtered.filter((bounty) =>
+        bountyMatchesQuery(bounty, searchQuery),
       );
     }
 
@@ -210,12 +267,8 @@ export default function MarketplacePage() {
     }
 
     if (searchQuery.trim()) {
-      const searchLower = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (bounty) =>
-          bounty.title.toLowerCase().includes(searchLower) ||
-          bounty.description.toLowerCase().includes(searchLower) ||
-          bounty.createdByUser?.name?.toLowerCase().includes(searchLower),
+      filtered = filtered.filter((bounty) =>
+        bountyMatchesQuery(bounty, searchQuery),
       );
     }
 
@@ -421,8 +474,54 @@ export default function MarketplacePage() {
               </div>
             </div>
 
+            {searchQuery.trim().length >= 2 && (
+              <div className="rounded-xl border bg-card/40 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    People
+                  </h3>
+                  <span className="text-[11px] text-muted-foreground">
+                    {peopleLoading
+                      ? "searching…"
+                      : `${people.length} match${people.length === 1 ? "" : "es"}`}
+                  </span>
+                </div>
+                {people.length === 0 && !peopleLoading ? (
+                  <p className="text-sm text-muted-foreground">
+                    No profiles for “{searchQuery.trim()}”. Bounty matches are
+                    below.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {people.map((user) => (
+                      <Link
+                        key={user.id}
+                        href={profileHref(user)}
+                        className="inline-flex items-center gap-2 rounded-full border bg-background px-2.5 py-1 text-sm hover:border-primary/50 hover:bg-muted/60"
+                        title="Open profile"
+                      >
+                        <Avatar className="h-6 w-6 border">
+                          <AvatarImage src={user.avatar || undefined} />
+                          <AvatarFallback className="text-[10px]">
+                            {(user.nickname || user.name || "?").charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">
+                          {user.nickname || user.name || "User"}
+                        </span>
+                        {user.nickname && user.name && user.name !== user.nickname && (
+                          <span className="text-xs text-muted-foreground">
+                            {user.name}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div
-              className="-mx-1 mb-4 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
               {MARKETPLACE_STATUS_FILTERS.map((f) => {

@@ -21,7 +21,7 @@ const allowedOrigins = [
 ];
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (req, res) => {
   res.json({
@@ -32,12 +32,14 @@ app.get("/", (req, res) => {
 
 app.use("/auth", require("./routes/auth"));
 app.use("/api/bounties", require("./routes/bounties"));
+app.use("/api/bounties", require("./routes/bountyChat"));
 app.use("/api/transactions", require("./routes/transactions"));
 app.use("/api/zcash", require("./routes/zcash"));
 app.use("/api/teams", require("./routes/teams"));
 app.use("/api/kpis", require("./routes/kpis"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/notifications", require("./routes/notifications"));
+app.use("/api/leaderboard", require("./routes/leaderboard"));
 
 // WebSocket server
 // SECURITY FIX (S2): reject the upgrade before a socket is ever handed to

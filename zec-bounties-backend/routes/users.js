@@ -1,7 +1,8 @@
 const express = require("express");
 const prisma = require("../prisma/client");
-const { authenticate } = require("../middleware/auth");
+const { authenticate, isAdmin } = require("../middleware/auth");
 const { delCache } = require("../utils/cache");
+const { userIdentityWhere } = require("../utils/userIdentity");
 
 const router = express.Router();
 
@@ -20,6 +21,7 @@ const DEFAULT_VISIBILITY = {
   showRecentBounties: false,
   showRole: false,
   showGithub: false,
+  showDiscord: false,
 };
 
 const VISIBILITY_KEYS = Object.keys(DEFAULT_VISIBILITY);
@@ -145,9 +147,140 @@ async function loadStats(userId) {
 }
 
 /**
+ * GET /api/users/search?q=
+ * Admin typeahead. Must stay above /:idOrNickname/public.
+ */
+router.get("/search", authenticate, async (req, res) => {
+  try {
+    if (req.user?.role !== "ADMIN") {
+      return res.status(403).json({ error: "Admin only" });
+    }
+    const q = String(req.query.q || "").trim();
+    const where = userIdentityWhere(q);
+    if (!where) return res.json({ data: [] });
+
+    const data = await prisma.user.findMany({
+      where,
+      take: 20,
+      orderBy: [{ nickname: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        avatar: true,
+        role: true,
+      },
+    });
+    return res.json({ data });
+  } catch (error) {
+    console.error("Failed to search users:", error);
+    return res.status(500).json({ error: "Failed to search users" });
+  }
+});
+
+/**
  * GET /api/users/:idOrNickname/public
  * Privacy-filtered public profile. Auth optional (owner/admin see more).
  */
+
+const { resolveStaffUser, buildStaffView } = require("../utils/staffBounties");
+
+const STAFF_BOUNTY_SELECT = {
+  id: true,
+  title: true,
+  status: true,
+  chain: true,
+  bountyAmount: true,
+  isPrivate: true,
+  isPaid: true,
+  isApproved: true,
+  dateCreated: true,
+  completedAt: true,
+  paidAt: true,
+  team: { select: { name: true } },
+};
+
+function staffOffset(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+/**
+ * GET /api/users/:idOrNickname/staff-bounties?chain=MAIN|TEST&openOffset=&historyOffset=
+ * Admin only. Ignores profileVisibility. Does not return addresses, email, or github id.
+ * Name matches only when exactly one user has that name.
+ */
+router.get(
+  "/:idOrNickname/staff-bounties",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const key = decodeURIComponent(
+        String(req.params.idOrNickname || ""),
+      ).trim();
+      if (!key) return res.status(400).json({ error: "User id required" });
+
+      const chainRaw = String(req.query.chain || "MAIN").toUpperCase();
+      if (chainRaw !== "MAIN" && chainRaw !== "TEST") {
+        return res.status(400).json({ error: "chain must be MAIN or TEST" });
+      }
+
+      const resolved = await resolveStaffUser(prisma, key);
+      if (!resolved.user) {
+        return res.status(resolved.status).json({ error: resolved.error });
+      }
+      const user = resolved.user;
+
+      const chainWhere = { chain: chainRaw };
+      const [created, assigned, viaJoin, applications] = await Promise.all([
+        prisma.bounty.findMany({
+          where: { createdBy: user.id, ...chainWhere },
+          orderBy: { dateCreated: "desc" },
+          select: STAFF_BOUNTY_SELECT,
+        }),
+        prisma.bounty.findMany({
+          where: { assignee: user.id, ...chainWhere },
+          orderBy: { dateCreated: "desc" },
+          select: STAFF_BOUNTY_SELECT,
+        }),
+        prisma.bounty.findMany({
+          where: { assignees: { some: { userId: user.id } }, ...chainWhere },
+          orderBy: { dateCreated: "desc" },
+          select: STAFF_BOUNTY_SELECT,
+        }),
+        prisma.bountyApplication.findMany({
+          where: { applicantId: user.id, bounty: chainWhere },
+          orderBy: { appliedAt: "desc" },
+          select: {
+            status: true,
+            bounty: { select: STAFF_BOUNTY_SELECT },
+          },
+        }),
+      ]);
+
+      return res.json(
+        buildStaffView(
+          user,
+          chainRaw,
+          created,
+          assigned,
+          viaJoin,
+          applications,
+          {
+            openOffset: staffOffset(req.query.openOffset),
+            historyOffset: staffOffset(req.query.historyOffset),
+          },
+        ),
+      );
+    } catch (err) {
+      console.error("Staff bounty view error:", err);
+      return res.status(500).json({ error: "Failed to load staff view" });
+    }
+  },
+);
+
 router.get("/:idOrNickname/public", async (req, res) => {
   try {
     const key = decodeURIComponent(
@@ -170,6 +303,10 @@ router.get("/:idOrNickname/public", async (req, res) => {
         profileVisibility: true,
         createdAt: true,
         githubId: true,
+        discordUserId: true,
+        discordUsername: true,
+        discordGlobalName: true,
+        discordConnectedAt: true,
         UA_address: true,
         z_address: true,
         teamMembers: {
@@ -208,8 +345,11 @@ router.get("/:idOrNickname/public", async (req, res) => {
     }
 
     const visibility = mergeVisibility(user.profileVisibility);
+    // Admins see everything by default (human verification).
+    // Owners keep the public view unless they explicitly ask for ?full=1.
     const forceFull =
-      (isOwner || isAdmin) && String(req.query.full || "") === "1";
+      (isAdmin && !isOwner) ||
+      (isOwner && String(req.query.full || "") === "1");
 
     const [stats, teams] = await Promise.all([
       loadStats(user.id),
@@ -319,6 +459,16 @@ router.get("/:idOrNickname/public", async (req, res) => {
       // profile.githubId = user.githubId;
     }
 
+    if (show("showDiscord") && user.discordUserId) {
+      profile.discord = {
+        id: user.discordUserId,
+        username: user.discordUsername || null,
+        globalName: user.discordGlobalName || null,
+        // Useful for verification, so only sent in full view
+        ...(forceFull ? { connectedAt: user.discordConnectedAt } : {}),
+      };
+    }
+
     if (show("showCompleted")) {
       profile.completed = stats.MAIN.completed;
       profile.submitted = stats.MAIN.submitted;
@@ -364,6 +514,10 @@ router.get("/:idOrNickname/public", async (req, res) => {
         stats.MAIN.recentCreated,
         show("showEarnings"),
       );
+    }
+
+    if (isAdmin && !isOwner) {
+      profile.githubId = user.githubId || null;
     }
 
     if (isOwner) {

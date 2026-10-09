@@ -2,10 +2,33 @@
 
 import { useEffect, useState } from "react";
 
-const COINGECKO_URL =
-  "https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd";
+type PriceSource = {
+  name: string;
+  url: string;
+  parse: (data: any) => number;
+};
 
-const CACHE_TTL_MS = 60_000; // CoinGecko's free tier rate-limits aggressively; 60s is a safe floor
+// Tried in order; first valid price wins.
+const PRICE_SOURCES: PriceSource[] = [
+  {
+    name: "coinbase",
+    url: "https://api.exchange.coinbase.com/products/ZEC-USD/ticker",
+    parse: (d) => parseFloat(d?.price),
+  },
+  {
+    name: "kraken",
+    url: "https://api.kraken.com/0/public/Ticker?pair=ZECUSD",
+    parse: (d) => parseFloat(Object.values<any>(d?.result ?? {})[0]?.c?.[0]),
+  },
+  {
+    name: "binance", // USDT, not true USD; blocked in some regions
+    url: "https://api.binance.com/api/v3/ticker/price?symbol=ZECUSDT",
+    parse: (d) => parseFloat(d?.price),
+  },
+];
+
+const CACHE_TTL_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 5_000;
 
 type PriceState = {
   price: number | null;
@@ -13,12 +36,28 @@ type PriceState = {
   error: string | null;
 };
 
-// Module-level cache so every card on the page shares one fetch instead of
-// each ZecToUsd instance hitting CoinGecko independently.
+// Module-level cache so every card on the page shares one fetch.
 let cachedPrice: number | null = null;
 let cachedAt = 0;
 let inFlight: Promise<number> | null = null;
 const subscribers = new Set<(price: number) => void>();
+
+async function fetchFromSources(): Promise<number> {
+  for (const source of PRICE_SOURCES) {
+    try {
+      const res = await fetch(source.url, {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) continue;
+      const price = source.parse(await res.json());
+      if (Number.isFinite(price) && price > 0) return price;
+    } catch {
+      // network/CORS/timeout: try the next source
+    }
+  }
+  throw new Error("All ZEC price sources failed");
+}
 
 async function fetchZecPrice(): Promise<number> {
   const now = Date.now();
@@ -27,23 +66,19 @@ async function fetchZecPrice(): Promise<number> {
     return cachedPrice;
   }
 
-  if (inFlight) {
-    return inFlight;
-  }
+  if (inFlight) return inFlight;
 
-  inFlight = fetch(COINGECKO_URL)
-    .then((res) => {
-      if (!res.ok) throw new Error(`CoinGecko responded ${res.status}`);
-      return res.json();
-    })
-    .then((data: { zcash?: { usd?: number } }) => {
-      const price = data?.zcash?.usd;
-      if (typeof price !== "number")
-        throw new Error("Unexpected CoinGecko response shape");
+  inFlight = fetchFromSources()
+    .then((price) => {
       cachedPrice = price;
       cachedAt = Date.now();
       subscribers.forEach((cb) => cb(price));
       return price;
+    })
+    .catch((err) => {
+      // A stale price is better than an error in the UI.
+      if (cachedPrice !== null) return cachedPrice;
+      throw err;
     })
     .finally(() => {
       inFlight = null;
@@ -52,11 +87,6 @@ async function fetchZecPrice(): Promise<number> {
   return inFlight;
 }
 
-/**
- * Returns the live ZEC→USD rate, shared and cached across all consumers.
- * Safe to call from many bounty cards on the same page without spamming
- * CoinGecko — only one network request goes out per CACHE_TTL_MS window.
- */
 export function useZecPrice(): PriceState {
   const [price, setPrice] = useState<number | null>(cachedPrice);
   const [isLoading, setIsLoading] = useState(cachedPrice === null);

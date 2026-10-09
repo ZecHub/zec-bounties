@@ -654,7 +654,7 @@ export function AdminNavbar({
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="search"
-                  placeholder="Search bounties..."
+                  placeholder="Search title or @username"
                   value={searchQuery}
                   onChange={(e) => onSearchChange(e.target.value)}
                   className="pl-8 h-9 w-full bg-muted/50 border-none focus-visible:ring-1"
@@ -850,7 +850,7 @@ export function AdminNavbar({
                       <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
                         type="search"
-                        placeholder="Search bounties..."
+                        placeholder="Search title or @username"
                         value={searchQuery}
                         onChange={(e) => onSearchChange(e.target.value)}
                         className="pl-8 h-9 w-full bg-muted/50 border-none focus-visible:ring-1"
@@ -1099,7 +1099,7 @@ export function AdminNavbar({
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search bounties..."
+                placeholder="Search title or @username"
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 className="pl-8 h-9 w-full bg-muted/50 border-none focus-visible:ring-1"

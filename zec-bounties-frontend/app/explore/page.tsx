@@ -1,12 +1,10 @@
-// app/explore/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, Search, Users, ArrowRight, Loader2 } from "lucide-react";
+import { Star, Search, Users, Loader2 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { backendUrl } from "@/lib/configENV";
@@ -164,14 +162,20 @@ function ExploreContent() {
                 return (
                   <div
                     key={team.id}
-                    className="group flex flex-col justify-between gap-4 rounded-xl border bg-card p-4 transition hover:shadow-md hover:border-primary/30"
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => router.push(`/explore/${team.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        router.push(`/explore/${team.id}`);
+                      }
+                    }}
+                    className="flex cursor-pointer flex-col justify-between gap-4 rounded-xl border bg-card p-4 transition hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/teams/${team.id}`)}
-                        className="flex min-w-0 items-center gap-3 text-left"
-                      >
+                      <div className="flex min-w-0 items-center gap-3 text-left">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted text-xs font-semibold text-muted-foreground">
                           {team.logo ? (
                             <img
@@ -193,11 +197,14 @@ function ExploreContent() {
                             {team.memberCount === 1 ? "member" : "members"}
                           </div>
                         </div>
-                      </button>
+                      </div>
 
                       <button
                         type="button"
-                        onClick={() => toggleFavoriteTeam(team.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavoriteTeam(team.id);
+                        }}
                         aria-label={
                           isFavorited
                             ? "Remove from favorites"
@@ -216,15 +223,6 @@ function ExploreContent() {
                     <p className="line-clamp-2 text-sm text-muted-foreground">
                       {team.description || "No description yet."}
                     </p>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => router.push(`/teams/${team.id}`)}
-                      className="h-8 w-fit px-2 text-xs opacity-0 transition group-hover:opacity-100"
-                    >
-                      View team <ArrowRight className="ml-1 h-3 w-3" />
-                    </Button>
                   </div>
                 );
               })}

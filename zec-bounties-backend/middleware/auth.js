@@ -2,11 +2,44 @@ const jwt = require("jsonwebtoken");
 const SECRET = process.env.JWT_SECRET;
 const prisma = require("../prisma/client");
 
-function authenticate(req, res, next) {
+const AUTH_USER_SELECT = {
+  id: true,
+  name: true,
+  nickname: true,
+  email: true,
+  role: true,
+  avatar: true,
+  z_address: true,
+  UA_address: true,
+  isRobin: true,
+  isManOfSteel: true,
+  ofacVerified: true,
+  emailNotifications: true,
+  discordUsername: true,
+};
+
+function signSessionToken(user) {
+  return jwt.sign({ id: user.id, role: user.role }, SECRET, {
+    expiresIn: "7d",
+  });
+}
+
+async function loadAuthUser(id) {
+  if (!id) return null;
+  return prisma.user.findUnique({
+    where: { id },
+    select: AUTH_USER_SELECT,
+  });
+}
+
+async function authenticate(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).send("Unauthorized");
   try {
-    req.user = jwt.verify(token, SECRET);
+    const decoded = jwt.verify(token, SECRET);
+    const user = await loadAuthUser(decoded.id);
+    if (!user) return res.status(401).send("User not found");
+    req.user = user;
     next();
   } catch {
     res.status(401).send("Invalid token");
@@ -14,7 +47,8 @@ function authenticate(req, res, next) {
 }
 
 function isAdmin(req, res, next) {
-  if (req.user.role !== "ADMIN") return res.status(403).send("Admins only");
+  if (req.user.role !== "ADMIN")
+    return res.status(403).json({ error: "Admins only" });
   next();
 }
 
@@ -32,10 +66,10 @@ const optionalAuthenticate = async (req, res, next) => {
       !!token,
     );
 
-    if (!token) return next(); // no token — proceed as anonymous
+    if (!token) return next();
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    const user = await loadAuthUser(decoded.id);
     if (user) req.user = user;
     else
       console.log(
@@ -50,4 +84,12 @@ const optionalAuthenticate = async (req, res, next) => {
   }
   next();
 };
-module.exports = { authenticate, isAdmin, optionalAuthenticate };
+
+module.exports = {
+  authenticate,
+  isAdmin,
+  optionalAuthenticate,
+  signSessionToken,
+  loadAuthUser,
+  AUTH_USER_SELECT,
+};

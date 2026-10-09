@@ -4,7 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Compass, Plus, Trophy } from "lucide-react";
+import {
+  Ban,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Plus,
+  Trophy,
+} from "lucide-react";
+import { useBounty } from "@/lib/bounty-context";
 
 interface Slide {
   id: string;
@@ -24,6 +32,8 @@ const AUTOPLAY_INTERVAL = 6000;
 
 export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
   const router = useRouter();
+  const { currentUser } = useBounty();
+  const taskCreationBlocked = currentUser?.canCreateTasks === false;
   const [active, setActive] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,14 +68,20 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
     {
       id: "create",
       eyebrow: "Have work to hand off?",
-      title: "Post a bounty in minutes",
+      title: taskCreationBlocked
+        ? "Task creation is disabled"
+        : "Post a bounty in minutes",
       description:
         "Set a reward, describe the task, and let hunters apply. Payment settles automatically once work is approved.",
       gradient: "from-chart-2/20 via-chart-2/5 to-transparent",
       cta: {
         label: "New bounty",
         onClick: onNewBounty,
-        icon: <Plus className="h-4 w-4" />,
+        icon: taskCreationBlocked ? (
+          <Ban className="h-4 w-4" />
+        ) : (
+          <Plus className="h-4 w-4" />
+        ),
       },
     },
   ];
@@ -140,7 +156,16 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
                 ) : (
                   <Button
                     onClick={() => handleCtaClick(slide)}
-                    className="rounded-full shadow-lg shadow-primary/20"
+                    title={
+                      slide.cta.onClick && taskCreationBlocked
+                        ? "An admin has disabled task creation for your account"
+                        : undefined
+                    }
+                    className={`rounded-full shadow-lg shadow-primary/20 ${
+                      slide.cta.onClick && taskCreationBlocked
+                        ? "opacity-50"
+                        : ""
+                    }`}
                   >
                     {slide.cta.icon}
                     <span className="ml-2">{slide.cta.label}</span>
