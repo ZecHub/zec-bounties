@@ -19,6 +19,45 @@ function extractJson(text) {
   return null; // incomplete JSON
 }
 
+// All complete top-level {...} blocks in the text, nesting-safe and
+// string-aware. A non-greedy regex stops at the first "}", which shears
+// nested objects (zingo-cli 6 nests "transmissions" inside the send result);
+// a plain brace counter would also miscount on a brace inside a JSON string
+// (a bounty title rides into the memo), so skip anything between quotes.
+function extractJsonBlocks(text) {
+  const blocks = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}" && depth > 0) {
+      depth--;
+      if (depth === 0) {
+        blocks.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return blocks;
+}
+
 function extractJsonAddress(text) {
   let start = text.indexOf("[");
 
@@ -178,6 +217,20 @@ class ZingoProcess {
     this.buffer = "";
     this.waiters = [];
 
+    // Commands run one at a time through this chain. The process is shared
+    // per (chain, server, dataDir) and every command reads whatever stdout
+    // arrives after it writes, so overlapping commands read each other's
+    // output — a send could settle on a `sync status` block and report a
+    // payout that never happened.
+    this.queue = Promise.resolve();
+
+    // Set when a command gave up (timeout, stderr, bad parse) while its
+    // output may still be on the way. That output would land in the next
+    // command's window, so sends refuse to run here and getZingo hands
+    // senders a fresh process.
+    this.tainted = false;
+    this.exited = false;
+
     this.proc.stdout.on("data", (data) => {
       const text = data.toString();
       this.buffer += text;
@@ -191,8 +244,32 @@ class ZingoProcess {
     });
 
     this.proc.on("exit", (code) => {
+      this.exited = true;
       console.error("Zingo exited with code", code);
     });
+
+    // A write racing the process exit surfaces as EPIPE here; without a
+    // listener it would crash the server.
+    this.proc.stdin.on("error", (err) => {
+      console.error("ZINGO STDIN:", err.message);
+    });
+  }
+
+  // Runs `command` after every earlier command on this process has settled.
+  exclusive(command) {
+    const run = this.queue.then(() => {
+      if (this.exited || this.proc.killed) {
+        throw new Error("zingo process has exited");
+      }
+      return command();
+    });
+    this.queue = run.then(
+      () => undefined,
+      () => {
+        this.tainted = true;
+      },
+    );
+    return run;
   }
 
   quit(command, timeout = 10000) {
@@ -473,68 +550,115 @@ class ZingoProcess {
     });
   }
 
-  quicksend(recipients, timeout = 10000) {
-    return new Promise((resolve, reject) => {
-      let buffer = "";
-
-      // Ensure each recipient has amount + memo
-      const sanitizedRecipients = recipients.map((r) => ({
+  // Resolves with { txids, error, timedOut, raw, stderr }. Rejects only
+  // before the command is written — nothing was sent, so the caller can
+  // release the bounties. Once written, the send may be on the network and
+  // every exit path hands back something the caller can persist:
+  //   txids non-empty -> sent
+  //   error           -> zingo reported a failure, nothing sent
+  //   neither         -> outcome unknown (timedOut says why), NOT "did not happen"
+  async quicksend(recipients, timeout = 60000) {
+    // An address rides inside the single-quoted REPL command and mutating
+    // one would redirect funds, so reject, never sanitize.
+    const sanitizedRecipients = recipients.map((r) => {
+      if (!/^[a-z0-9]+$/i.test(String(r.address))) {
+        throw new Error("Refusing to send to malformed address");
+      }
+      return {
         address: r.address,
         amount: Math.ceil(Number(r.amount)),
-        memo: r.memo || "Sent from the ZEC bounty app!",
-      }));
+        // zingo-cli splits the line with shellwords, so a quote in a memo
+        // (bounty titles end up here) cuts the argument short and the REPL
+        // answers "Mismatched Quotes". Strip rather than fail the batch.
+        memo: (r.memo || "Sent from the ZEC bounty app!").replace(/'/g, ""),
+      };
+    });
 
-      const jsonString = JSON.stringify(sanitizedRecipients);
-      const command = `quicksend '${jsonString}'`;
+    const command = `quicksend '${JSON.stringify(sanitizedRecipients)}'`;
 
-      const onData = (chunk) => {
-        buffer += chunk.toString();
+    const run = () =>
+      new Promise((resolve) => {
+        let stdoutBuf = "";
+        let stderrBuf = "";
 
-        const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
+        const cleanup = () => {
+          clearTimeout(timer);
+          this.proc.stdout.off("data", onData);
+          this.proc.stderr.off("data", onStderr);
+        };
 
-        console.log("quicksendzzy", clean);
-
-        // Extract ALL JSON blocks
-        const jsonBlocks = clean.match(/\{[\s\S]*?\}/g) || [];
-
-        if (jsonBlocks.length > 0) {
+        const settle = (outcome) => {
           cleanup();
+          resolve({ raw: stdoutBuf, stderr: stderrBuf, ...outcome });
+        };
 
-          const parsed = jsonBlocks
-            .map((block) => {
-              try {
-                return JSON.parse(block);
-              } catch {
-                return null;
-              }
-            })
-            .filter(Boolean);
+        const onData = (chunk) => {
+          stdoutBuf += chunk.toString();
+          const clean = stdoutBuf.replace(/\u001b\[[0-9;]*m/g, "");
 
-          if (parsed.length === 1) resolve(parsed[0]);
-          else resolve(parsed);
-        }
-      };
+          // zingo-cli prints one result block: {"txids":[...]} (6.x adds
+          // "transmissions") on success, {"error":...} on failure. Blocks
+          // with neither — a background sync result, say — are not ours.
+          // A txids block wins wherever it sits: wrongly reporting a failure
+          // releases the bounties for a second payment.
+          let failure = null;
+          for (const block of extractJsonBlocks(clean)) {
+            let parsed;
+            try {
+              parsed = JSON.parse(block);
+            } catch {
+              continue;
+            }
 
-      const onError = (err) => {
-        cleanup();
-        reject(err);
-      };
+            if (Array.isArray(parsed.txids) && parsed.txids.length > 0) {
+              return settle({
+                txids: parsed.txids.map(String),
+                error: null,
+                timedOut: false,
+              });
+            }
+            if (parsed.error != null && failure === null) {
+              failure =
+                typeof parsed.error === "string"
+                  ? parsed.error
+                  : JSON.stringify(parsed.error);
+            }
+          }
 
-      const cleanup = () => {
-        clearTimeout(timer);
-        this.proc.stdout.off("data", onData);
-        this.proc.stderr.off("data", onError);
-      };
+          if (failure !== null) {
+            settle({ txids: [], error: failure, timedOut: false });
+          }
+        };
 
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error("Zingo quicksend timeout"));
-      }, timeout);
+        // zingo writes progress to stderr while a send is in flight (the
+        // ironwood transmit heartbeat); keep it for diagnostics instead of
+        // failing a send that is going through.
+        const onStderr = (chunk) => {
+          stderrBuf += chunk.toString();
+        };
 
-      this.proc.stdout.on("data", onData);
-      this.proc.stderr.on("data", onError);
+        const timer = setTimeout(() => {
+          // Outcome unknown, and a late result from this send would land in
+          // the next command's window. Kill the process; getZingo spawns a
+          // clean one, and a send that did go out shows up in wallet history
+          // for POST /records/:id/resolve.
+          settle({ txids: [], error: null, timedOut: true });
+          this.destroy();
+        }, timeout);
 
-      this.proc.stdin.write(command + "\n");
+        this.proc.stdout.on("data", onData);
+        this.proc.stderr.on("data", onStderr);
+
+        this.proc.stdin.write(command + "\n");
+      });
+
+    return this.exclusive(() => {
+      if (this.tainted) {
+        throw new Error(
+          "zingo process may still be printing an earlier command's output; nothing was sent",
+        );
+      }
+      return run();
     });
   }
 
@@ -697,6 +821,25 @@ class ZingoProcess {
       this.proc.kill();
     }
   }
+}
+
+// The read commands go through the same queue as sends (quicksend queues
+// itself), so no two commands share an output window.
+for (const name of [
+  "quit",
+  "rescan",
+  "sync",
+  "addresses",
+  "balance",
+  "parseAddress",
+  "transactions",
+  "recovery_info",
+  "info",
+]) {
+  const command = ZingoProcess.prototype[name];
+  ZingoProcess.prototype[name] = function (...args) {
+    return this.exclusive(() => command.apply(this, args));
+  };
 }
 
 module.exports = ZingoProcess;
