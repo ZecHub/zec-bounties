@@ -54,6 +54,8 @@ const {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  createBountyWithQuota,
+  WeeklyBountyQuotaError,
 } = require("../utils/bountyHelpers");
 const {
   userIdentityWhere,
@@ -229,16 +231,6 @@ router.post("/", authenticate, async (req, res) => {
   try {
     if (!requireOnboarded(req, res)) return;
 
-    if (req.user.role !== "ADMIN") {
-      const quota = await getWeeklyBountyQuota(req.user.id);
-      if (quota.remaining <= 0) {
-        return res.status(429).json({
-          error: `Weekly bounty creation limit reached (${quota.limit} per week)`,
-          ...quota,
-        });
-      }
-    }
-
     const {
       title,
       description,
@@ -302,7 +294,7 @@ router.post("/", authenticate, async (req, res) => {
         ? assignee
         : null;
 
-    const bounty = await prisma.bounty.create({
+    const bounty = await createBountyWithQuota(req.user, {
       data: {
         title,
         description,
@@ -410,6 +402,9 @@ router.post("/", authenticate, async (req, res) => {
       }
     })();
   } catch (err) {
+    if (err instanceof WeeklyBountyQuotaError) {
+      return res.status(429).json({ error: err.message, ...err.quota });
+    }
     console.error(err);
     res.status(500).json({ error: "Failed to create bounty" });
   }

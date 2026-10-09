@@ -40,7 +40,8 @@ const {
   invalidateBounty,
   ONBOARDED_ROLES,
   requireOnboarded,
-  getWeeklyBountyQuota,
+  createBountyWithQuota,
+  WeeklyBountyQuotaError,
 } = require("../utils/bountyHelpers");
 
 const prisma = new PrismaClient();
@@ -751,15 +752,6 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
           .status(403)
           .json({ error: "You are not a member of this team" });
       }
-
-      // Same weekly cap as the general marketplace create route.
-      const quota = await getWeeklyBountyQuota(req.user.id);
-      if (quota.remaining <= 0) {
-        return res.status(429).json({
-          error: `Weekly bounty creation limit reached (${quota.limit} per week)`,
-          ...quota,
-        });
-      }
     }
 
     const {
@@ -782,7 +774,7 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
     const resolvedAssignee =
       canAssignOthers && assignee !== "none" ? assignee : null;
 
-    const bounty = await prisma.bounty.create({
+    const bounty = await createBountyWithQuota(req.user, {
       data: {
         title,
         description,
@@ -896,6 +888,9 @@ router.post("/:teamId/bounties", authenticate, async (req, res) => {
       }
     })();
   } catch (err) {
+    if (err instanceof WeeklyBountyQuotaError) {
+      return res.status(429).json({ error: err.message, ...err.quota });
+    }
     console.error(err);
     res.status(500).json({ error: "Failed to create bounty" });
   }
