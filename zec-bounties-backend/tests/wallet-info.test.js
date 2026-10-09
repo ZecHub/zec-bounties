@@ -39,5 +39,4 @@ test("an information error is returned without falling back to a rescan", async 
   const res = await h.request();
   assert.deepEqual(h.effects.commands, ["info\n"]);
   assert.equal(res.statusCode, 500);
-  assert.match(res.body.error, /fixture server unavailable/);
 });

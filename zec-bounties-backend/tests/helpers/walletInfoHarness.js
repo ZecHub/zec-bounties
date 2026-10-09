@@ -50,6 +50,7 @@ function createWalletInfoHarness({ defaults, failInfo = false } = {}) {
   });
   const ZingoProcess = load("utils/zingo/ZingoProcess.js", {
     child_process: { spawn: () => proc }, fs: { existsSync: () => true },
+    "./replCommand": require("../../utils/zingo/replCommand"),
   });
   const zingo = new ZingoProcess(wallet);
   const executeInfo = load("utils/zingo/zingoLibInfo.js", {
