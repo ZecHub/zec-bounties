@@ -12,22 +12,33 @@ async function sendPushNotification(subscription, notification) {
       },
       JSON.stringify(notification),
       {
-        TTL: 86400, // Time to live in seconds (1 day)
+        TTL: 86400,
         headers: {
-          Urgency: "high", // CRUCIAL FOR MOBILE: Forces the OS to wake up the service worker
+          Urgency: "high",
         },
       },
     );
 
-    return true;
+    return {
+      delivered: true,
+      removeSubscription: false,
+      statusCode: null,
+    };
   } catch (error) {
-    console.error("Push notification failed:", error);
+    const statusCode = error?.statusCode ?? null;
+    const removeSubscription = statusCode === 404 || statusCode === 410;
 
-    // If it's a transient server error (like 500 or 429), return true so we DON'T delete the subscription
-    if (error.statusCode === 410 || error.statusCode === 404) {
-      return false;
-    }
-    return true;
+    console.error("Push notification failed:", {
+      statusCode,
+      endpoint: subscription.endpoint?.slice(0, 80),
+      message: error?.message,
+    });
+
+    return {
+      delivered: false,
+      removeSubscription,
+      statusCode,
+    };
   }
 }
 
