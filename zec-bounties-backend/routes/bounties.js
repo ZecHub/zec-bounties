@@ -2586,10 +2586,10 @@ router.put("/:id", authenticate, async (req, res) => {
       },
       include: {
         assignees: {
-          assigneeUser: { select: USER_SELECT_FULL },
-          createdByUser: { select: USER_SELECT_WITH_ROLE },
           include: { user: { select: USER_SELECT_FULL } },
         },
+        assigneeUser: { select: USER_SELECT_FULL },
+        createdByUser: { select: USER_SELECT_WITH_ROLE },
         team: { select: { id: true, name: true, logo: true } },
       },
     });
