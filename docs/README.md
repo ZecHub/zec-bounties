@@ -13,6 +13,7 @@ Markdown mirrors of the in-app docs at [https://bounties.zechub.wiki/docs](https
 | Creators | [creators.md](creators.md) |
 | Bounty amounts | [bounty-amounts.md](bounty-amounts.md) |
 | Privacy & payments | [privacy-payments.md](privacy-payments.md) |
+| API | [api.md](api.md) |
 | Badges | [badges.md](badges.md) |
 | FAQ | [faq.md](faq.md) |
 

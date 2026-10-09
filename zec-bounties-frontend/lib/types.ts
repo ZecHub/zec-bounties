@@ -23,6 +23,7 @@ export interface User {
   badges?: string[];
   discordUsername?: string;
   discordGlobalName?: string;
+  canCreateTasks?: boolean;
 }
 
 /** Privacy-first profile visibility. Missing keys treated as false except avatar/displayName. */
@@ -40,6 +41,7 @@ export interface ProfileVisibility {
   showRecentBounties?: boolean;
   showRole?: boolean;
   showGithub?: boolean;
+  showDiscord?: boolean;
 }
 
 export type ProfileChain = "MAIN" | "TEST";
@@ -78,6 +80,12 @@ export interface PublicUserProfile {
   statsByChain?: Record<ProfileChain, ProfileChainStats>;
   memberSince?: string | Date;
   githubId?: string;
+  discord?: {
+    id: string;
+    username: string | null;
+    globalName: string | null;
+    connectedAt?: string | null;
+  };
   githubUsername?: string;
   completed?: number;
   submitted?: number;
@@ -146,7 +154,6 @@ export interface Bounty {
   isPaid: boolean;
   isPrivate: boolean;
   paymentAuthorized: boolean;
-  paymentScheduled?: PaymentSchedule;
   paymentBatchId?: string;
   paidAt?: Date;
   paymentTxId?: string;
@@ -226,11 +233,6 @@ export interface ZcashParams {
     nickname?: string;
     email: string;
   };
-}
-
-export interface PaymentSchedule {
-  type: "instant" | "sunday_batch";
-  scheduledFor?: Date;
 }
 
 export interface WorkSubmission {
@@ -453,4 +455,27 @@ export interface SyncStatus {
   total_blocks_scanned: number;
   total_orchard_outputs_scanned: number;
   total_sapling_outputs_scanned: number;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  nickname: string | null;
+  avatar: string | null;
+  earned: number;
+  completed: number;
+  points: number;
+  rank: number;
+  badges?: string[];
+  role: UserRole;
+}
+
+export interface BountyActivity {
+  id: string;
+  bountyId: string;
+  actorId: string | null;
+  actor: Pick<User, "id" | "name" | "nickname" | "avatar"> | null;
+  type: string;
+  meta: Record<string, any> | null;
+  createdAt: string;
 }

@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
-import { Loader2, Plus, Clock, Tag, AlignLeft } from "lucide-react";
+import { Loader2, Plus, Clock, Tag, AlignLeft, Ban } from "lucide-react";
 import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
@@ -68,27 +68,35 @@ export function NewBountyModal({
   const [errorSummary, setErrorSummary] = useState("");
   const openerRef = useRef<HTMLElement | null>(null);
   const clearFieldError = (field: keyof FieldErrors) => {
-  setFieldErrors((prev) => {
-    if (!prev[field]) return prev;
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
 
-    const next = { ...prev };
-    delete next[field];
-    return next;
-  });
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
 
-  setErrorSummary("");
+    setErrorSummary("");
   };
 
   useEffect(() => {
-  if (open) fetchBountyQuota();
+    if (open) fetchBountyQuota();
   }, [open]);
 
   const isAdmin = currentUser?.role === "ADMIN";
+  const blocked = currentUser?.canCreateTasks === false;
   const atLimit =
-  !isAdmin && bountyQuota?.remaining !== null && bountyQuota?.remaining === 0;
+    !isAdmin && bountyQuota?.remaining !== null && bountyQuota?.remaining === 0;
 
-    const validateForm = () => {
+  const validateForm = () => {
     const nextErrors: FieldErrors = {};
+
+    if (blocked) {
+      toast.error("Task creation disabled", {
+        description: "An admin has blocked your account from creating tasks.",
+      });
+      return false;
+    }
 
     if (atLimit) {
       toast.error("Weekly bounty limit reached", {
@@ -123,7 +131,7 @@ export function NewBountyModal({
 
     if (firstInvalid) {
       setErrorSummary(
-        "Please correct the highlighted fields before continuing."
+        "Please correct the highlighted fields before continuing.",
       );
 
       requestAnimationFrame(() => {
@@ -137,7 +145,7 @@ export function NewBountyModal({
     return true;
   };
 
-   const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) return;
@@ -209,7 +217,7 @@ export function NewBountyModal({
                 Provide the details for your technical challenge.
               </DialogDescription>
             </div>
-                {!isAdmin && bountyQuota && (
+            {!isAdmin && !blocked && bountyQuota && (
               <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span
                   className={`h-2 w-2 rounded-full ${
@@ -226,17 +234,28 @@ export function NewBountyModal({
               </div>
             )}
 
-           </DialogHeader>
+            {blocked && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  An admin has blocked your account from creating tasks.
+                </span>
+              </div>
+            )}
+          </DialogHeader>
 
-              {errorSummary && (
-                <div
-                  role="alert"
-                  aria-live="assertive"
-                  className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-                >
-                  {errorSummary}
-                </div>
-              )}
+          {errorSummary && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {errorSummary}
+            </div>
+          )}
 
           <div className="grid gap-5 px-5 py-5 sam:gap-6 sam:px-6 sam:py-6">
             {/* Title */}
@@ -335,7 +354,9 @@ export function NewBountyModal({
                   }}
                   placeholder="0.00"
                   aria-invalid={Boolean(fieldErrors.reward)}
-                  aria-describedby={fieldErrors.reward ? "reward-error" : undefined}
+                  aria-describedby={
+                    fieldErrors.reward ? "reward-error" : undefined
+                  }
                   required
                   className="h-11 rounded-xl"
                 />
@@ -373,32 +394,32 @@ export function NewBountyModal({
                 Description
               </Label>
               <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }));
-                    clearFieldError("description");
-                  }}
-                  placeholder="Describe the bounty requirements, deliverables, and any specific instructions..."
-                  rows={4}
-                  className="min-h-[120px] w-full min-w-0 resize-none rounded-xl"
-                  style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
-                  aria-invalid={Boolean(fieldErrors.description)}
-                  aria-describedby={
-                    fieldErrors.description ? "description-error" : undefined
-                  }
-                  required
-                />
-                {fieldErrors.description && (
-                  <p id="description-error" className="text-sm text-destructive">
-                    {fieldErrors.description}
-                  </p>
-                )}
-                </div>
-                </div>
+                id="description"
+                value={formData.description}
+                onChange={(e) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }));
+                  clearFieldError("description");
+                }}
+                placeholder="Describe the bounty requirements, deliverables, and any specific instructions..."
+                rows={4}
+                className="min-h-[120px] w-full min-w-0 resize-none rounded-xl"
+                style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
+                aria-invalid={Boolean(fieldErrors.description)}
+                aria-describedby={
+                  fieldErrors.description ? "description-error" : undefined
+                }
+                required
+              />
+              {fieldErrors.description && (
+                <p id="description-error" className="text-sm text-destructive">
+                  {fieldErrors.description}
+                </p>
+              )}
+            </div>
+          </div>
           <DialogFooter className="flex-col-reverse gap-3 border-t border-border px-5 py-4 imd:flex-row imd:items-center imd:justify-end sam:px-6">
             {onCancel && (
               <Button
@@ -413,7 +434,7 @@ export function NewBountyModal({
             )}
             <Button
               type="submit"
-              disabled={isSubmitting || atLimit}
+              disabled={isSubmitting || atLimit || blocked}
               className="h-11 w-full rounded-xl px-6 w-auto"
             >
               {isSubmitting ? (
@@ -421,6 +442,8 @@ export function NewBountyModal({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating...
                 </>
+              ) : blocked ? (
+                "Task creation disabled"
               ) : atLimit ? (
                 "Weekly limit reached"
               ) : (

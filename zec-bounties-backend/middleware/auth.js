@@ -19,11 +19,9 @@ const AUTH_USER_SELECT = {
 };
 
 function signSessionToken(user) {
-  return jwt.sign(
-    { id: user.id, role: user.role },
-    SECRET,
-    { expiresIn: "7d" },
-  );
+  return jwt.sign({ id: user.id, role: user.role }, SECRET, {
+    expiresIn: "7d",
+  });
 }
 
 async function loadAuthUser(id) {
@@ -49,7 +47,8 @@ async function authenticate(req, res, next) {
 }
 
 function isAdmin(req, res, next) {
-  if (req.user.role !== "ADMIN") return res.status(403).send("Admins only");
+  if (req.user.role !== "ADMIN")
+    return res.status(403).json({ error: "Admins only" });
   next();
 }
 

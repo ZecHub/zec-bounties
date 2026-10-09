@@ -34,6 +34,9 @@ model User {
   discordGlobalName    String?
   discordConnectedAt   DateTime?
 
+  canCreateTasks Boolean   @default(true)
+  blockedAt      DateTime?
+
   isRobin              Boolean             @default(false)
   isManOfSteel         Boolean             @default(false)
   bio                  String?
@@ -52,6 +55,8 @@ model User {
   pushNotifications    Boolean @default(true)
   pushSubscriptions    PushSubscription[]
   favoriteTeams        TeamFavorite[]      @relation("UserFavoriteTeams")
+  bountyMessages       BountyChat[]         @relation("BountyChatSender")
+  notifications        InAppNotification[]  @relation("InAppNotificationRecipient")
   communities          CommunityMember[] @relation("UserCommunities")
   teamVerifications    TeamVerification[] @relation("TeamVerificationsByAdmin")
 
@@ -92,6 +97,8 @@ model Bounty {
   exportedAt        DateTime?
   exportedBy        String?
   discordThreadId  String?
+  messages          BountyChat[]
+  notifications     InAppNotification[]
 
 
   @@index([status])
@@ -315,6 +322,40 @@ model CommunityMember {
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
+
+model BountyChat {
+  id        String   @id @default(cuid())
+  bountyId  String
+  senderId  String
+  content   String?  @db.Text
+  imageData String?  @db.Text
+  createdAt DateTime @default(now())
+
+  bounty Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  sender User   @relation("BountyChatSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([bountyId, createdAt])
+  @@index([senderId])
+  @@map("bounty_chat_messages")
+}
+
+model InAppNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  bountyId  String?
+  type      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User    @relation("InAppNotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  bounty Bounty? @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([bountyId])
+  @@map("in_app_notifications")
+}
 
 enum UserRole {
   CLIENT

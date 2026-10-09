@@ -178,5 +178,3 @@ export default function AssignUnteamedBountiesPage() {
     </div>
   );
 }
-
-// Route this at e.g. app/admin/bounties/assign-team/page.tsx.

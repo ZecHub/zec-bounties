@@ -18,6 +18,7 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -27,3 +28,4 @@ yarn-error.log*
 next-env.d.ts
 
 .DS_Store
+.vscode

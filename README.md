@@ -15,10 +15,10 @@ Before getting started, ensure you have the following installed:
 
 - Node.js
 - npm and/or Yarn
-- Prisma
-- Zebrad
-- Zaino
-- Zingo-cli
+- PostgreSQL
+- Redis
+- Docker (optional, to run PostgreSQL and Redis; see below)
+- Zebrad, Zaino and Zingo-cli (only for Zcash wallet and payment features; not needed to run the app locally)
 
 For Zcash node setup, see the **ZecHub Developer Resources**:
 
@@ -42,31 +42,31 @@ cd zec-bounties-backend
 npm install
 ```
 
-### 3. Initialize Prisma
+### 3. Start PostgreSQL and Redis
+
+With Docker:
 
 ```bash
-npx prisma init
+docker run -d --name zb-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=zec_bounties -p 5432:5432 postgres:16-alpine
+docker run -d --name zb-redis -p 6379:6379 redis:7
 ```
 
-### 4. Generate Prisma Client
+### 4. Create your `.env`
 
 ```bash
-npx prisma generate
+cp .env.example .env
+npx web-push generate-vapid-keys
 ```
 
-### 5. Run the initial migration
+Paste the generated keys into `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, and set `JWT_SECRET`. See [Environment Variables](#environment-variables).
 
-```bash
-npx prisma migrate dev --name init
-```
-
-### 6. Push the database schema
+### 5. Create the database tables
 
 ```bash
 npx prisma db push
 ```
 
-### 7. Start the backend
+### 6. Start the backend
 
 ```bash
 npm run dev
@@ -110,38 +110,16 @@ http://localhost:3000
 
 # Environment Variables
 
-Create a `.env` file inside the backend directory (it is automatically created after running `npx prisma init`).
+`zec-bounties-backend/.env.example` lists every variable the backend reads, each with a placeholder and a one-line description, marked `[required]` or `[optional]`. Copy it to `zec-bounties-backend/.env`.
 
-Example:
+For local development you only need:
 
-```env
-USER="USER_NAME"
+- `DATABASE_URL`: PostgreSQL connection string (the example matches the Docker command above)
+- `JWT_SECRET`: any long random string
+- `PORT=9000`: matches the frontend's development backend URL in `zec-bounties-frontend/lib/configENV.ts`
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`: the backend won't start without them; generate the keys with `npx web-push generate-vapid-keys`
 
-PORT=9000
-
-DATABASE_URL="file:./dev.db" # For local setup
-JWT_SECRET="JWT_SECRET"
-
-ZCASH_RPC_USER=rpcuser
-ZCASH_RPC_PASS=rpcpassword
-ZCASH_RPC_URL=http://localhost:8232
-ZINGO_CLI=path/to/your/zingo-cli
-
-# GitHub OAuth
-GITHUB_CLIENT_ID=GITHUB_CLIENT_ID
-GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET
-
-FRONTEND_URL=http://localhost:3000
-BACKEND_URL=http://localhost:9000
-
-SMTP_USER=mail
-SMTP_PASS=password
-
-NODE_ENV=development
-DEV_EMAIL_FALLBACK=mail
-```
-
-Update these values to match your local environment.
+Everything else (GitHub and Discord login, email, Pinata uploads, Zcash wallets and payments) can keep its example value or stay blank until you work on that feature.
 
 ---
 
@@ -170,8 +148,8 @@ Backend:  http://localhost:9000
 
 ## NOTES & LIMITATIONS
 
-- Database: SQLite (dev.db) for local use (Not Production). No external DB needed initially.
-- To reset DB: delete dev.db and re-run `npx prisma db push`.
+- Database: PostgreSQL (see the Docker command in the backend setup). Redis is also required.
+- To reset the database: `docker rm -f zb-postgres`, start it again with the same `docker run` command, and re-run `npx prisma db push`.
 - Zcash integration (payments, shielded tx, etc.) requires Zebrad + Zaino running and correctly configured in .env.
   Without them, bounty creation/submission UI may work but actual ZEC transfers will fail.
 - GitHub login is used for authentication. Set up a GitHub OAuth App at https://github.com/settings/developers
@@ -184,7 +162,7 @@ Backend:  http://localhost:9000
 ## TROUBLESHOOTING
 
 - Prisma errors: Ensure you ran `npx prisma generate` after any schema changes.
-- Port conflicts: Change ports in next.config.mjs (frontend) or server.js / .env (backend) if needed.
+- Port conflicts: the backend port is `PORT` in `zec-bounties-backend/.env` (9000 by default in `.env.example`); the frontend expects it at the URL in `zec-bounties-frontend/lib/configENV.ts`. Keep the two in step.
 - Yarn issues: Delete node_modules + yarn.lock and re-run `yarn install`.
 - Missing env vars: Double-check .env file location (must be in backend root) and restart backend.
 - Zcash RPC connection refused: Confirm Zebrad is running, RPC is enabled on the URL/port in .env, and credentials match.
