@@ -217,10 +217,10 @@ export function BountyCard({
             <h3 className="text-sm font-semibold leading-snug line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors">
               {bounty.title}
             </h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed min-h-[2.25rem]">
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed min-h-[2.5rem]">
               {bounty.description}
             </p>
-            <div className="flex flex-nowrap items-center gap-1 overflow-hidden h-4">
+            <div className="flex flex-nowrap items-center gap-1 h-4">
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
                 {bounty.categoryId}
               </Badge>
@@ -234,10 +234,10 @@ export function BountyCard({
               {isSuggestedTask && (
                 <Badge
                   variant="outline"
-                  className="text-[10px] h-4 px-1.5 border-sky-500/40 text-sky-600 bg-sky-500/5 gap-1"
+                  className="text-[10px] h-4 w-4 px-0 border-sky-500/40 text-sky-600 bg-sky-500/5 justify-center"
                   title="Suggested by a hunter — no other applicants permitted"
                 >
-                  <Lock className="h-2.5 w-2.5" /> Suggested
+                  <Lock className="h-2.5 w-2.5" />
                 </Badge>
               )}
               {hasApplied && (
