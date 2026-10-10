@@ -2118,7 +2118,24 @@ router.delete(
           .status(400)
           .json({ error: "Cannot withdraw a reviewed application" });
 
-      await prisma.bountyApplication.delete({ where: { id: applicationId } });
+      const deleted = await prisma.bountyApplication.deleteMany({
+        where: {
+          id: applicationId,
+          applicantId: req.user.id,
+          status: "pending",
+        },
+      });
+      if (deleted.count === 0) {
+        const current = await prisma.bountyApplication.findUnique({
+          where: { id: applicationId },
+          select: { id: true },
+        });
+        if (!current)
+          return res.status(404).json({ error: "Application not found" });
+        return res
+          .status(400)
+          .json({ error: "Cannot withdraw a reviewed application" });
+      }
       await invalidateApplications(
         application.applicantId,
         application.bountyId,
