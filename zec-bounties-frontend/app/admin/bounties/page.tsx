@@ -196,6 +196,17 @@ export default function MarketplacePage() {
     return () => observer.disconnect();
   }, [hasMoreBounties, bountiesLoading, loadMoreBounties, viewMode]);
 
+  const defragLoadStarted = useRef(false);
+  useEffect(() => {
+    if (viewMode !== "defrag") {
+      defragLoadStarted.current = false;
+      return;
+    }
+    if (!hasMoreBounties || bountiesLoading || defragLoadStarted.current) return;
+    defragLoadStarted.current = true;
+    loadAllBounties();
+  }, [viewMode, hasMoreBounties, bountiesLoading, loadAllBounties]);
+
   const openBounty = (bounty: Bounty) => {
     setSelectedBounty(bounty);
     setIsDetailModalOpen(true);
@@ -645,7 +656,8 @@ export default function MarketplacePage() {
                           </SheetHeader>
                           <div className="mt-4 flex-1 overflow-y-auto pr-1">
                             <ul className="space-y-1">
-                              {defragBounties.map((bounty) => {
+                              {defragListOpen &&
+                                defragBounties.map((bounty) => {
                                 const color =
                                   DEFRAG_STATUS_COLORS[bounty.status] ??
                                   "bg-zinc-600";
