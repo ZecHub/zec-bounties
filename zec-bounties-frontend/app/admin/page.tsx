@@ -440,6 +440,7 @@ export default function AdminDashboard() {
     bountiesLoading,
     hasMoreBounties,
     loadMoreBounties,
+    loadAllBounties,
     updateBountyStatus,
     updateBounty,
     approveBounty,
@@ -496,6 +497,7 @@ export default function AdminDashboard() {
   const [showCancelledBounties, setShowCancelledBounties] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
+  const [loadingAll, setLoadingAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const serverUser = parseUserSearchQuery(searchQuery).user;
   const [people, setPeople] = useState<
@@ -783,6 +785,16 @@ export default function AdminDashboard() {
     setCategoryFilter("ALL");
     setRepoFilter("all");
     setShowCancelledBounties(false);
+  };
+
+  const handleShowAll = async () => {
+    if (!hasMoreBounties || loadingAll) return;
+    setLoadingAll(true);
+    try {
+      await loadAllBounties();
+    } finally {
+      setLoadingAll(false);
+    }
   };
 
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
@@ -1340,6 +1352,22 @@ export default function AdminDashboard() {
                       counts={repoCounts}
                     />
                   </div>
+                  {hasMoreBounties && (
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleShowAll}
+                        disabled={loadingAll || bountiesLoading}
+                        className="gap-2"
+                      >
+                        {(loadingAll || bountiesLoading) && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        )}
+                        Show all bounties
+                      </Button>
+                    </div>
+                  )}
                 </CardHeader>
 
                 <CardContent className="p-0">
