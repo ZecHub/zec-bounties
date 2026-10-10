@@ -37,6 +37,8 @@ import { useBounty } from "@/lib/bounty-context";
 import { Bounty, BountyActivity } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
+import { REPOS } from "@/lib/repos";
+import { RepoMenuLabel } from "@/components/repo-filter";
 import { ZecToUsd } from "../ZecToUsd";
 import { BountyChat } from "@/components/bounty-chat";
 
@@ -112,6 +114,7 @@ export function EditBountyModal({
   const [bountyAmount, setBountyAmount] = useState("");
   const [timeToComplete, setTimeToComplete] = useState("");
   const [chain, setChain] = useState<"MAIN" | "TEST">("TEST");
+  const [targetRepo, setTargetRepo] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notifyUsers, setNotifyUsers] = useState(false);
@@ -127,6 +130,7 @@ export function EditBountyModal({
         : "",
     );
     setChain(bounty.chain ?? "TEST");
+    setTargetRepo(bounty.targetRepo ?? "");
     const existingIds = bounty.assignees?.map((a) => a.userId) ?? [];
     setSelectedUserIds(existingIds);
     setAssigneeSearch("");
@@ -201,6 +205,7 @@ export function EditBountyModal({
           ? parseDateInputValue(timeToComplete)
           : undefined,
         chain,
+        targetRepo: targetRepo || null,
         notifyUsers,
         ...(assigneesChanged && { userIds: selectedUserIds }),
       } as any);
@@ -368,6 +373,27 @@ export function EditBountyModal({
                     onChange={(e) => setTimeToComplete(e.target.value)}
                   />
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-repo">Repository</Label>
+                <Select
+                  value={targetRepo || "none"}
+                  onValueChange={(value) =>
+                    setTargetRepo(value === "none" ? "" : value)
+                  }
+                >
+                  <SelectTrigger id="edit-repo" className="w-full">
+                    <SelectValue placeholder="No repository" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No repository</SelectItem>
+                    {REPOS.map((repo) => (
+                      <SelectItem key={repo.id} value={repo.id}>
+                        <RepoMenuLabel repoId={repo.id} />
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}

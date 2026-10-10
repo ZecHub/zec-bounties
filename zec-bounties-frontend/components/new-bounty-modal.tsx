@@ -28,6 +28,8 @@ import { Loader2, Plus, Clock, Tag, AlignLeft, Ban } from "lucide-react";
 import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
+import { REPOS } from "@/lib/repos";
+import { RepoMenuLabel } from "@/components/repo-filter";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -62,6 +64,7 @@ export function NewBountyModal({
     bountyAmount: 0,
     timeToComplete: new Date(),
     category: "",
+    targetRepo: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -163,6 +166,7 @@ export function NewBountyModal({
         bountyAmount: 0,
         timeToComplete: new Date(),
         category: "",
+    targetRepo: "",
       });
     } catch (error: any) {
       toast.error("Failed to create bounty", {
@@ -329,6 +333,31 @@ export function NewBountyModal({
                     {fieldErrors.category}
                   </p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="targetRepo">Repository</Label>
+                <Select
+                  value={formData.targetRepo || "none"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      targetRepo: value === "none" ? "" : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="targetRepo" className="w-full">
+                    <SelectValue placeholder="Select repository" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No repository</SelectItem>
+                    {REPOS.map((repo) => (
+                      <SelectItem key={repo.id} value={repo.id}>
+                        <RepoMenuLabel repoId={repo.id} />
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">

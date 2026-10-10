@@ -28,6 +28,19 @@ const {
   TTL,
 } = require("../utils/cache");
 const sendMail = require("../utils/sendMail");
+
+const TARGET_REPOS = new Set([
+  "namada",
+  "zechub",
+  "zechub-wiki",
+  "zec-bounties",
+]);
+
+function resolveTargetRepo(value) {
+  if (value == null || value === "") return null;
+  if (!TARGET_REPOS.has(value)) return undefined;
+  return value;
+}
 const notifyUser = require("../utils/notifyUser");
 const { notifyNewBounty } = require("../utils/discord/discordNotify");
 const { notifyAssignment } = require("../utils/discord/discordAssignWebhook");
@@ -250,7 +263,13 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
       categoryId,
       chain,
       teamId,
+      targetRepo,
     } = req.body;
+
+    const resolvedTargetRepo = resolveTargetRepo(targetRepo);
+    if (resolvedTargetRepo === undefined) {
+      return res.status(400).json({ error: "Invalid targetRepo" });
+    }
 
     // Only admins may create a pre-approved bounty. Non-admin callers'
     // isApproved value is ignored outright, mirroring the guard on PUT /:id.
@@ -315,6 +334,7 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
         categoryId,
         ...(chain && { chain }),
         ...(teamId && { teamId }),
+        ...(resolvedTargetRepo && { targetRepo: resolvedTargetRepo }),
         // Denormalized from the team at creation time — a bounty's privacy
         // always tracks its team's current privacy setting.
         isPrivate: team?.isPrivate ?? false,
@@ -2533,6 +2553,11 @@ router.put("/:id", authenticate, async (req, res) => {
           : "CANCELLED"
         : before.status;
 
+    if (req.body.targetRepo !== undefined && req.body.targetRepo !== null && req.body.targetRepo !== "" && resolveTargetRepo(req.body.targetRepo) === undefined) {
+      return res.status(400).json({ error: "Invalid targetRepo" });
+    }
+    if (req.body.targetRepo === "") req.body.targetRepo = null;
+
     const updated = await prisma.bounty.update({
       where: { id: req.params.id },
       data: {
@@ -2555,13 +2580,16 @@ router.put("/:id", authenticate, async (req, res) => {
           teamId: req.body.teamId || null,
           isPrivate: resolvedIsPrivate,
         }),
+        ...(req.body.targetRepo !== undefined && {
+          targetRepo: req.body.targetRepo,
+        }),
       },
       include: {
         assignees: {
-          assigneeUser: { select: USER_SELECT_FULL },
-          createdByUser: { select: USER_SELECT_WITH_ROLE },
           include: { user: { select: USER_SELECT_FULL } },
         },
+        assigneeUser: { select: USER_SELECT_FULL },
+        createdByUser: { select: USER_SELECT_WITH_ROLE },
         team: { select: { id: true, name: true, logo: true } },
       },
     });

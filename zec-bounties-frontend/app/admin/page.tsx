@@ -64,6 +64,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import { BountyRepoMark, RepoFilter } from "@/components/repo-filter";
+import { bountyRepo, type RepoId } from "@/lib/repos";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { BountyStatus, WorkSubmission, Bounty } from "@/lib/types";
@@ -470,6 +472,7 @@ export default function AdminDashboard() {
     BountyStatus | "ALL"
   >("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string | "ALL">("ALL");
+  const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [showAdminBountyModal, setShowAdminBountyModal] = useState(false);
@@ -575,7 +578,51 @@ export default function AdminDashboard() {
       result = result.filter((b) => bountyMatchesQuery(b, searchQuery));
     }
 
+    if (repoFilter !== "all") {
+      result = result.filter((b) =>
+        repoFilter === "untagged"
+          ? bountyRepo(b) == null
+          : bountyRepo(b) === repoFilter,
+      );
+    }
+
     return result;
+  }, [
+    chainFilteredBounties,
+    bountyStatusFilter,
+    showCancelledBounties,
+    categoryFilter,
+    searchQuery,
+    repoFilter,
+  ]);
+
+  const repoCounts = useMemo(() => {
+    let result =
+      bountyStatusFilter === "ALL"
+        ? chainFilteredBounties
+        : chainFilteredBounties.filter((b) => b.status === bountyStatusFilter);
+    if (bountyStatusFilter === "ALL" && !showCancelledBounties) {
+      result = result.filter((b) => b.status !== "CANCELLED");
+    }
+    if (categoryFilter !== "ALL") {
+      result = result.filter((b) => b.categoryId === categoryFilter);
+    }
+    if (searchQuery.trim()) {
+      result = result.filter((b) => bountyMatchesQuery(b, searchQuery));
+    }
+    const counts = {
+      namada: 0,
+      zechub: 0,
+      "zechub-wiki": 0,
+      "zec-bounties": 0,
+      untagged: 0,
+    };
+    for (const bounty of result) {
+      const repo = bountyRepo(bounty);
+      if (repo) counts[repo] += 1;
+      else counts.untagged += 1;
+    }
+    return counts;
   }, [
     chainFilteredBounties,
     bountyStatusFilter,
@@ -723,6 +770,7 @@ export default function AdminDashboard() {
   const activeFilterCount =
     (bountyStatusFilter !== "ALL" ? 1 : 0) +
     (categoryFilter !== "ALL" ? 1 : 0) +
+    (repoFilter !== "all" ? 1 : 0) +
     (showCancelledBounties ? 1 : 0);
 
   const statusCountFor = (status: BountyStatus | "ALL") =>
@@ -733,6 +781,7 @@ export default function AdminDashboard() {
   const resetFilters = () => {
     setBountyStatusFilter("ALL");
     setCategoryFilter("ALL");
+    setRepoFilter("all");
     setShowCancelledBounties(false);
   };
 
@@ -1284,6 +1333,13 @@ export default function AdminDashboard() {
                       );
                     })}
                   </div>
+                  <div className="pt-2">
+                    <RepoFilter
+                      value={repoFilter}
+                      onChange={setRepoFilter}
+                      counts={repoCounts}
+                    />
+                  </div>
                 </CardHeader>
 
                 <CardContent className="p-0">
@@ -1347,6 +1403,7 @@ export default function AdminDashboard() {
                                     {bounty.title}
                                   </p>
                                   <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <BountyRepoMark bounty={bounty} />
                                     <span className="flex items-center gap-1">
                                       <StatusDot
                                         status={bounty.status}
@@ -1682,6 +1739,7 @@ export default function AdminDashboard() {
                                       >
                                         {bounty.title}
                                       </button>
+                                      <BountyRepoMark bounty={bounty} />
                                     </div>
                                   </div>
                                 </TableCell>

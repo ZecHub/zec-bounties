@@ -170,6 +170,7 @@ export interface Bounty {
   assignees?: BountyAssignee[];
   teamId?: string | null;
   team?: { id: string; name: string; logo?: string | null } | null;
+  targetRepo?: string | null;
 }
 
 // One row per bounty per payout attempt, from /api/transactions/records.
@@ -205,6 +206,7 @@ export interface BountyFormData {
   timeToComplete: Date;
   category: string;
   chain?: "MAIN" | "TEST";
+  targetRepo?: string | null;
 }
 
 export interface ZcashParamsFormData {
