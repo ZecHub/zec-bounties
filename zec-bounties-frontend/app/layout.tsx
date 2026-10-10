@@ -15,10 +15,22 @@ const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
+  // og:image must be an absolute URL, and Next can only build one if it knows
+  // the site's own origin. Overridable, because this is the one value in the
+  // change that a maintainer may need to correct for their deployment.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://bounties.zechub.wiki"),
   title: "ZEC Bounties | Bounty Platform",
   description:
     "ZEC Bounties is a privacy-first bounty platform for the Zcash cryptocurrency (ZEC). Zcash is a digital currency providing censorship-resistant, secure, and private payments. ZEC Bounties enables bug bounties, community rewards, development incentives, and contributor programs designed to support innovation and growth across the Zcash ecosystem. It is a great way to earn Zcash (ZEC)",
   manifest: "/manifest.json",
+  // Feed autodiscovery: readers and bots look for these rather than guessing.
+  alternates: {
+    types: {
+      "application/rss+xml": [{ url: "/feed.xml", title: "ZEC Bounties - open bounties" }],
+      "application/atom+xml": [{ url: "/atom.xml", title: "ZEC Bounties - open bounties" }],
+      "application/feed+json": [{ url: "/feed.json", title: "ZEC Bounties - open bounties" }],
+    },
+  },
 };
 
 export default function RootLayout({

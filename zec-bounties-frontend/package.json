@@ -9,7 +9,8 @@
     "start": "next start",
     "test:a11y": "playwright test tests/accessibility",
     "test:a11y:headed": "playwright test tests/accessibility --headed",
-    "test:pagination": "playwright test --config playwright.pagination.config.ts"
+    "test:pagination": "playwright test --config playwright.pagination.config.ts",
+    "test:features": "playwright test --config playwright.features.config.ts"
   },
   "dependencies": {
     "@elemental-zcash/zaddr_wasm_parser": "^0.2.0",

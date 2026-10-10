@@ -3,6 +3,7 @@
 import type React from "react";
 
 import { useEffect, useRef, useState } from "react";
+import { DuplicateBountyWarning } from "@/components/duplicate-bounty-warning";
 import {
   Dialog,
   DialogContent,
@@ -290,6 +291,8 @@ export function NewBountyModal({
                   {fieldErrors.title}
                 </p>
               )}
+              {/* Advisory only — never blocks submission. */}
+              <DuplicateBountyWarning title={formData.title} />
             </div>
 
             {/* Category + Reward */}
