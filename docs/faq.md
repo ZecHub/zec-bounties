@@ -33,9 +33,17 @@ Not self-serve. Ask a platform admin if the account must move. Do not create a s
 
 No. Team OWNER/ADMIN only manage that team. Platform Admin is a separate role. Team verification also requires three platform admins.
 
+## How do I get my first bounty?
+
+First set a shielded UA in [Profile](https://bounties.zechub.wiki/profile). Then apply to an open bounty on the board, or suggest one with **New Bounty** and wait for an admin to approve it. New bounties are usually posted on Mondays — only suggest work that is not already listed. See [Contributors](contributors.md).
+
+## Why can't I apply to a Suggested task?
+
+A Suggested task was created by a hunter and is assigned to that hunter. It shows **Invite Only / No other applicants** with a lock, and the apply button is hidden. The bounty fund is limited, so admins approve the suggestions most useful to the community and the work goes to the hunter who proposed it. See [Task statuses](task-statuses.md).
+
 ## My work was approved but I have not been paid.
 
-Confirm the bounty is marked done / payment authorized. If it stays stuck, contact the bounty creator or ZecHub admins. Check that your registered UA is still valid.
+Payouts are batched and usually go out the Sunday after a bounty is marked Done, to the payout UA set in Profile — you have nothing else to do. Done and paid are separate steps (an admin authorizes the shielded payment and the txid is recorded) — see [Task statuses](task-statuses.md). Confirm the bounty is marked done / payment authorized. If it stays stuck, contact the bounty creator or ZecHub admins. Check that your registered UA is still valid.
 
 ## Do I need to share my seed phrase?
 

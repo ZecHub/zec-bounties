@@ -15,6 +15,7 @@ const NAV = [
   { href: "/docs/hunters", label: "Hunters" },
   { href: "/docs/teams", label: "Teams" },
   { href: "/docs/contributors", label: "Contributors" },
+  { href: "/docs/task-statuses", label: "Task statuses" },
   { href: "/docs/creators", label: "Creators" },
   { href: "/docs/bounty-amounts", label: "Bounty amounts" },
   { href: "/docs/privacy-payments", label: "Privacy & payments" },

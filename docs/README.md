@@ -10,6 +10,7 @@ Markdown mirrors of the in-app docs at [https://bounties.zechub.wiki/docs](https
 | Hunters | [hunters.md](hunters.md) |
 | Teams | [teams.md](teams.md) |
 | Contributors | [contributors.md](contributors.md) |
+| Task statuses | [task-statuses.md](task-statuses.md) |
 | Creators | [creators.md](creators.md) |
 | Bounty amounts | [bounty-amounts.md](bounty-amounts.md) |
 | Privacy & payments | [privacy-payments.md](privacy-payments.md) |
