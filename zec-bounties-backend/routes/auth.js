@@ -19,6 +19,7 @@ const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const { sendRealtimeUpdate } = require("../middleware/websocket");
+const { OtpStore } = require("../helpers/recoveryOtp");
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET;
@@ -454,8 +455,9 @@ router.patch("/update-zaddress", authenticate, async (req, res) => {
   }
 });
 
-// In-memory OTP store
-const otpStore = new Map();
+// In-memory OTP store. Codes are CSPRNG-generated, single-use, rate-limited on
+// resend and burned after too many wrong guesses (see helpers/recoveryOtp.js).
+const otpStore = new OtpStore();
 
 // Step 1: Request OTP
 router.post("/recovery/request-otp", authenticate, async (req, res) => {
@@ -475,15 +477,16 @@ router.post("/recovery/request-otp", authenticate, async (req, res) => {
         .json({ error: "No email associated with account" });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const issued = otpStore.issue(req.user.id);
 
-    otpStore.set(req.user.id, {
-      otp,
-      expiresAt,
-    });
+    if (issued.error === "cooldown") {
+      return res.status(429).json({
+        error: "An OTP was sent recently. Please wait before requesting another.",
+        retryAfterMs: issued.retryAfterMs,
+      });
+    }
 
-    await sendRecoveryOtpEmail(user.email, user.name, otp);
+    await sendRecoveryOtpEmail(user.email, user.name, issued.otp);
 
     res.json({
       message: "OTP sent",
@@ -505,30 +508,31 @@ router.post("/recovery/verify-otp", authenticate, async (req, res) => {
     });
   }
 
-  const record = otpStore.get(req.user.id);
+  const result = otpStore.verify(req.user.id, otp);
 
-  if (!record) {
+  if (result.status === "none") {
     return res.status(401).json({
       error: "No OTP requested. Request a new one.",
     });
   }
 
-  if (Date.now() > record.expiresAt) {
-    otpStore.delete(req.user.id);
-
+  if (result.status === "expired") {
     return res.status(401).json({
       error: "OTP expired. Request a new one.",
     });
   }
 
-  if (record.otp !== otp) {
+  if (result.status === "locked") {
+    return res.status(401).json({
+      error: "Too many incorrect attempts. Request a new one.",
+    });
+  }
+
+  if (result.status === "incorrect") {
     return res.status(401).json({
       error: "Incorrect OTP",
     });
   }
-
-  // Valid — consume immediately
-  otpStore.delete(req.user.id);
 
   try {
     // Find the wallet params belonging to this user.
