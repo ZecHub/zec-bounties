@@ -92,6 +92,7 @@ import { ProfileLink } from "@/components/profile-link";
 import { profileHref } from "@/lib/profileHref";
 import { backendUrl } from "@/lib/configENV";
 import Link from "next/link";
+import { parseLinks } from "@/lib/links";
 
 /* ------------------------------------------------------------------ */
 /* Status metadata — single source of truth (kills the repeated ternaries) */
@@ -260,12 +261,12 @@ function BountyActionsMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-         variant="ghost"
-         size="icon"
-         className={triggerClassName}
-         aria-label={`Actions for ${bounty.title}`}
-         >
-         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          variant="ghost"
+          size="icon"
+          className={triggerClassName}
+          aria-label={`Actions for ${bounty.title}`}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -473,7 +474,9 @@ export default function AdminDashboard() {
     BountyStatus | "ALL"
   >("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string | "ALL">("ALL");
-  const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">("all");
+  const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">(
+    "all",
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [showAdminBountyModal, setShowAdminBountyModal] = useState(false);
@@ -521,7 +524,10 @@ export default function AdminDashboard() {
     if (!fetchBounties) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
-      await fetchBounties(true, serverUser ? { user: serverUser } : { user: "" });
+      await fetchBounties(
+        true,
+        serverUser ? { user: serverUser } : { user: "" },
+      );
       if (cancelled || !serverUser) return;
       await loadAllBounties();
     }, 250);
@@ -580,11 +586,7 @@ export default function AdminDashboard() {
     // User search already filtered by involvement server-side. Keep cancelled
     // and skip the title/description re-filter so the admin table matches the
     // full involvement set.
-    if (
-      bountyStatusFilter === "ALL" &&
-      !showCancelledBounties &&
-      !serverUser
-    ) {
+    if (bountyStatusFilter === "ALL" && !showCancelledBounties && !serverUser) {
       result = result.filter((b) => b.status !== "CANCELLED");
     }
 
@@ -619,11 +621,7 @@ export default function AdminDashboard() {
       bountyStatusFilter === "ALL"
         ? chainFilteredBounties
         : chainFilteredBounties.filter((b) => b.status === bountyStatusFilter);
-    if (
-      bountyStatusFilter === "ALL" &&
-      !showCancelledBounties &&
-      !serverUser
-    ) {
+    if (bountyStatusFilter === "ALL" && !showCancelledBounties && !serverUser) {
       result = result.filter((b) => b.status !== "CANCELLED");
     }
     if (categoryFilter !== "ALL") {
@@ -1752,31 +1750,32 @@ export default function AdminDashboard() {
                                       user={bounty.createdByUser}
                                       className="inline-flex"
                                     >
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Avatar className="h-7 w-7 flex-shrink-0 border">
-                                            <AvatarImage
-                                              src={
-                                                bounty.createdByUser?.avatar ||
-                                                "/placeholder-user.jpg"
-                                              }
-                                            />
-                                            <AvatarFallback>
-                                              {
-                                                displayName(
-                                                  bounty.createdByUser,
-                                                )[0]
-                                              }
-                                            </AvatarFallback>
-                                          </Avatar>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          Created by{" "}
-                                          {displayName(bounty.createdByUser)}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Avatar className="h-7 w-7 flex-shrink-0 border">
+                                              <AvatarImage
+                                                src={
+                                                  bounty.createdByUser
+                                                    ?.avatar ||
+                                                  "/placeholder-user.jpg"
+                                                }
+                                              />
+                                              <AvatarFallback>
+                                                {
+                                                  displayName(
+                                                    bounty.createdByUser,
+                                                  )[0]
+                                                }
+                                              </AvatarFallback>
+                                            </Avatar>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            Created by{" "}
+                                            {displayName(bounty.createdByUser)}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                     </ProfileLink>
                                     <div className="min-w-0 flex-1">
                                       {/* Clicking the title opens the edit
@@ -2377,17 +2376,18 @@ export default function AdminDashboard() {
                       {submission.description}
                     </p>
 
-                    {submission.deliverableUrl && (
+                    {parseLinks(submission.deliverableUrl).map((link) => (
                       <a
-                        href={submission.deliverableUrl}
+                        key={link}
+                        href={link}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-[14px] flex items-center gap-1.5 break-all pl-[42px] text-xs text-blue-600 hover:underline dark:text-blue-400"
                       >
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        {submission.deliverableUrl}
+                        {link}
                       </a>
-                    )}
+                    ))}
 
                     {submission.reviewNotes && (
                       <div className="ml-[14px] rounded border border-yellow-200 bg-yellow-50 p-2.5 pl-[42px] text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
