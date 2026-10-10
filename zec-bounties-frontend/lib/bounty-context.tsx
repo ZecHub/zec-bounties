@@ -2521,9 +2521,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               );
               patchTeamBounty(msg.payload);
             } else {
+              // Bulk payout (bountyIds + txids) or a team payout ({ teamId }).
               fetchBounties();
               fetchPaymentRecords();
               fetchBalance();
+              // A team payout must also refresh that team's payment records.
+              if (msg.payload.teamId) {
+                fetchTeamPaymentRecords(msg.payload.teamId);
+              }
             }
             break;
 
@@ -2804,17 +2809,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             fetchBounties();
             if (teamBountiesPageRef.current[msg.payload.teamId]) {
               fetchTeamBounties(msg.payload.teamId);
-            }
-            break;
-
-          case "payment_authorized":
-            if (msg.payload.id) {
-              setBounties((prev) =>
-                prev.map((b) => (b.id === msg.payload.id ? msg.payload : b)),
-              );
-            } else if (msg.payload.teamId) {
-              fetchBounties();
-              fetchTeamPaymentRecords(msg.payload.teamId);
             }
             break;
 
