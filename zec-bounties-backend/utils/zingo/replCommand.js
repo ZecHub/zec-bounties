@@ -50,7 +50,11 @@ function quicksendLine(recipients) {
       recipient.memo == null || recipient.memo === ""
         ? DEFAULT_MEMO
         : recipient.memo;
-    if (typeof memo !== "string" || memo.length > MEMO_MAX || CONTROL.test(memo)) {
+    if (
+      typeof memo !== "string" ||
+      memo.length > MEMO_MAX ||
+      CONTROL.test(memo)
+    ) {
       throw new Error("Invalid memo");
     }
     return { address: recipient.address, amount, memo };

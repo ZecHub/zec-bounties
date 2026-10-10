@@ -784,7 +784,11 @@ router.post(
         "zechub-wiki",
         "zec-bounties",
       ]);
-      if (targetRepo != null && targetRepo !== "" && !TARGET_REPOS.has(targetRepo)) {
+      if (
+        targetRepo != null &&
+        targetRepo !== "" &&
+        !TARGET_REPOS.has(targetRepo)
+      ) {
         return res.status(400).json({ error: "Invalid targetRepo" });
       }
 

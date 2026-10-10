@@ -59,6 +59,8 @@ model User {
   notifications        InAppNotification[]  @relation("InAppNotificationRecipient")
   communities          CommunityMember[] @relation("UserCommunities")
   teamVerifications    TeamVerification[] @relation("TeamVerificationsByAdmin")
+  bountyActivity    BountyActivity[]    @relation("BountyActivityActor")
+
 
 }
 
@@ -100,6 +102,7 @@ model Bounty {
   targetRepo       String?
   messages          BountyChat[]
   notifications     InAppNotification[]
+  activity          BountyActivity[]
 
 
   @@index([status])
@@ -357,6 +360,21 @@ model InAppNotification {
   @@index([userId, readAt, createdAt])
   @@index([bountyId])
   @@map("in_app_notifications")
+}
+
+model BountyActivity {
+  id        String   @id @default(cuid())
+  bountyId  String
+  actorId   String?
+  type      String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  bounty Bounty @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  actor  User?  @relation("BountyActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([bountyId, createdAt])
+  @@map("bounty_activity")
 }
 
 enum UserRole {
