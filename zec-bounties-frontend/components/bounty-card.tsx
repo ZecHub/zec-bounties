@@ -257,8 +257,8 @@ export function BountyCard({
                 </Badge>
               )}
             </div>
-            <div className="flex items-center justify-between pt-1 border-t border-border/50">
-              <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <Avatar className="h-5 w-5 border shrink-0">
                   <AvatarImage
                     src={
@@ -267,8 +267,14 @@ export function BountyCard({
                   />
                   <AvatarFallback className="text-[9px]">?</AvatarFallback>
                 </Avatar>
-                <ProfileLink user={bounty.team ? null : bounty.createdByUser}>
-                  <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
+                <ProfileLink
+                  user={bounty.team ? null : bounty.createdByUser}
+                  className="min-w-0 hover:underline hover:text-primary"
+                >
+                  <span
+                    className="block text-[10px] text-muted-foreground truncate"
+                    title={bountyCreatorName(bounty)}
+                  >
                     {bountyCreatorName(bounty)}
                   </span>
                 </ProfileLink>
