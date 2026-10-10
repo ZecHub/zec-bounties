@@ -214,10 +214,10 @@ export function BountyCard({
             </span>
           )}
           <div className="p-3 space-y-2.5">
-            <h3 className="text-sm font-semibold leading-snug line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors">
+            <h3 className="text-sm font-semibold leading-snug line-clamp-2 h-10 overflow-hidden group-hover:text-primary transition-colors">
               {bounty.title}
             </h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed min-h-[2.5rem]">
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed h-10 overflow-hidden">
               {bounty.description}
             </p>
             <div className="flex flex-nowrap items-center gap-1 h-4">
