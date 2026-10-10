@@ -32,11 +32,11 @@ async function executeZingoParseAddress(zaddress, params) {
   ];
 
   try {
-  // 1️⃣ Run CLI and capture full output
-  const { stdout: rawOutput } = await execFileAsync(zingoPath, args, {
-    encoding: "utf8",
-    timeout: PARSE_TIMEOUT_MS,
-  });
+    // 1️⃣ Run CLI and capture full output
+    const { stdout: rawOutput } = await execFileAsync(zingoPath, args, {
+      encoding: "utf8",
+      timeout: PARSE_TIMEOUT_MS,
+    });
 
     // 2️⃣ Strip ANSI color codes
     const noAnsi = rawOutput.replace(/\u001b\[[0-9;]*m/g, "");

@@ -9,7 +9,12 @@ const FORBIDDEN_STAFF_KEYS = [
   "description",
 ];
 
-const STAFF_USER_SELECT = { id: true, name: true, nickname: true, createdAt: true };
+const STAFF_USER_SELECT = {
+  id: true,
+  name: true,
+  nickname: true,
+  createdAt: true,
+};
 
 function staffBountyRow(bounty, relation, applicationStatus) {
   return {
