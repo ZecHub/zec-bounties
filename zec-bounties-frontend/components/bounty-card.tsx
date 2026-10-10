@@ -145,6 +145,17 @@ export function BountyCard({
     : isDueSoon
       ? "text-yellow-500 border-yellow-500/30 bg-yellow-500/10"
       : "text-muted-foreground border-border bg-muted/30";
+  const footerMark =
+    bounty.status === "DONE"
+      ? { label: "Done", className: "text-green-600 border-green-500/30 bg-green-500/10" }
+      : bounty.status === "CANCELLED"
+        ? { label: "Cancelled", className: "text-muted-foreground border-border bg-muted/30" }
+        : dueDateLabel
+          ? {
+              label: `${isOverdue ? "⚠ " : ""}${dueDateLabel}`,
+              className: dueDateColor,
+            }
+          : null;
 
   const isNew = isNewBounty(bounty.dateCreated);
 
@@ -257,7 +268,7 @@ export function BountyCard({
                 </Badge>
               )}
             </div>
-            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50 h-6">
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <Avatar className="h-5 w-5 border shrink-0">
                   <AvatarImage
@@ -280,12 +291,11 @@ export function BountyCard({
                 </ProfileLink>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {dueDateLabel && (
+                {footerMark && (
                   <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${dueDateColor}`}
+                    className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${footerMark.className}`}
                   >
-                    {isOverdue ? "⚠ " : ""}
-                    {dueDateLabel}
+                    {footerMark.label}
                   </span>
                 )}
                 <div className="flex items-center gap-0.5">
