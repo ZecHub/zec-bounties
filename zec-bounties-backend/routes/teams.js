@@ -2666,7 +2666,30 @@ router.post(
       const { teamId, id } = req.params;
       if (!(await requireTeamAdmin(teamId, req, res))) return;
 
-      const { outcome, txid } = req.body; // "broadcast" or "failed"
+      const { outcome, txid, confirm } = req.body;
+
+      if (outcome !== "broadcast" && outcome !== "failed") {
+        return res
+          .status(400)
+          .json({ error: 'outcome must be "broadcast" or "failed"' });
+      }
+      if (
+        outcome === "broadcast" &&
+        (typeof txid !== "string" || !/^[0-9a-f]{64}$/i.test(txid.trim()))
+      ) {
+        return res.status(400).json({
+          error:
+            "A 64-character hex txid from the wallet history is required to resolve as broadcast",
+        });
+      }
+      // "failed" re-opens the bounty for payment; if the send did go out, the
+      // next payout pays it twice. Make the caller say they checked.
+      if (outcome === "failed" && confirm !== true) {
+        return res.status(400).json({
+          error:
+            "Resolving as failed re-opens the bounty for payment. Pass confirm: true after checking the wallet history.",
+        });
+      }
 
       const record = await prisma.transaction.findUnique({
         where: { id },
@@ -2680,28 +2703,39 @@ router.post(
         return res.status(409).json({ error: "already settled" });
       }
 
-      if (outcome === "broadcast") {
-        await prisma.$transaction([
-          prisma.transaction.update({
-            where: { id: record.id },
-            data: { status: "BROADCAST", txid, settledAt: new Date() },
-          }),
-          prisma.bounty.update({
+      const settledAt = new Date();
+      const alreadySettled = new Error("already-settled");
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Compare-and-swap on UNKNOWN, so two admins resolving the same
+          // record can't both apply (one paying, one re-opening).
+          const { count } = await tx.transaction.updateMany({
+            where: { id: record.id, status: "UNKNOWN" },
+            data:
+              outcome === "broadcast"
+                ? {
+                    status: "BROADCAST",
+                    txid: txid.trim().toLowerCase(),
+                    settledAt,
+                  }
+                : { status: "FAILED", settledAt },
+          });
+          if (count !== 1) throw alreadySettled;
+
+          await tx.bounty.update({
             where: { id: record.bountyId },
-            data: { isPaid: true, paymentInFlight: false, paidAt: new Date() },
-          }),
-        ]);
-      } else {
-        await prisma.$transaction([
-          prisma.transaction.update({
-            where: { id: record.id },
-            data: { status: "FAILED", settledAt: new Date() },
-          }),
-          prisma.bounty.update({
-            where: { id: record.bountyId },
-            data: { paymentInFlight: false },
-          }),
-        ]);
+            data:
+              outcome === "broadcast"
+                ? { isPaid: true, paymentInFlight: false, paidAt: settledAt }
+                : { paymentInFlight: false },
+          });
+        });
+      } catch (err) {
+        if (err !== alreadySettled) throw err;
+        return res
+          .status(409)
+          .json({ error: "Record was settled by another request; refresh" });
       }
 
       await invalidateBounty(record.bountyId);
