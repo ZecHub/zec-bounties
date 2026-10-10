@@ -214,7 +214,6 @@ class ZingoProcess {
 
       const onData = (chunk) => {
         buffer += chunk.toString();
-        console.log("Quit output chunk:", buffer);
       };
 
       const onError = (chunk) => {
@@ -257,7 +256,6 @@ class ZingoProcess {
       const onData = (chunk) => {
         buffer += chunk.toString();
         const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
-        console.log("rescan output chunk:", clean);
 
         // Check if "Launching rescan..." appeared
         if (clean.includes("Launching rescan...") && !resolved) {
@@ -300,7 +298,6 @@ class ZingoProcess {
 
       const check = () => {
         const chunk = this.buffer.slice(startBufferLen);
-        console.log("chunk", chunk);
 
         // Remove ANSI
         const clean = chunk.replace(/\u001b\[[0-9;]*m/g, "");
@@ -346,13 +343,11 @@ class ZingoProcess {
 
       const check = () => {
         const chunk = this.buffer.slice(startBufferLen);
-        console.log("chunk", chunk);
 
         // Remove ANSI
         const clean = chunk.replace(/\u001b\[[0-9;]*m/g, "");
 
         const jsonText = extractJsonAddress(clean);
-        console.log("json", jsonText);
         if (jsonText) {
           try {
             resolve(JSON.parse(jsonText));
@@ -494,8 +489,6 @@ class ZingoProcess {
 
         const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
 
-        console.log("quicksendzzy", clean);
-
         // Extract ALL JSON blocks
         const jsonBlocks = clean.match(/\{[\s\S]*?\}/g) || [];
 
@@ -549,7 +542,6 @@ class ZingoProcess {
         buffer += chunk.toString();
 
         const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
-        console.log("transactions chunk:", clean);
 
         const blocks = clean.match(/\{\n[\s\S]*?\n\}/g) || [];
 
@@ -602,8 +594,6 @@ class ZingoProcess {
         buffer += chunk.toString();
 
         const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
-
-        console.log("recovery_info chunk:", clean);
 
         const parsed = parseRecoveryInfo(clean);
 
@@ -666,8 +656,6 @@ class ZingoProcess {
 
       const onData = (chunk) => {
         buffer += chunk.toString();
-
-        console.log("info chunk:", chunk.toString());
 
         const parsed = tryParseJSON(buffer);
 
