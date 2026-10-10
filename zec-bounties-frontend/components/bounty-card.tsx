@@ -214,13 +214,13 @@ export function BountyCard({
             </span>
           )}
           <div className="p-3 space-y-2.5">
-            <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+            <h3 className="text-sm font-semibold leading-snug line-clamp-2 min-h-[2.5rem] group-hover:text-primary transition-colors">
               {bounty.title}
             </h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed min-h-[2.25rem]">
               {bounty.description}
             </p>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-nowrap items-center gap-1 overflow-hidden h-4">
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
                 {bounty.categoryId}
               </Badge>
