@@ -88,6 +88,10 @@ import {
 import { ExportCompletedModal } from "@/components/payments/export-completed-modal";
 import { displayName } from "@/lib/displayName";
 import { bountyMatchesQuery, parseUserSearchQuery } from "@/lib/userIdentity";
+import {
+  StaffViewCard,
+  type StaffBountyView,
+} from "@/components/profile/staff-view-card";
 import { ProfileLink } from "@/components/profile-link";
 import { profileHref } from "@/lib/profileHref";
 import { backendUrl } from "@/lib/configENV";
@@ -511,17 +515,91 @@ export default function AdminDashboard() {
     }>
   >([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
+  const [staffSearch, setStaffSearch] = useState<StaffBountyView | null>(null);
+  const [staffSearchLoading, setStaffSearchLoading] = useState(false);
+  const [staffSearchError, setStaffSearchError] = useState<string | null>(null);
+  const [staffOpenOffset, setStaffOpenOffset] = useState(0);
+  const [staffHistoryOffset, setStaffHistoryOffset] = useState(0);
   const [groupByAssignee, setGroupByAssignee] = useState(false);
   const [groupByWeek, setGroupByWeek] = useState(true);
 
+  // User search uses the staff-bounties endpoint (same source as the user-page staff view).
   useEffect(() => {
-    if (!fetchBounties) return;
-    const timer = setTimeout(() => {
-      fetchBounties(true, serverUser ? { user: serverUser } : { user: "" });
-    }, 250);
-    return () => clearTimeout(timer);
+    if (!serverUser) {
+      setStaffSearch(null);
+      setStaffSearchError(null);
+      setStaffSearchLoading(false);
+      setStaffOpenOffset(0);
+      setStaffHistoryOffset(0);
+      if (fetchBounties) fetchBounties(true, { user: "" });
+      return;
+    }
+
+    let cancelled = false;
+    setStaffSearchLoading(true);
+    setStaffSearchError(null);
+
+    const load = async () => {
+      try {
+        const token = localStorage.getItem("authToken");
+        if (!token) throw new Error("Admin session required");
+        const params = new URLSearchParams({ chain: chainFilter });
+        if (staffOpenOffset) params.set("openOffset", String(staffOpenOffset));
+        if (staffHistoryOffset) params.set("historyOffset", String(staffHistoryOffset));
+        const res = await fetch(
+          `${backendUrl}/api/users/${encodeURIComponent(serverUser)}/staff-bounties?${params}`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
+        );
+        if (res.status === 401 || res.status === 403) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Staff view is admin only");
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Failed to load staff view");
+        }
+        const data = (await res.json()) as StaffBountyView;
+        if (!cancelled) {
+          setStaffSearch((prev) => {
+            const same =
+              prev?.userId === data.userId && prev?.chain === data.chain;
+            if (!same || (!staffOpenOffset && !staffHistoryOffset)) return data;
+            return {
+              ...data,
+              open: staffOpenOffset ? [...prev.open, ...data.open] : data.open,
+              history: staffHistoryOffset
+                ? [...prev.history, ...data.history]
+                : data.history,
+            };
+          });
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setStaffSearch(null);
+          setStaffSearchError(e.message || "Failed to load staff view");
+        }
+      } finally {
+        if (!cancelled) setStaffSearchLoading(false);
+      }
+    };
+
+    const timer = setTimeout(load, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverUser]);
+  }, [serverUser, chainFilter, staffOpenOffset, staffHistoryOffset]);
+
+  const loadMoreStaff = (which: "open" | "history") => {
+    if (!staffSearch) return;
+    if (which === "open" && staffSearch.openNextOffset != null) {
+      setStaffOpenOffset(staffSearch.openNextOffset);
+    }
+    if (which === "history" && staffSearch.historyNextOffset != null) {
+      setStaffHistoryOffset(staffSearch.historyNextOffset);
+    }
+  };
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -1225,7 +1303,21 @@ export default function AdminDashboard() {
                 />
               </div>
 
+              {serverUser && (
+                <div className="mt-6">
+                  <StaffViewCard
+                    chain={chainFilter}
+                    loading={staffSearchLoading}
+                    error={staffSearchError}
+                    data={staffSearch}
+                    onLoadMoreOpen={() => loadMoreStaff("open")}
+                    onLoadMoreHistory={() => loadMoreStaff("history")}
+                  />
+                </div>
+              )}
+
               {/* ---------------- Bounties workspace ---------------- */}
+              {!serverUser && (
               <Card className="mt-6 overflow-hidden border-muted bg-card/50 gap-0">
                 <CardHeader className="gap-4 border-b p-4 sm:p-5">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1961,6 +2053,7 @@ export default function AdminDashboard() {
                   )}
                 </CardContent>
               </Card>
+              )}
             </>
           )}
 
