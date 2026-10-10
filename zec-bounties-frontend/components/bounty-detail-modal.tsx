@@ -1,6 +1,6 @@
-import { getErrorMessage } from "../lib/errors";
 "use client";
 
+import { getErrorMessage } from "@/lib/errors";
 import { Bounty, WorkSubmission, User } from "@/lib/types";
 import {
   Dialog,
@@ -202,7 +202,7 @@ export function BountyDetailModal({
           url,
         });
         return;
-      } catch (error) {
+      } catch (err) {
         if ((err as Error).name === "AbortError") return;
         // fall through to clipboard on other errors
       }
@@ -214,7 +214,7 @@ export function BountyDetailModal({
       toast.success("Link copied to clipboard");
       setTimeout(() => setLinkCopied(false), 2000);
     } catch {
-      toast.error(getErrorMessage(error, "Couldn't copy link"));
+      toast.error("Couldn't copy link");
     }
   };
 

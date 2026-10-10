@@ -1,6 +1,6 @@
-import { getErrorMessage } from "../../lib/errors";
 "use client";
 
+import { getErrorMessage } from "@/lib/errors";
 import { Bounty, WorkSubmission, User } from "@/lib/types";
 import {
   Dialog,
