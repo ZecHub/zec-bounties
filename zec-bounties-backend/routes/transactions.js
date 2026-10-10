@@ -16,20 +16,13 @@ const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo
 const executeZingoCliQuit = require("../utils/zingo/zingoLibQuit.js");
 const executeZingoCliBalance = require("../utils/zingo/zingoLibBalance.js");
 const { resolvePayingWallet } = require("../helpers/zcash/resolvePayingWallet");
-const { delCache, deleteCacheByPattern } = require("../utils/cache");
+const { invalidateBounty } = require("../utils/bountyHelpers");
 const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 const { randomUUID } = require("crypto");
 
 const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
 
 const path = require("path");
-
-const invalidateBounty = async (bountyId) => {
-  await Promise.all([
-    delCache(`bounty:${bountyId}`),
-    deleteCacheByPattern("bounties:*"),
-  ]);
-};
 
 // BigInt doesn't survive res.json; total ZEC supply in zatoshis still fits a
 // double, so Number is safe for amounts.
