@@ -47,6 +47,8 @@ import {
 } from "@/lib/displayName";
 import { ProfileLink } from "@/components/profile-link";
 import { BountyRepoMark } from "@/components/repo-filter";
+import { LinkListInput } from "@/components/link-list-input";
+import { joinLinks, parseLinks } from "@/lib/links";
 
 function isNewBounty(dateCreated: Date | string): boolean {
   const created = new Date(dateCreated);
@@ -77,7 +79,7 @@ export function BountyCard({
 
   const [isSubmissionDialogOpen, setIsSubmissionDialogOpen] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
-  const [deliverableUrl, setDeliverableUrl] = useState("");
+  const [deliverableUrls, setDeliverableUrls] = useState<string[]>([""]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const userApplication = currentUser
@@ -147,9 +149,15 @@ export function BountyCard({
       : "text-muted-foreground border-border bg-muted/30";
   const footerMark =
     bounty.status === "DONE"
-      ? { label: "Done", className: "text-green-600 border-green-500/30 bg-green-500/10" }
+      ? {
+          label: "Done",
+          className: "text-green-600 border-green-500/30 bg-green-500/10",
+        }
       : bounty.status === "CANCELLED"
-        ? { label: "Cancelled", className: "text-muted-foreground border-border bg-muted/30" }
+        ? {
+            label: "Cancelled",
+            className: "text-muted-foreground border-border bg-muted/30",
+          }
         : dueDateLabel
           ? {
               label: `${isOverdue ? "⚠ " : ""}${dueDateLabel}`,
@@ -183,9 +191,16 @@ export function BountyCard({
       });
       return;
     }
-    if (!deliverableUrl.trim()) {
+    const joinedUrls = joinLinks(deliverableUrls);
+    if (!joinedUrls) {
       toast.error("Deliverable URL required", {
-        description: "Please provide a link to your work.",
+        description: "Please provide at least one link to your work.",
+      });
+      return;
+    }
+    if (parseLinks(joinedUrls).some((l) => !/^https?:\/\//i.test(l))) {
+      toast.error("Invalid link", {
+        description: "Each link must start with http:// or https://",
       });
       return;
     }
@@ -193,11 +208,11 @@ export function BountyCard({
     try {
       await submitWork(bounty.id, {
         description: submissionDescription,
-        deliverableUrl,
+        deliverableUrl: joinedUrls,
       });
       toast.success("Work submitted successfully!");
       setSubmissionDescription("");
-      setDeliverableUrl("");
+      setDeliverableUrls([""]);
       setIsSubmissionDialogOpen(false);
     } catch (error: any) {
       toast.error("Failed to submit work", { description: error?.message });
@@ -353,14 +368,12 @@ export function BountyCard({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="deliverable-url">
-                  Deliverable URL <span className="text-red-500">*</span>
+                  Deliverable URLs <span className="text-red-500">*</span>
                 </Label>
-                <Input
+                <LinkListInput
                   id="deliverable-url"
-                  type="url"
-                  placeholder="https://github.com/username/repo"
-                  value={deliverableUrl}
-                  onChange={(e) => setDeliverableUrl(e.target.value)}
+                  values={deliverableUrls}
+                  onChange={setDeliverableUrls}
                 />
               </div>
               <div className="flex justify-end gap-2 pt-4">
@@ -369,7 +382,7 @@ export function BountyCard({
                   onClick={() => {
                     setIsSubmissionDialogOpen(false);
                     setSubmissionDescription("");
-                    setDeliverableUrl("");
+                    setDeliverableUrls([""]);
                   }}
                   disabled={isSubmitting}
                 >
@@ -379,7 +392,7 @@ export function BountyCard({
                   onClick={handleSubmitWork}
                   disabled={
                     !submissionDescription.trim() ||
-                    !deliverableUrl.trim() ||
+                    !joinLinks(deliverableUrls) ||
                     isSubmitting
                   }
                   className="bg-green-600 hover:bg-green-700 text-white"
@@ -468,9 +481,7 @@ export function BountyCard({
                 <div className="flex items-center gap-1">
                   {bounty.assignees.slice(0, 3).map((a) => (
                     <ProfileLink key={a.userId} user={a.user}>
-                      <Avatar
-                        className="h-5 w-5 border -ml-1 first:ml-0"
-                      >
+                      <Avatar className="h-5 w-5 border -ml-1 first:ml-0">
                         <AvatarImage
                           src={a.user?.avatar || "/placeholder-user.jpg"}
                         />
@@ -594,14 +605,12 @@ export function BountyCard({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="deliverable-url">
-                  Deliverable URL <span className="text-red-500">*</span>
+                  Deliverable URLs <span className="text-red-500">*</span>
                 </Label>
-                <Input
+                <LinkListInput
                   id="deliverable-url"
-                  type="url"
-                  placeholder="https://github.com/username/repo"
-                  value={deliverableUrl}
-                  onChange={(e) => setDeliverableUrl(e.target.value)}
+                  values={deliverableUrls}
+                  onChange={setDeliverableUrls}
                 />
               </div>
               <div className="flex justify-end gap-2 pt-4">
@@ -610,7 +619,7 @@ export function BountyCard({
                   onClick={() => {
                     setIsSubmissionDialogOpen(false);
                     setSubmissionDescription("");
-                    setDeliverableUrl("");
+                    setDeliverableUrls([""]);
                   }}
                   disabled={isSubmitting}
                 >
@@ -620,7 +629,7 @@ export function BountyCard({
                   onClick={handleSubmitWork}
                   disabled={
                     !submissionDescription.trim() ||
-                    !deliverableUrl.trim() ||
+                    !joinLinks(deliverableUrls) ||
                     isSubmitting
                   }
                   className="bg-green-600 hover:bg-green-700 text-white"
@@ -741,9 +750,7 @@ export function BountyCard({
               <div className="flex items-center gap-1">
                 {bounty.assignees.slice(0, 3).map((a) => (
                   <ProfileLink key={a.userId} user={a.user}>
-                    <Avatar
-                      className="h-5 w-5 border ring-1 ring-background -ml-1 first:ml-0"
-                    >
+                    <Avatar className="h-5 w-5 border ring-1 ring-background -ml-1 first:ml-0">
                       <AvatarImage
                         src={a.user?.avatar || "/placeholder-user.jpg"}
                       />
@@ -834,18 +841,16 @@ export function BountyCard({
             </div>
             <div className="space-y-2">
               <Label htmlFor="deliverable-url">
-                Deliverable URL <span className="text-red-500">*</span>
+                Deliverable URLs <span className="text-red-500">*</span>
               </Label>
-              <Input
+              <LinkListInput
                 id="deliverable-url"
-                type="url"
-                placeholder="https://github.com/username/repo or https://drive.google.com/..."
-                value={deliverableUrl}
-                onChange={(e) => setDeliverableUrl(e.target.value)}
+                values={deliverableUrls}
+                onChange={setDeliverableUrls}
               />
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Link to your completed work (GitHub repo, Google Drive, deployed
-                app, etc.)
+                Links to your completed work (GitHub repo, Google Drive,
+                deployed app, etc.)
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-4">
@@ -854,7 +859,7 @@ export function BountyCard({
                 onClick={() => {
                   setIsSubmissionDialogOpen(false);
                   setSubmissionDescription("");
-                  setDeliverableUrl("");
+                  setDeliverableUrls([""]);
                 }}
                 disabled={isSubmitting}
               >
@@ -864,7 +869,7 @@ export function BountyCard({
                 onClick={handleSubmitWork}
                 disabled={
                   !submissionDescription.trim() ||
-                  !deliverableUrl.trim() ||
+                  !joinLinks(deliverableUrls) ||
                   isSubmitting
                 }
                 className="bg-green-600 hover:bg-green-700 text-white"

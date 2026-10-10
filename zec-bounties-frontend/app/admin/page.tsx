@@ -96,6 +96,7 @@ import { ProfileLink } from "@/components/profile-link";
 import { profileHref } from "@/lib/profileHref";
 import { backendUrl } from "@/lib/configENV";
 import Link from "next/link";
+import { parseLinks } from "@/lib/links";
 
 /* ------------------------------------------------------------------ */
 /* Status metadata — single source of truth (kills the repeated ternaries) */
@@ -264,12 +265,12 @@ function BountyActionsMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-         variant="ghost"
-         size="icon"
-         className={triggerClassName}
-         aria-label={`Actions for ${bounty.title}`}
-         >
-         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          variant="ghost"
+          size="icon"
+          className={triggerClassName}
+          aria-label={`Actions for ${bounty.title}`}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -477,7 +478,9 @@ export default function AdminDashboard() {
     BountyStatus | "ALL"
   >("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string | "ALL">("ALL");
-  const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">("all");
+  const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">(
+    "all",
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [showAdminBountyModal, setShowAdminBountyModal] = useState(false);
@@ -545,7 +548,8 @@ export default function AdminDashboard() {
         if (!token) throw new Error("Admin session required");
         const params = new URLSearchParams({ chain: chainFilter });
         if (staffOpenOffset) params.set("openOffset", String(staffOpenOffset));
-        if (staffHistoryOffset) params.set("historyOffset", String(staffHistoryOffset));
+        if (staffHistoryOffset)
+          params.set("historyOffset", String(staffHistoryOffset));
         const res = await fetch(
           `${backendUrl}/api/users/${encodeURIComponent(serverUser)}/staff-bounties?${params}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
@@ -1318,741 +1322,764 @@ export default function AdminDashboard() {
 
               {/* ---------------- Bounties workspace ---------------- */}
               {!serverUser && (
-              <Card className="mt-6 overflow-hidden border-muted bg-card/50 gap-0">
-                <CardHeader className="gap-4 border-b p-4 sm:p-5">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <CardTitle className="text-base">Bounties</CardTitle>
-                      <CardDescription>
-                        {filteredBounties.length} of{" "}
-                        {chainFilteredBounties.length} on{" "}
-                        {chainFilter === "MAIN" ? "mainnet" : "testnet"}
-                      </CardDescription>
-                    </div>
+                <Card className="mt-6 overflow-hidden border-muted bg-card/50 gap-0">
+                  <CardHeader className="gap-4 border-b p-4 sm:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="text-base">Bounties</CardTitle>
+                        <CardDescription>
+                          {filteredBounties.length} of{" "}
+                          {chainFilteredBounties.length} on{" "}
+                          {chainFilter === "MAIN" ? "mainnet" : "testnet"}
+                        </CardDescription>
+                      </div>
 
-                    <div className="flex items-center gap-2">
-                      {activeFilterCount > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground"
-                          onClick={resetFilters}
-                        >
-                          Clear
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {activeFilterCount > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground"
+                            onClick={resetFilters}
+                          >
+                            Clear
+                          </Button>
+                        )}
 
-                      {/* Category + options popover (status now lives inline) */}
-                      <div className="relative" ref={filtersRef}>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setFiltersOpen(!filtersOpen)}
-                          className="gap-2 font-normal text-muted-foreground"
-                        >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
-                          {activeCategoryLabel}
-                        </Button>
+                        {/* Category + options popover (status now lives inline) */}
+                        <div className="relative" ref={filtersRef}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setFiltersOpen(!filtersOpen)}
+                            className="gap-2 font-normal text-muted-foreground"
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5" />
+                            {activeCategoryLabel}
+                          </Button>
 
-                        {filtersOpen && (
-                          <div className="absolute right-0 z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
-                            <p className="mb-1.5 px-1 text-xs text-muted-foreground">
-                              Category
-                            </p>
-                            <div className="max-h-56 overflow-y-auto">
-                              <button
-                                onClick={() => setCategoryFilter("ALL")}
-                                className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-muted"
-                              >
-                                All Categories
-                                {categoryFilter === "ALL" && (
-                                  <Check className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                              {categories.map((category) => (
+                          {filtersOpen && (
+                            <div className="absolute right-0 z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
+                              <p className="mb-1.5 px-1 text-xs text-muted-foreground">
+                                Category
+                              </p>
+                              <div className="max-h-56 overflow-y-auto">
                                 <button
-                                  key={category.id}
-                                  onClick={() =>
-                                    setCategoryFilter(category.name)
-                                  }
+                                  onClick={() => setCategoryFilter("ALL")}
                                   className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-muted"
                                 >
-                                  {category.name}
-                                  {categoryFilter === category.name && (
+                                  All Categories
+                                  {categoryFilter === "ALL" && (
                                     <Check className="h-3.5 w-3.5" />
                                   )}
                                 </button>
-                              ))}
+                                {categories.map((category) => (
+                                  <button
+                                    key={category.id}
+                                    onClick={() =>
+                                      setCategoryFilter(category.name)
+                                    }
+                                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-muted"
+                                  >
+                                    {category.name}
+                                    {categoryFilter === category.name && (
+                                      <Check className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                                <Label
+                                  htmlFor="show-cancelled"
+                                  className="text-xs font-normal text-muted-foreground"
+                                >
+                                  Show cancelled
+                                </Label>
+                                <Switch
+                                  id="show-cancelled"
+                                  checked={showCancelledBounties}
+                                  onCheckedChange={setShowCancelledBounties}
+                                />
+                              </div>
                             </div>
-
-                            <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                              <Label
-                                htmlFor="show-cancelled"
-                                className="text-xs font-normal text-muted-foreground"
-                              >
-                                Show cancelled
-                              </Label>
-                              <Switch
-                                id="show-cancelled"
-                                checked={showCancelledBounties}
-                                onCheckedChange={setShowCancelledBounties}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Inline status chips — one click instead of two */}
-                  <div
-                    className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
-                    style={{
-                      scrollbarWidth: "none",
-                      msOverflowStyle: "none",
-                    }}
-                  >
-                    {STATUS_FILTERS.map((f) => {
-                      const active = bountyStatusFilter === f.status;
-                      return (
-                        <button
-                          key={f.status}
-                          onClick={() => setBountyStatusFilter(f.status)}
-                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                            active
-                              ? "border-primary/40 bg-primary/10 font-medium text-foreground"
-                              : "border-border text-muted-foreground hover:bg-muted/60"
-                          }`}
-                        >
-                          {f.dotColor && (
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${f.dotColor}`}
-                            />
                           )}
-                          {f.label}
-                          <span className="tabular-nums opacity-60">
-                            {statusCountFor(f.status)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="pt-2">
-                    <RepoFilter
-                      value={repoFilter}
-                      onChange={setRepoFilter}
-                      counts={repoCounts}
-                    />
-                  </div>
-                  {hasMoreBounties && (
-                    <div className="pt-2 flex justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleShowAll}
-                        disabled={loadingAll || bountiesLoading}
-                        className="gap-2"
-                      >
-                        {(loadingAll || bountiesLoading) && (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        )}
-                        Show all bounties
-                      </Button>
-                    </div>
-                  )}
-                </CardHeader>
-
-                <CardContent className="p-0">
-                  {/* ============================================== */}
-                  {/* Mobile: stacked cards (below sm)                */}
-                  {/* ============================================== */}
-                  <div className="sm:hidden divide-y divide-border">
-                    {bountyRows.length === 0 ? (
-                      <div className="flex flex-col items-center px-4 py-16 text-center">
-                        <FileText className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                        <p className="text-sm text-muted-foreground">
-                          No bounties match these filters.
-                        </p>
-                        <div className="mt-4 flex gap-2">
-                          {activeFilterCount > 0 && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={resetFilters}
-                            >
-                              Clear filters
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            className="gap-2"
-                            onClick={() => setShowAdminBountyModal(true)}
-                          >
-                            <Plus className="h-3.5 w-3.5" /> New Bounty
-                          </Button>
                         </div>
                       </div>
-                    ) : (
-                      bountyRows.map(
-                        ({
-                          bounty,
-                          appCount,
-                          pendingApps,
-                          submissionCount,
-                          pendingSubs,
-                        }) => (
-                          <div key={bounty.id} className="px-4 py-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <button
-                                className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
-                                onClick={() => setEditingBounty(bounty)}
-                              >
-                                <Avatar className="mt-0.5 h-8 w-8 flex-shrink-0 border">
-                                  <AvatarImage
-                                    src={
-                                      bounty.createdByUser?.avatar ||
-                                      "/placeholder-user.jpg"
-                                    }
-                                  />
-                                  <AvatarFallback>
-                                    {displayName(bounty.createdByUser)[0]}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium leading-tight">
-                                    {bounty.title}
-                                  </p>
-                                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                                    <BountyRepoMark bounty={bounty} />
-                                    <span className="flex items-center gap-1">
-                                      <StatusDot
-                                        status={bounty.status}
-                                        className="h-1.5 w-1.5"
-                                      />
-                                      <span className="text-[11px] text-muted-foreground">
-                                        {formatStatus(bounty.status)}
-                                      </span>
-                                    </span>
-                                    <Badge
-                                      variant="outline"
-                                      className="text-[9px] font-bold uppercase tracking-tight"
-                                    >
-                                      {bounty.categoryId}
-                                    </Badge>
-                                    <span className="font-mono text-[11px] text-muted-foreground">
-                                      {bounty.bountyAmount} ZEC
-                                    </span>
-                                  </div>
-                                  {(pendingApps > 0 || pendingSubs > 0) && (
-                                    <p className="mt-1 text-[11px] font-medium text-yellow-700 dark:text-yellow-400">
-                                      {pendingApps + pendingSubs} pending action
-                                      {pendingApps + pendingSubs !== 1
-                                        ? "s"
-                                        : ""}
-                                    </p>
-                                  )}
-                                </div>
-                              </button>
+                    </div>
 
-                              <BountyActionsMenu
-                                bounty={bounty}
-                                pendingApps={pendingApps}
-                                pendingSubs={pendingSubs}
-                                onView={() => setViewingBounty(bounty)}
-                                onEdit={() => setEditingBounty(bounty)}
-                                onStatusChange={(status) =>
-                                  handleStatusChange(bounty.id, status)
-                                }
-                                onApprovalChange={(approved) =>
-                                  handleApprovalChange(bounty.id, approved)
-                                }
-                                onViewApplications={() => {
-                                  setSelectedBounty(bounty.id);
-                                  setIsManagingApplications(true);
-                                  fetchBountyApplications(bounty.id);
-                                }}
-                                onViewSubmissions={() => {
-                                  setSelectedBounty(bounty.id);
-                                  setIsManagingSubmissions(true);
-                                }}
-                                onCancel={() =>
-                                  handleStatusChange(bounty.id, "CANCELLED")
-                                }
+                    {/* Inline status chips — one click instead of two */}
+                    <div
+                      className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
+                      style={{
+                        scrollbarWidth: "none",
+                        msOverflowStyle: "none",
+                      }}
+                    >
+                      {STATUS_FILTERS.map((f) => {
+                        const active = bountyStatusFilter === f.status;
+                        return (
+                          <button
+                            key={f.status}
+                            onClick={() => setBountyStatusFilter(f.status)}
+                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                              active
+                                ? "border-primary/40 bg-primary/10 font-medium text-foreground"
+                                : "border-border text-muted-foreground hover:bg-muted/60"
+                            }`}
+                          >
+                            {f.dotColor && (
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${f.dotColor}`}
                               />
-                            </div>
-
-                            <div className="mt-2.5 flex items-center gap-1.5 pl-[42px]">
-                              {bounty.assignees &&
-                              bounty.assignees.length > 0 ? (
-                                <button
-                                  className="flex items-center gap-1.5"
-                                  onClick={() =>
-                                    setAssigneeSectionBounty(bounty)
-                                  }
-                                >
-                                  <div className="flex items-center">
-                                    {bounty.assignees
-                                      .slice(0, 3)
-                                      .map((a, i) => (
-                                        <Avatar
-                                          key={a.userId}
-                                          className="h-5 w-5 border-2 border-background"
-                                          style={{
-                                            marginLeft: i === 0 ? 0 : "-6px",
-                                            zIndex: 3 - i,
-                                          }}
-                                        >
-                                          <AvatarImage
-                                            src={
-                                              a.user?.avatar ||
-                                              "/placeholder-user.jpg"
-                                            }
-                                          />
-                                          <AvatarFallback className="text-[8px]">
-                                            {displayName(a.user)[0]}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                      ))}
-                                  </div>
-                                  <span className="text-[11px] font-medium text-muted-foreground">
-                                    {bounty.assignees.length === 1
-                                      ? displayName(bounty.assignees[0].user)
-                                      : `${bounty.assignees.length} assignees`}
-                                  </span>
-                                </button>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 gap-1 border border-dashed px-2 text-[10px]"
-                                  onClick={() =>
-                                    setAssigneeSectionBounty(bounty)
-                                  }
-                                >
-                                  <UserPlus className="h-3 w-3" /> Assign
-                                </Button>
-                              )}
-
-                              <span className="text-muted-foreground/40">
-                                ·
-                              </span>
-
-                              <CountPill
-                                count={appCount}
-                                pending={pendingApps}
-                                icon={Users}
-                                onClick={() => {
-                                  setSelectedBounty(bounty.id);
-                                  setIsManagingApplications(true);
-                                  fetchBountyApplications(bounty.id);
-                                }}
-                              />
-                              <CountPill
-                                count={submissionCount}
-                                pending={pendingSubs}
-                                icon={Upload}
-                                onClick={() => {
-                                  setSelectedBounty(bounty.id);
-                                  setIsManagingSubmissions(true);
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ),
-                      )
+                            )}
+                            {f.label}
+                            <span className="tabular-nums opacity-60">
+                              {statusCountFor(f.status)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="pt-2">
+                      <RepoFilter
+                        value={repoFilter}
+                        onChange={setRepoFilter}
+                        counts={repoCounts}
+                      />
+                    </div>
+                    {hasMoreBounties && (
+                      <div className="pt-2 flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleShowAll}
+                          disabled={loadingAll || bountiesLoading}
+                          className="gap-2"
+                        >
+                          {(loadingAll || bountiesLoading) && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          Show all bounties
+                        </Button>
+                      </div>
                     )}
-                  </div>
+                  </CardHeader>
 
-                  {/* ============================================== */}
-                  {/* Desktop: table (sm and up)                      */}
-                  {/* ============================================== */}
-                  <div className="hidden sm:block">
-                    <Table>
-                      <TableHeader className="sticky top-[0px] z-10 bg-muted/50 backdrop-blur">
-                        <TableRow>
-                          <TableHead className="py-3 pl-4 sm:pl-6">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <label className="inline-flex cursor-pointer select-none items-center gap-2">
-                                    <Checkbox
-                                      checked={groupByWeek}
-                                      onCheckedChange={(value) =>
-                                        setGroupByWeek(value === true)
+                  <CardContent className="p-0">
+                    {/* ============================================== */}
+                    {/* Mobile: stacked cards (below sm)                */}
+                    {/* ============================================== */}
+                    <div className="sm:hidden divide-y divide-border">
+                      {bountyRows.length === 0 ? (
+                        <div className="flex flex-col items-center px-4 py-16 text-center">
+                          <FileText className="mb-3 h-9 w-9 text-muted-foreground/40" />
+                          <p className="text-sm text-muted-foreground">
+                            No bounties match these filters.
+                          </p>
+                          <div className="mt-4 flex gap-2">
+                            {activeFilterCount > 0 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={resetFilters}
+                              >
+                                Clear filters
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => setShowAdminBountyModal(true)}
+                            >
+                              <Plus className="h-3.5 w-3.5" /> New Bounty
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        bountyRows.map(
+                          ({
+                            bounty,
+                            appCount,
+                            pendingApps,
+                            submissionCount,
+                            pendingSubs,
+                          }) => (
+                            <div key={bounty.id} className="px-4 py-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <button
+                                  className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
+                                  onClick={() => setEditingBounty(bounty)}
+                                >
+                                  <Avatar className="mt-0.5 h-8 w-8 flex-shrink-0 border">
+                                    <AvatarImage
+                                      src={
+                                        bounty.createdByUser?.avatar ||
+                                        "/placeholder-user.jpg"
                                       }
-                                      aria-label="Group by week"
                                     />
-                                    Bounty
-                                  </label>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  Group bounties by the week they were created
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableHead>
-                          <TableHead className="hidden sm:table-cell">
-                            Status
-                          </TableHead>
-                          <TableHead className="hidden md:table-cell">
-                            Category
-                          </TableHead>
-                          <TableHead className="hidden lg:table-cell">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <label className="inline-flex cursor-pointer select-none items-center gap-2">
-                                    <Checkbox
-                                      checked={groupByAssignee}
-                                      onCheckedChange={(value) =>
-                                        setGroupByAssignee(value === true)
-                                      }
-                                      aria-label="Group by assignee"
-                                    />
-                                    Assignee
-                                  </label>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  Group identical assignees and show open counts
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableHead>
-                          <TableHead className="hidden lg:table-cell">
-                            Activity
-                          </TableHead>
-                          <TableHead className="hidden sm:table-cell text-right">
-                            Reward
-                          </TableHead>
-                          <TableHead className="w-12 pr-4 text-right sm:pr-6">
-                            <span className="sr-only">Actions</span>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {bountyRows.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={7} className="py-16">
-                              <div className="flex flex-col items-center text-center">
-                                <FileText className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                                <p className="text-sm text-muted-foreground">
-                                  No bounties match these filters.
-                                </p>
-                                <div className="mt-4 flex gap-2">
-                                  {activeFilterCount > 0 && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={resetFilters}
-                                    >
-                                      Clear filters
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="sm"
-                                    className="gap-2"
+                                    <AvatarFallback>
+                                      {displayName(bounty.createdByUser)[0]}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-medium leading-tight">
+                                      {bounty.title}
+                                    </p>
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <BountyRepoMark bounty={bounty} />
+                                      <span className="flex items-center gap-1">
+                                        <StatusDot
+                                          status={bounty.status}
+                                          className="h-1.5 w-1.5"
+                                        />
+                                        <span className="text-[11px] text-muted-foreground">
+                                          {formatStatus(bounty.status)}
+                                        </span>
+                                      </span>
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[9px] font-bold uppercase tracking-tight"
+                                      >
+                                        {bounty.categoryId}
+                                      </Badge>
+                                      <span className="font-mono text-[11px] text-muted-foreground">
+                                        {bounty.bountyAmount} ZEC
+                                      </span>
+                                    </div>
+                                    {(pendingApps > 0 || pendingSubs > 0) && (
+                                      <p className="mt-1 text-[11px] font-medium text-yellow-700 dark:text-yellow-400">
+                                        {pendingApps + pendingSubs} pending
+                                        action
+                                        {pendingApps + pendingSubs !== 1
+                                          ? "s"
+                                          : ""}
+                                      </p>
+                                    )}
+                                  </div>
+                                </button>
+
+                                <BountyActionsMenu
+                                  bounty={bounty}
+                                  pendingApps={pendingApps}
+                                  pendingSubs={pendingSubs}
+                                  onView={() => setViewingBounty(bounty)}
+                                  onEdit={() => setEditingBounty(bounty)}
+                                  onStatusChange={(status) =>
+                                    handleStatusChange(bounty.id, status)
+                                  }
+                                  onApprovalChange={(approved) =>
+                                    handleApprovalChange(bounty.id, approved)
+                                  }
+                                  onViewApplications={() => {
+                                    setSelectedBounty(bounty.id);
+                                    setIsManagingApplications(true);
+                                    fetchBountyApplications(bounty.id);
+                                  }}
+                                  onViewSubmissions={() => {
+                                    setSelectedBounty(bounty.id);
+                                    setIsManagingSubmissions(true);
+                                  }}
+                                  onCancel={() =>
+                                    handleStatusChange(bounty.id, "CANCELLED")
+                                  }
+                                />
+                              </div>
+
+                              <div className="mt-2.5 flex items-center gap-1.5 pl-[42px]">
+                                {bounty.assignees &&
+                                bounty.assignees.length > 0 ? (
+                                  <button
+                                    className="flex items-center gap-1.5"
                                     onClick={() =>
-                                      setShowAdminBountyModal(true)
+                                      setAssigneeSectionBounty(bounty)
                                     }
                                   >
-                                    <Plus className="h-3.5 w-3.5" /> New Bounty
-                                  </Button>
-                                </div>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          bountyTableRows.map((row) => {
-                            if (row.type === "week") {
-                              return (
-                                <TableRow
-                                  key={`week-${row.key}`}
-                                  className="hover:bg-transparent"
-                                >
-                                  <TableCell
-                                    colSpan={7}
-                                    className="bg-muted/60 py-2 pl-4 text-xs font-semibold text-foreground sm:pl-6"
-                                  >
-                                    {row.label}
-                                    <span className="ml-2 tabular-nums font-normal text-muted-foreground opacity-70">
-                                      {row.count}{" "}
-                                      {row.count === 1 ? "bounty" : "bounties"}
-                                    </span>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            }
-
-                            if (row.type === "group") {
-                              return (
-                                <TableRow
-                                  key={`group-${row.key}`}
-                                  className="hover:bg-transparent"
-                                >
-                                  <TableCell
-                                    colSpan={7}
-                                    className={`bg-muted/40 py-1.5 text-xs font-medium text-muted-foreground ${groupIndentClass}`}
-                                  >
-                                    <span className="text-foreground">
-                                      {row.label}
-                                    </span>
-                                    <span className="ml-2 tabular-nums opacity-70">
-                                      {row.count} open
-                                    </span>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            }
-
-                            const {
-                              bounty,
-                              appCount,
-                              pendingApps,
-                              submissionCount,
-                              pendingSubs,
-                            } = row;
-
-                            return (
-                              <TableRow
-                                key={bounty.id}
-                                className="transition-colors hover:bg-muted/30"
-                              >
-                                {/* Title + creator + mobile meta */}
-                                <TableCell className="max-w-[180px] py-3 pl-4 font-medium sm:max-w-[240px] sm:pl-6 imd:max-w-[400px]">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <ProfileLink
-                                      user={bounty.createdByUser}
-                                      className="inline-flex"
-                                    >
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Avatar className="h-7 w-7 flex-shrink-0 border">
+                                    <div className="flex items-center">
+                                      {bounty.assignees
+                                        .slice(0, 3)
+                                        .map((a, i) => (
+                                          <Avatar
+                                            key={a.userId}
+                                            className="h-5 w-5 border-2 border-background"
+                                            style={{
+                                              marginLeft: i === 0 ? 0 : "-6px",
+                                              zIndex: 3 - i,
+                                            }}
+                                          >
                                             <AvatarImage
                                               src={
-                                                bounty.createdByUser?.avatar ||
+                                                a.user?.avatar ||
                                                 "/placeholder-user.jpg"
                                               }
                                             />
-                                            <AvatarFallback>
-                                              {
-                                                displayName(
-                                                  bounty.createdByUser,
-                                                )[0]
-                                              }
+                                            <AvatarFallback className="text-[8px]">
+                                              {displayName(a.user)[0]}
                                             </AvatarFallback>
                                           </Avatar>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          Created by{" "}
-                                          {displayName(bounty.createdByUser)}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                    </ProfileLink>
-                                    <div className="min-w-0 flex-1">
-                                      {/* Clicking the title opens the edit
-                                          form directly. */}
-                                      <button
-                                        className="block w-full truncate text-left text-sm font-medium transition-colors hover:text-primary hover:underline"
-                                        onClick={() => setEditingBounty(bounty)}
-                                      >
-                                        {bounty.title}
-                                      </button>
-                                      <BountyRepoMark bounty={bounty} />
+                                        ))}
                                     </div>
-                                  </div>
-                                </TableCell>
-
-                                {/* Status moved next to title for scannability */}
-                                <TableCell className="hidden sm:table-cell">
-                                  <div className="flex items-center gap-2">
-                                    <StatusDot
-                                      status={bounty.status}
-                                      className="h-2 w-2"
-                                    />
-                                    <span className="text-sm capitalize">
-                                      {formatStatus(bounty.status)}
+                                    <span className="text-[11px] font-medium text-muted-foreground">
+                                      {bounty.assignees.length === 1
+                                        ? displayName(bounty.assignees[0].user)
+                                        : `${bounty.assignees.length} assignees`}
                                     </span>
-                                  </div>
-                                </TableCell>
-
-                                <TableCell className="hidden md:table-cell">
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px] font-bold uppercase tracking-tight"
+                                  </button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 gap-1 border border-dashed px-2 text-[10px]"
+                                    onClick={() =>
+                                      setAssigneeSectionBounty(bounty)
+                                    }
                                   >
-                                    {bounty.categoryId}
-                                  </Badge>
-                                </TableCell>
+                                    <UserPlus className="h-3 w-3" /> Assign
+                                  </Button>
+                                )}
 
-                                <TableCell className="hidden lg:table-cell">
-                                  {bounty.assignees &&
-                                  bounty.assignees.length > 0 ? (
-                                    <button
-                                      className="flex items-center gap-2 transition-opacity hover:opacity-75"
-                                      onClick={() =>
-                                        setAssigneeSectionBounty(bounty)
-                                      }
-                                    >
-                                      <div className="flex items-center">
-                                        {bounty.assignees
-                                          .slice(0, 3)
-                                          .map((a, i) => (
-                                            <Avatar
-                                              key={a.userId}
-                                              className="h-6 w-6 border-2 border-background"
-                                              style={{
-                                                marginLeft:
-                                                  i === 0 ? 0 : "-8px",
-                                                zIndex: 3 - i,
-                                              }}
-                                            >
-                                              <AvatarImage
-                                                src={
-                                                  a.user?.avatar ||
-                                                  "/placeholder-user.jpg"
-                                                }
-                                              />
-                                              <AvatarFallback className="text-[9px]">
-                                                {displayName(a.user)[0]}
-                                              </AvatarFallback>
-                                            </Avatar>
-                                          ))}
-                                        {bounty.assignees.length > 3 && (
-                                          <div
-                                            className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] font-bold text-muted-foreground"
-                                            style={{ marginLeft: "-8px" }}
-                                          >
-                                            +{bounty.assignees.length - 3}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <span className="text-xs font-medium">
-                                        {bounty.assignees.length === 1
-                                          ? displayName(
-                                              bounty.assignees[0].user,
-                                            )
-                                          : `${bounty.assignees.length} assignees`}
-                                      </span>
-                                    </button>
-                                  ) : bounty.assignee && bounty.assigneeUser ? (
-                                    <button
-                                      className="flex items-center gap-2 transition-opacity hover:opacity-75"
-                                      onClick={() =>
-                                        setAssigneeSectionBounty(bounty)
-                                      }
-                                    >
-                                      <Avatar className="h-6 w-6 border">
-                                        <AvatarImage
-                                          src={
-                                            bounty.assigneeUser.avatar ||
-                                            "/placeholder-user.jpg"
-                                          }
-                                        />
-                                        <AvatarFallback>
-                                          {displayName(bounty.assigneeUser)[0]}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <span className="text-xs font-medium">
-                                        {displayName(bounty.assigneeUser)}
-                                      </span>
-                                    </button>
-                                  ) : (
+                                <span className="text-muted-foreground/40">
+                                  ·
+                                </span>
+
+                                <CountPill
+                                  count={appCount}
+                                  pending={pendingApps}
+                                  icon={Users}
+                                  onClick={() => {
+                                    setSelectedBounty(bounty.id);
+                                    setIsManagingApplications(true);
+                                    fetchBountyApplications(bounty.id);
+                                  }}
+                                />
+                                <CountPill
+                                  count={submissionCount}
+                                  pending={pendingSubs}
+                                  icon={Upload}
+                                  onClick={() => {
+                                    setSelectedBounty(bounty.id);
+                                    setIsManagingSubmissions(true);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ),
+                        )
+                      )}
+                    </div>
+
+                    {/* ============================================== */}
+                    {/* Desktop: table (sm and up)                      */}
+                    {/* ============================================== */}
+                    <div className="hidden sm:block">
+                      <Table>
+                        <TableHeader className="sticky top-[0px] z-10 bg-muted/50 backdrop-blur">
+                          <TableRow>
+                            <TableHead className="py-3 pl-4 sm:pl-6">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <label className="inline-flex cursor-pointer select-none items-center gap-2">
+                                      <Checkbox
+                                        checked={groupByWeek}
+                                        onCheckedChange={(value) =>
+                                          setGroupByWeek(value === true)
+                                        }
+                                        aria-label="Group by week"
+                                      />
+                                      Bounty
+                                    </label>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Group bounties by the week they were created
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </TableHead>
+                            <TableHead className="hidden sm:table-cell">
+                              Status
+                            </TableHead>
+                            <TableHead className="hidden md:table-cell">
+                              Category
+                            </TableHead>
+                            <TableHead className="hidden lg:table-cell">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <label className="inline-flex cursor-pointer select-none items-center gap-2">
+                                      <Checkbox
+                                        checked={groupByAssignee}
+                                        onCheckedChange={(value) =>
+                                          setGroupByAssignee(value === true)
+                                        }
+                                        aria-label="Group by assignee"
+                                      />
+                                      Assignee
+                                    </label>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Group identical assignees and show open
+                                    counts
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </TableHead>
+                            <TableHead className="hidden lg:table-cell">
+                              Activity
+                            </TableHead>
+                            <TableHead className="hidden sm:table-cell text-right">
+                              Reward
+                            </TableHead>
+                            <TableHead className="w-12 pr-4 text-right sm:pr-6">
+                              <span className="sr-only">Actions</span>
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {bountyRows.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={7} className="py-16">
+                                <div className="flex flex-col items-center text-center">
+                                  <FileText className="mb-3 h-9 w-9 text-muted-foreground/40" />
+                                  <p className="text-sm text-muted-foreground">
+                                    No bounties match these filters.
+                                  </p>
+                                  <div className="mt-4 flex gap-2">
+                                    {activeFilterCount > 0 && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={resetFilters}
+                                      >
+                                        Clear filters
+                                      </Button>
+                                    )}
                                     <Button
-                                      variant="ghost"
                                       size="sm"
-                                      className="h-7 gap-1 border border-dashed px-2 text-[10px]"
+                                      className="gap-2"
                                       onClick={() =>
-                                        setAssigneeSectionBounty(bounty)
+                                        setShowAdminBountyModal(true)
                                       }
                                     >
-                                      <UserPlus className="h-3 w-3" /> Assign
+                                      <Plus className="h-3.5 w-3.5" /> New
+                                      Bounty
                                     </Button>
-                                  )}
-                                </TableCell>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            bountyTableRows.map((row) => {
+                              if (row.type === "week") {
+                                return (
+                                  <TableRow
+                                    key={`week-${row.key}`}
+                                    className="hover:bg-transparent"
+                                  >
+                                    <TableCell
+                                      colSpan={7}
+                                      className="bg-muted/60 py-2 pl-4 text-xs font-semibold text-foreground sm:pl-6"
+                                    >
+                                      {row.label}
+                                      <span className="ml-2 tabular-nums font-normal text-muted-foreground opacity-70">
+                                        {row.count}{" "}
+                                        {row.count === 1
+                                          ? "bounty"
+                                          : "bounties"}
+                                      </span>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              }
 
-                                {/* Applications + submissions collapsed into one column */}
-                                <TableCell className="hidden lg:table-cell">
-                                  <div className="flex items-center gap-1.5">
-                                    <CountPill
-                                      count={appCount}
-                                      pending={pendingApps}
-                                      icon={Users}
-                                      onClick={() => {
+                              if (row.type === "group") {
+                                return (
+                                  <TableRow
+                                    key={`group-${row.key}`}
+                                    className="hover:bg-transparent"
+                                  >
+                                    <TableCell
+                                      colSpan={7}
+                                      className={`bg-muted/40 py-1.5 text-xs font-medium text-muted-foreground ${groupIndentClass}`}
+                                    >
+                                      <span className="text-foreground">
+                                        {row.label}
+                                      </span>
+                                      <span className="ml-2 tabular-nums opacity-70">
+                                        {row.count} open
+                                      </span>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              }
+
+                              const {
+                                bounty,
+                                appCount,
+                                pendingApps,
+                                submissionCount,
+                                pendingSubs,
+                              } = row;
+
+                              return (
+                                <TableRow
+                                  key={bounty.id}
+                                  className="transition-colors hover:bg-muted/30"
+                                >
+                                  {/* Title + creator + mobile meta */}
+                                  <TableCell className="max-w-[180px] py-3 pl-4 font-medium sm:max-w-[240px] sm:pl-6 imd:max-w-[400px]">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <ProfileLink
+                                        user={bounty.createdByUser}
+                                        className="inline-flex"
+                                      >
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Avatar className="h-7 w-7 flex-shrink-0 border">
+                                                <AvatarImage
+                                                  src={
+                                                    bounty.createdByUser
+                                                      ?.avatar ||
+                                                    "/placeholder-user.jpg"
+                                                  }
+                                                />
+                                                <AvatarFallback>
+                                                  {
+                                                    displayName(
+                                                      bounty.createdByUser,
+                                                    )[0]
+                                                  }
+                                                </AvatarFallback>
+                                              </Avatar>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              Created by{" "}
+                                              {displayName(
+                                                bounty.createdByUser,
+                                              )}
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      </ProfileLink>
+                                      <div className="min-w-0 flex-1">
+                                        {/* Clicking the title opens the edit
+                                          form directly. */}
+                                        <button
+                                          className="block w-full truncate text-left text-sm font-medium transition-colors hover:text-primary hover:underline"
+                                          onClick={() =>
+                                            setEditingBounty(bounty)
+                                          }
+                                        >
+                                          {bounty.title}
+                                        </button>
+                                        <BountyRepoMark bounty={bounty} />
+                                      </div>
+                                    </div>
+                                  </TableCell>
+
+                                  {/* Status moved next to title for scannability */}
+                                  <TableCell className="hidden sm:table-cell">
+                                    <div className="flex items-center gap-2">
+                                      <StatusDot
+                                        status={bounty.status}
+                                        className="h-2 w-2"
+                                      />
+                                      <span className="text-sm capitalize">
+                                        {formatStatus(bounty.status)}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+
+                                  <TableCell className="hidden md:table-cell">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] font-bold uppercase tracking-tight"
+                                    >
+                                      {bounty.categoryId}
+                                    </Badge>
+                                  </TableCell>
+
+                                  <TableCell className="hidden lg:table-cell">
+                                    {bounty.assignees &&
+                                    bounty.assignees.length > 0 ? (
+                                      <button
+                                        className="flex items-center gap-2 transition-opacity hover:opacity-75"
+                                        onClick={() =>
+                                          setAssigneeSectionBounty(bounty)
+                                        }
+                                      >
+                                        <div className="flex items-center">
+                                          {bounty.assignees
+                                            .slice(0, 3)
+                                            .map((a, i) => (
+                                              <Avatar
+                                                key={a.userId}
+                                                className="h-6 w-6 border-2 border-background"
+                                                style={{
+                                                  marginLeft:
+                                                    i === 0 ? 0 : "-8px",
+                                                  zIndex: 3 - i,
+                                                }}
+                                              >
+                                                <AvatarImage
+                                                  src={
+                                                    a.user?.avatar ||
+                                                    "/placeholder-user.jpg"
+                                                  }
+                                                />
+                                                <AvatarFallback className="text-[9px]">
+                                                  {displayName(a.user)[0]}
+                                                </AvatarFallback>
+                                              </Avatar>
+                                            ))}
+                                          {bounty.assignees.length > 3 && (
+                                            <div
+                                              className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] font-bold text-muted-foreground"
+                                              style={{ marginLeft: "-8px" }}
+                                            >
+                                              +{bounty.assignees.length - 3}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className="text-xs font-medium">
+                                          {bounty.assignees.length === 1
+                                            ? displayName(
+                                                bounty.assignees[0].user,
+                                              )
+                                            : `${bounty.assignees.length} assignees`}
+                                        </span>
+                                      </button>
+                                    ) : bounty.assignee &&
+                                      bounty.assigneeUser ? (
+                                      <button
+                                        className="flex items-center gap-2 transition-opacity hover:opacity-75"
+                                        onClick={() =>
+                                          setAssigneeSectionBounty(bounty)
+                                        }
+                                      >
+                                        <Avatar className="h-6 w-6 border">
+                                          <AvatarImage
+                                            src={
+                                              bounty.assigneeUser.avatar ||
+                                              "/placeholder-user.jpg"
+                                            }
+                                          />
+                                          <AvatarFallback>
+                                            {
+                                              displayName(
+                                                bounty.assigneeUser,
+                                              )[0]
+                                            }
+                                          </AvatarFallback>
+                                        </Avatar>
+                                        <span className="text-xs font-medium">
+                                          {displayName(bounty.assigneeUser)}
+                                        </span>
+                                      </button>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 gap-1 border border-dashed px-2 text-[10px]"
+                                        onClick={() =>
+                                          setAssigneeSectionBounty(bounty)
+                                        }
+                                      >
+                                        <UserPlus className="h-3 w-3" /> Assign
+                                      </Button>
+                                    )}
+                                  </TableCell>
+
+                                  {/* Applications + submissions collapsed into one column */}
+                                  <TableCell className="hidden lg:table-cell">
+                                    <div className="flex items-center gap-1.5">
+                                      <CountPill
+                                        count={appCount}
+                                        pending={pendingApps}
+                                        icon={Users}
+                                        onClick={() => {
+                                          setSelectedBounty(bounty.id);
+                                          setIsManagingApplications(true);
+                                          fetchBountyApplications(bounty.id);
+                                        }}
+                                      />
+                                      <CountPill
+                                        count={submissionCount}
+                                        pending={pendingSubs}
+                                        icon={Upload}
+                                        onClick={() => {
+                                          setSelectedBounty(bounty.id);
+                                          setIsManagingSubmissions(true);
+                                        }}
+                                      />
+                                    </div>
+                                  </TableCell>
+
+                                  <TableCell className="hidden text-right font-mono text-sm tabular-nums sm:table-cell">
+                                    {bounty.bountyAmount} ZEC
+                                  </TableCell>
+
+                                  <TableCell className="pr-4 text-right sm:pr-6">
+                                    <BountyActionsMenu
+                                      bounty={bounty}
+                                      pendingApps={pendingApps}
+                                      pendingSubs={pendingSubs}
+                                      onView={() => setViewingBounty(bounty)}
+                                      onEdit={() => setEditingBounty(bounty)}
+                                      onStatusChange={(status) =>
+                                        handleStatusChange(bounty.id, status)
+                                      }
+                                      onApprovalChange={(approved) =>
+                                        handleApprovalChange(
+                                          bounty.id,
+                                          approved,
+                                        )
+                                      }
+                                      onViewApplications={() => {
                                         setSelectedBounty(bounty.id);
                                         setIsManagingApplications(true);
                                         fetchBountyApplications(bounty.id);
                                       }}
-                                    />
-                                    <CountPill
-                                      count={submissionCount}
-                                      pending={pendingSubs}
-                                      icon={Upload}
-                                      onClick={() => {
+                                      onViewSubmissions={() => {
                                         setSelectedBounty(bounty.id);
                                         setIsManagingSubmissions(true);
                                       }}
+                                      onCancel={() =>
+                                        handleStatusChange(
+                                          bounty.id,
+                                          "CANCELLED",
+                                        )
+                                      }
                                     />
-                                  </div>
-                                </TableCell>
-
-                                <TableCell className="hidden text-right font-mono text-sm tabular-nums sm:table-cell">
-                                  {bounty.bountyAmount} ZEC
-                                </TableCell>
-
-                                <TableCell className="pr-4 text-right sm:pr-6">
-                                  <BountyActionsMenu
-                                    bounty={bounty}
-                                    pendingApps={pendingApps}
-                                    pendingSubs={pendingSubs}
-                                    onView={() => setViewingBounty(bounty)}
-                                    onEdit={() => setEditingBounty(bounty)}
-                                    onStatusChange={(status) =>
-                                      handleStatusChange(bounty.id, status)
-                                    }
-                                    onApprovalChange={(approved) =>
-                                      handleApprovalChange(bounty.id, approved)
-                                    }
-                                    onViewApplications={() => {
-                                      setSelectedBounty(bounty.id);
-                                      setIsManagingApplications(true);
-                                      fetchBountyApplications(bounty.id);
-                                    }}
-                                    onViewSubmissions={() => {
-                                      setSelectedBounty(bounty.id);
-                                      setIsManagingSubmissions(true);
-                                    }}
-                                    onCancel={() =>
-                                      handleStatusChange(bounty.id, "CANCELLED")
-                                    }
-                                  />
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  {hasMoreBounties && (
-                    <div
-                      ref={loadMoreSentinelRef}
-                      className="flex items-center justify-center gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-6"
-                    >
-                      {bountiesLoading ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Loading more…
-                        </>
-                      ) : (
-                        <span>Showing {filteredBounties.length} bounties</span>
-                      )}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+
+                    {hasMoreBounties && (
+                      <div
+                        ref={loadMoreSentinelRef}
+                        className="flex items-center justify-center gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-6"
+                      >
+                        {bountiesLoading ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Loading more…
+                          </>
+                        ) : (
+                          <span>
+                            Showing {filteredBounties.length} bounties
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               )}
             </>
           )}
@@ -2450,17 +2477,18 @@ export default function AdminDashboard() {
                       {submission.description}
                     </p>
 
-                    {submission.deliverableUrl && (
+                    {parseLinks(submission.deliverableUrl).map((link) => (
                       <a
-                        href={submission.deliverableUrl}
+                        key={link}
+                        href={link}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-[14px] flex items-center gap-1.5 break-all pl-[42px] text-xs text-blue-600 hover:underline dark:text-blue-400"
                       >
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        {submission.deliverableUrl}
+                        {link}
                       </a>
-                    )}
+                    ))}
 
                     {submission.reviewNotes && (
                       <div className="ml-[14px] rounded border border-yellow-200 bg-yellow-50 p-2.5 pl-[42px] text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">

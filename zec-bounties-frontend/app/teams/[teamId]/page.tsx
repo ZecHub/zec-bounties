@@ -92,6 +92,7 @@ import {
 } from "@/components/ui/select";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { TeamAuthorizePaymentPanel } from "@/components/payments/teams/authorize-payment-panel";
+import { parseLinks } from "@/lib/links";
 
 type Tab =
   | "Overview"
@@ -1220,17 +1221,18 @@ function OverviewTab({
                     {submission.description}
                   </p>
 
-                  {submission.deliverableUrl && (
+                  {parseLinks(submission.deliverableUrl).map((link) => (
                     <a
-                      href={submission.deliverableUrl}
+                      key={link}
+                      href={link}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1.5 text-xs text-primary hover:underline break-all pl-[42px] ml-[14px]"
                     >
                       <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      {submission.deliverableUrl}
+                      {link}
                     </a>
-                  )}
+                  ))}
 
                   {submission.status === "pending" && (
                     <div className="border-t pt-3 space-y-2.5">
@@ -1592,16 +1594,17 @@ function TeamActivityFeed({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {sub.description}
                     </p>
-                    {sub.deliverableUrl && (
+                    {parseLinks(sub.deliverableUrl).map((link) => (
                       <a
-                        href={sub.deliverableUrl}
+                        key={link}
+                        href={link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-1 inline-block break-all text-[11px] text-primary hover:underline"
+                        className="mt-1 block break-all text-[11px] text-primary hover:underline"
                       >
-                        {sub.deliverableUrl}
+                        {link}
                       </a>
-                    )}
+                    ))}
                   </div>
                   <Badge
                     variant="outline"
