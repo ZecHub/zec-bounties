@@ -688,15 +688,19 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       });
     }
 
-    // Snapshot BEFORE the transaction wipes/recreates the roster
-    const existingAssignees = await prisma.bountyAssignee.findMany({
-      where: { bountyId },
-      include: { user: { select: USER_SELECT_FULL } },
-    });
-    const existingAssigneeIds = new Set(existingAssignees.map((a) => a.userId));
-    const newAssigneeIds = new Set(userIds);
-
-    const [freshBounty, assignees] = await prisma.$transaction(async (tx) => {
+    const [freshBounty, assignees, existingAssignees] = await prisma.$transaction(async (tx) => {
+      // Lock the stable parent before replacing children, including an empty roster.
+      await tx.$queryRaw`
+        SELECT "id" FROM "Bounty" WHERE "id" = ${bountyId} FOR UPDATE
+      `;
+      const currentBounty = await tx.bounty.findUniqueOrThrow({
+        where: { id: bountyId },
+        select: { status: true },
+      });
+      const previousAssignees = await tx.bountyAssignee.findMany({
+        where: { bountyId },
+        include: { user: { select: USER_SELECT_FULL } },
+      });
       await tx.bountyAssignee.deleteMany({ where: { bountyId } });
 
       if (userIds.length === 0) {
@@ -708,7 +712,7 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         await tx.bountyAssignee.createMany({
           data: userIds.map((userId) => ({ bountyId, userId })),
         });
-        if (["TO_DO", "CANCELLED"].includes(bounty.status)) {
+        if (["TO_DO", "CANCELLED"].includes(currentBounty.status)) {
           await tx.bounty.update({
             where: { id: bountyId },
             data: { status: "IN_PROGRESS", isApproved: true },
@@ -730,8 +734,10 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         },
       });
 
-      return [bountyRow, created];
+      return [bountyRow, created, previousAssignees];
     });
+    const existingAssigneeIds = new Set(existingAssignees.map((a) => a.userId));
+    const newAssigneeIds = new Set(userIds);
 
     sendRealtimeUpdate(
       "bounty_assignees_updated",
