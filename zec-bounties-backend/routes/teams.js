@@ -775,7 +775,18 @@ router.post(
         assignee,
         categoryId,
         chain,
+        targetRepo,
       } = req.body;
+
+      const TARGET_REPOS = new Set([
+        "namada",
+        "zechub",
+        "zechub-wiki",
+        "zec-bounties",
+      ]);
+      if (targetRepo != null && targetRepo !== "" && !TARGET_REPOS.has(targetRepo)) {
+        return res.status(400).json({ error: "Invalid targetRepo" });
+      }
 
       if (chain && !["MAIN", "TEST"].includes(chain)) {
         return res.status(400).json({ error: "Invalid chain value" });
@@ -798,6 +809,7 @@ router.post(
           isApproved: true,
           categoryId,
           ...(chain && { chain }),
+          ...(targetRepo && { targetRepo }),
           teamId,
           isPrivate: team.isPrivate,
           ...(resolvedAssignee && {

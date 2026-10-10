@@ -3175,6 +3175,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               : data.assignee,
           categoryId: data.category,
           chain: data.chain,
+          targetRepo: data.targetRepo || null,
           // teamId is now in the URL for team bounties, not the body — the
           // backend route already knows which team from req.params.
           ...(!data.teamId && { teamId: null }),
@@ -3226,6 +3227,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           ...(data.bountyAmount && { bountyAmount: data.bountyAmount }),
           ...(data.timeToComplete && { timeToComplete: data.timeToComplete }),
           ...(data.chain && { chain: data.chain }),
+          ...(data.targetRepo !== undefined && {
+            targetRepo: data.targetRepo || null,
+          }),
           notifyUsers: data.notifyUsers ?? false,
         }),
       });

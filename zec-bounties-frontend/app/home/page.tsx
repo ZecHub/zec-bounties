@@ -21,6 +21,8 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import { RepoFilter } from "@/components/repo-filter";
+import { bountyRepo, type RepoId } from "@/lib/repos";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
@@ -113,6 +115,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
 
   const [activeCategory, setActiveCategory] = useState("All");
+  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -126,7 +129,7 @@ function HomeContent() {
   // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
   const displayCategories = ["All", ...categories.map((c) => c.name)];
 
-  const filteredBounties = useMemo(() => {
+  const categoryFilteredBounties = useMemo(() => {
     let filtered = bounties;
     if (activeTeamId) {
       filtered = filtered.filter((b) => b.teamId === activeTeamId);
@@ -142,11 +145,39 @@ function HomeContent() {
           b.createdByUser?.name?.toLowerCase().includes(q),
       );
     }
+    return filtered;
+  }, [bounties, searchQuery, activeCategory, activeTeamId]);
+
+  const repoCounts = useMemo(() => {
+    const counts = {
+      namada: 0,
+      zechub: 0,
+      "zechub-wiki": 0,
+      "zec-bounties": 0,
+      untagged: 0,
+    };
+    for (const bounty of categoryFilteredBounties) {
+      const repo = bountyRepo(bounty);
+      if (repo) counts[repo] += 1;
+      else counts.untagged += 1;
+    }
+    return counts;
+  }, [categoryFilteredBounties]);
+
+  const filteredBounties = useMemo(() => {
+    const filtered =
+      activeRepo === "all"
+        ? categoryFilteredBounties
+        : categoryFilteredBounties.filter((bounty) =>
+            activeRepo === "untagged"
+              ? bountyRepo(bounty) == null
+              : bountyRepo(bounty) === activeRepo,
+          );
     return filtered.sort(
       (a, b) =>
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
     );
-  }, [bounties, searchQuery, activeCategory, activeTeamId]);
+  }, [categoryFilteredBounties, activeRepo]);
 
   const kanbanGroups = useMemo(
     () =>
@@ -407,6 +438,8 @@ function HomeContent() {
                 </button>
               ))}
             </div>
+
+            <RepoFilter value={activeRepo} onChange={setActiveRepo} counts={repoCounts} />
 
             <div className="space-y-6 min-w-0 flex-1">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b">

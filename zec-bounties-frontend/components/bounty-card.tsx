@@ -46,6 +46,7 @@ import {
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
 import { ProfileLink } from "@/components/profile-link";
+import { BountyRepoMark } from "@/components/repo-filter";
 
 function isNewBounty(dateCreated: Date | string): boolean {
   const created = new Date(dateCreated);
@@ -223,6 +224,7 @@ export function BountyCard({
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
                 {bounty.categoryId}
               </Badge>
+              <BountyRepoMark bounty={bounty} />
               <Badge
                 variant="secondary"
                 className={`text-[10px] h-4 px-1.5 ${difficultyColors[bounty.difficulty] ?? ""}`}
@@ -490,6 +492,7 @@ export function BountyCard({
               <Badge variant="secondary" className="text-[10px] h-5">
                 {bounty.categoryId}
               </Badge>
+              <BountyRepoMark bounty={bounty} />
             </div>
 
             {/* Status — imd+ only (was sm:) */}
@@ -672,6 +675,7 @@ export function BountyCard({
             >
               {bounty.categoryId}
             </Badge>
+            <BountyRepoMark bounty={bounty} />
             <Badge
               variant="secondary"
               className="text-[10px] h-5 uppercase tracking-wider"
