@@ -2376,18 +2376,17 @@ export default function AdminDashboard() {
                       {submission.description}
                     </p>
 
-                    {parseLinks(submission.deliverableUrl).map((link) => (
+                    {submission.deliverableUrl && (
                       <a
-                        key={link}
-                        href={link}
+                        href={submission.deliverableUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-[14px] flex items-center gap-1.5 break-all pl-[42px] text-xs text-blue-600 hover:underline dark:text-blue-400"
                       >
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        {link}
+                        {submission.deliverableUrl}
                       </a>
-                    ))}
+                    )}
 
                     {submission.reviewNotes && (
                       <div className="ml-[14px] rounded border border-yellow-200 bg-yellow-50 p-2.5 pl-[42px] text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
