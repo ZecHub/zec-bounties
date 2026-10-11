@@ -71,7 +71,7 @@ export default function ClientDashboard() {
                 </p>
               </div>
               <Button
-                className="gap-2"
+                className="flex gap-2"
                 onClick={() => setIsNewBountyModalOpen(true)}
               >
                 <Plus className="w-4 h-4" />

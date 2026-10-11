@@ -173,6 +173,24 @@ async function getWeeklyBountyQuota(userId) {
   return { limit, used, remaining: Math.max(0, limit - used), resetsAt: end };
 }
 
+const requireTaskCreation = async (req, res, next) => {
+  try {
+    const u = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { canCreateTasks: true },
+    });
+    if (!u?.canCreateTasks) {
+      return res
+        .status(403)
+        .json({ error: "You are blocked from creating tasks" });
+    }
+    next();
+  } catch (err) {
+    console.error("requireTaskCreation failed:", err);
+    res.status(500).json({ error: "Failed to verify task access" });
+  }
+};
+
 module.exports = {
   shouldSendEmails,
   sendMailIfEnabled,
@@ -182,4 +200,5 @@ module.exports = {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  requireTaskCreation,
 };

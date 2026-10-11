@@ -78,6 +78,7 @@ import {
   Cpu,
   Search,
   MoreHorizontal,
+  Ban,
 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import type { ZcashParams, Team, RecoveryData } from "@/lib/types";
@@ -331,6 +332,7 @@ type Section =
   | "network"
   | "sync"
   | "team-hunter"
+  | "task-access"
   | "danger";
 
 const NAV: {
@@ -347,6 +349,13 @@ const NAV: {
     id: "team-hunter",
     label: "Team → Hunter",
     icon: ArrowRightLeft,
+    adminOnly: true,
+    group: "teams",
+  },
+  {
+    id: "task-access",
+    label: "Task access",
+    icon: Ban,
     adminOnly: true,
     group: "teams",
   },
@@ -1105,6 +1114,149 @@ function RoleConversionPanel() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+function TaskAccessPanel() {
+  const { currentUser, users, usersLoading, setUserTaskAccess } = useBounty();
+  const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (users ?? [])
+      .filter((u: any) => u.role !== "ADMIN")
+      .filter(
+        (u: any) =>
+          !q ||
+          displayName(u).toLowerCase().includes(q) ||
+          (u.email ?? "").toLowerCase().includes(q),
+      );
+  }, [users, query]);
+
+  const blockedCount = (users ?? []).filter(
+    (u: any) => u.canCreateTasks === false,
+  ).length;
+
+  if (currentUser?.role !== "ADMIN") {
+    return (
+      <EmptyState
+        icon={Shield}
+        title="Admin access required"
+        hint="You don't have permission to manage task access."
+      />
+    );
+  }
+
+  const toggle = async (user: any) => {
+    const allow = user.canCreateTasks === false; // blocked now → restore
+    setPendingId(user.id);
+    try {
+      await setUserTaskAccess(user.id, allow);
+      toast({
+        title: allow ? "Task creation restored" : "User blocked",
+        description: allow
+          ? `${displayName(user)} can create tasks again.`
+          : `${displayName(user)} can no longer create tasks.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Update failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  if (usersLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <Input
+            placeholder="Search users…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-8 text-xs pl-8"
+          />
+        </div>
+        <span className="text-[11px] text-muted-foreground">
+          {blockedCount} blocked
+        </span>
+      </div>
+
+      {list.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No users found"
+          hint="Try a different search."
+        />
+      ) : (
+        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
+          {list.map((user: any) => {
+            const blocked = user.canCreateTasks === false;
+            return (
+              <div
+                key={user.id}
+                className="flex items-center justify-between gap-3 px-4 py-3.5 flex-wrap"
+              >
+                <div className="min-w-0 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">
+                    {initials(displayName(user))}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold truncate">
+                        {displayName(user)}
+                      </p>
+                      <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+                        {user.role}
+                      </span>
+                      {blocked && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full">
+                          <Ban className="w-2.5 h-2.5" />
+                          Blocked
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {user.email}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant={blocked ? "outline" : "destructive"}
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 shrink-0"
+                  onClick={() => toggle(user)}
+                  disabled={pendingId === user.id}
+                >
+                  {pendingId === user.id ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : blocked ? (
+                    <Unlock className="w-3.5 h-3.5" />
+                  ) : (
+                    <Ban className="w-3.5 h-3.5" />
+                  )}
+                  {blocked ? "Allow" : "Block"}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1990,6 +2142,19 @@ export default function SettingsPage() {
     );
   }
 
+  function renderTaskAccess() {
+    return (
+      <div>
+        <PageHeader
+          icon={Ban}
+          title="Task access"
+          description="Block specific users from creating tasks. Their existing tasks are not affected."
+        />
+        <TaskAccessPanel />
+      </div>
+    );
+  }
+
   function renderDanger() {
     const deletable = allWallets.filter((w) => !w.isTeam);
     return (
@@ -2055,6 +2220,7 @@ export default function SettingsPage() {
     network: renderNetwork,
     sync: renderSync,
     "team-hunter": renderTeamHunter,
+    "task-access": renderTaskAccess,
     danger: renderDanger,
   };
 

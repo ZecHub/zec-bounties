@@ -28,6 +28,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import { RepoFilter } from "@/components/repo-filter";
+import { bountyRepo, type RepoId } from "@/lib/repos";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import { bountyMatchesQuery, parseUserSearchQuery } from "@/lib/userIdentity";
@@ -104,6 +106,7 @@ export default function MarketplacePage() {
   const searchParams = useSearchParams();
 
   const [activeCategory, setActiveCategory] = useState("All");
+  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const serverUser = parseUserSearchQuery(searchQuery).user;
@@ -193,6 +196,17 @@ export default function MarketplacePage() {
     return () => observer.disconnect();
   }, [hasMoreBounties, bountiesLoading, loadMoreBounties, viewMode]);
 
+  const defragLoadStarted = useRef(false);
+  useEffect(() => {
+    if (viewMode !== "defrag") {
+      defragLoadStarted.current = false;
+      return;
+    }
+    if (!hasMoreBounties || bountiesLoading || defragLoadStarted.current) return;
+    defragLoadStarted.current = true;
+    loadAllBounties();
+  }, [viewMode, hasMoreBounties, bountiesLoading, loadAllBounties]);
+
   const openBounty = (bounty: Bounty) => {
     setSelectedBounty(bounty);
     setIsDetailModalOpen(true);
@@ -251,6 +265,22 @@ export default function MarketplacePage() {
     return filtered;
   }, [bounties, activeCategory, searchQuery]);
 
+  const repoCounts = useMemo(() => {
+    const counts = {
+      namada: 0,
+      zechub: 0,
+      "zechub-wiki": 0,
+      "zec-bounties": 0,
+      untagged: 0,
+    };
+    for (const bounty of categorySearchFilteredBounties) {
+      const repo = bountyRepo(bounty);
+      if (repo) counts[repo] += 1;
+      else counts.untagged += 1;
+    }
+    return counts;
+  }, [categorySearchFilteredBounties]);
+
   const statusCountFor = (status: BountyStatus | "all") =>
     status === "all"
       ? categorySearchFilteredBounties.length
@@ -276,11 +306,19 @@ export default function MarketplacePage() {
       filtered = filtered.filter((bounty) => bounty.status === statusFilter);
     }
 
+    if (activeRepo !== "all") {
+      filtered = filtered.filter((bounty) =>
+        activeRepo === "untagged"
+          ? bountyRepo(bounty) == null
+          : bountyRepo(bounty) === activeRepo,
+      );
+    }
+
     return filtered.sort(
       (a, b) =>
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
     );
-  }, [bounties, searchQuery, activeCategory, statusFilter]);
+  }, [bounties, searchQuery, activeCategory, statusFilter, activeRepo]);
 
   const defragBounties = useMemo(() => {
     return [...filteredBounties].sort((a, b) => {
@@ -439,6 +477,7 @@ export default function MarketplacePage() {
           </aside>
 
           <div className="lg:col-span-3 space-y-6">
+            <RepoFilter value={activeRepo} onChange={setActiveRepo} counts={repoCounts} />
             <div className="flex items-center justify-between pb-4 border-b">
               <h2 className="text-xl font-bold">
                 {activeCategory === "All"
@@ -617,7 +656,8 @@ export default function MarketplacePage() {
                           </SheetHeader>
                           <div className="mt-4 flex-1 overflow-y-auto pr-1">
                             <ul className="space-y-1">
-                              {defragBounties.map((bounty) => {
+                              {defragListOpen &&
+                                defragBounties.map((bounty) => {
                                 const color =
                                   DEFRAG_STATUS_COLORS[bounty.status] ??
                                   "bg-zinc-600";

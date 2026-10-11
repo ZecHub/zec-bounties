@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DUMMY_USERS } from "@/lib/data";
+import { REPOS } from "@/lib/repos";
+import { RepoMenuLabel } from "@/components/repo-filter";
 import { CalendarIcon } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
@@ -58,6 +60,7 @@ export function AdminBountyModal({
     bountyAmount: 0,
     timeToComplete: new Date(),
     category: "",
+    targetRepo: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedAssignee, setSelectedAssignee] = useState("unassigned");
@@ -103,6 +106,7 @@ export function AdminBountyModal({
         bountyAmount: 0,
         timeToComplete: new Date(),
         category: "",
+    targetRepo: "",
       });
       onSuccess?.();
       onOpenChange(false);
@@ -174,6 +178,30 @@ export function AdminBountyModal({
                     {categories.map((category) => (
                       <SelectItem key={category.name} value={category.name}>
                         {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid min-w-0 gap-2">
+                <Label htmlFor="admin-repo">Repository</Label>
+                <Select
+                  value={formData.targetRepo || "none"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      targetRepo: value === "none" ? "" : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="admin-repo" className="w-full min-w-0">
+                    <SelectValue placeholder="Select" className="truncate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {REPOS.map((repo) => (
+                      <SelectItem key={repo.id} value={repo.id}>
+                        <RepoMenuLabel repoId={repo.id} />
                       </SelectItem>
                     ))}
                   </SelectContent>

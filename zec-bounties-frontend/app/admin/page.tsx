@@ -64,6 +64,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import { BountyRepoMark, RepoFilter } from "@/components/repo-filter";
+import { bountyRepo, type RepoId } from "@/lib/repos";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { BountyStatus, WorkSubmission, Bounty } from "@/lib/types";
@@ -90,6 +92,7 @@ import { ProfileLink } from "@/components/profile-link";
 import { profileHref } from "@/lib/profileHref";
 import { backendUrl } from "@/lib/configENV";
 import Link from "next/link";
+import { parseLinks } from "@/lib/links";
 
 /* ------------------------------------------------------------------ */
 /* Status metadata — single source of truth (kills the repeated ternaries) */
@@ -258,12 +261,12 @@ function BountyActionsMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-         variant="ghost"
-         size="icon"
-         className={triggerClassName}
-         aria-label={`Actions for ${bounty.title}`}
-         >
-         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          variant="ghost"
+          size="icon"
+          className={triggerClassName}
+          aria-label={`Actions for ${bounty.title}`}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -438,6 +441,7 @@ export default function AdminDashboard() {
     bountiesLoading,
     hasMoreBounties,
     loadMoreBounties,
+    loadAllBounties,
     updateBountyStatus,
     updateBounty,
     approveBounty,
@@ -470,6 +474,9 @@ export default function AdminDashboard() {
     BountyStatus | "ALL"
   >("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string | "ALL">("ALL");
+  const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">(
+    "all",
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [showAdminBountyModal, setShowAdminBountyModal] = useState(false);
@@ -493,6 +500,7 @@ export default function AdminDashboard() {
   const [showCancelledBounties, setShowCancelledBounties] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
+  const [loadingAll, setLoadingAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const serverUser = parseUserSearchQuery(searchQuery).user;
   const [people, setPeople] = useState<
@@ -509,12 +517,24 @@ export default function AdminDashboard() {
   const [groupByAssignee, setGroupByAssignee] = useState(false);
   const [groupByWeek, setGroupByWeek] = useState(true);
 
+  // User search stays on the admin list. Server does the involvement filter;
+  // we load every page and skip the client-side re-filter so cancelled and
+  // partial matches are not dropped.
   useEffect(() => {
     if (!fetchBounties) return;
-    const timer = setTimeout(() => {
-      fetchBounties(true, serverUser ? { user: serverUser } : { user: "" });
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      await fetchBounties(
+        true,
+        serverUser ? { user: serverUser } : { user: "" },
+      );
+      if (cancelled || !serverUser) return;
+      await loadAllBounties();
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverUser]);
 
@@ -563,7 +583,10 @@ export default function AdminDashboard() {
         ? chainFilteredBounties
         : chainFilteredBounties.filter((b) => b.status === bountyStatusFilter);
 
-    if (bountyStatusFilter === "ALL" && !showCancelledBounties) {
+    // User search already filtered by involvement server-side. Keep cancelled
+    // and skip the title/description re-filter so the admin table matches the
+    // full involvement set.
+    if (bountyStatusFilter === "ALL" && !showCancelledBounties && !serverUser) {
       result = result.filter((b) => b.status !== "CANCELLED");
     }
 
@@ -571,11 +594,55 @@ export default function AdminDashboard() {
       result = result.filter((b) => b.categoryId === categoryFilter);
     }
 
-    if (searchQuery.trim()) {
+    if (searchQuery.trim() && !serverUser) {
       result = result.filter((b) => bountyMatchesQuery(b, searchQuery));
     }
 
+    if (repoFilter !== "all") {
+      result = result.filter((b) =>
+        repoFilter === "untagged"
+          ? bountyRepo(b) == null
+          : bountyRepo(b) === repoFilter,
+      );
+    }
+
     return result;
+  }, [
+    chainFilteredBounties,
+    bountyStatusFilter,
+    showCancelledBounties,
+    categoryFilter,
+    searchQuery,
+    repoFilter,
+  ]);
+
+  const repoCounts = useMemo(() => {
+    let result =
+      bountyStatusFilter === "ALL"
+        ? chainFilteredBounties
+        : chainFilteredBounties.filter((b) => b.status === bountyStatusFilter);
+    if (bountyStatusFilter === "ALL" && !showCancelledBounties && !serverUser) {
+      result = result.filter((b) => b.status !== "CANCELLED");
+    }
+    if (categoryFilter !== "ALL") {
+      result = result.filter((b) => b.categoryId === categoryFilter);
+    }
+    if (searchQuery.trim() && !serverUser) {
+      result = result.filter((b) => bountyMatchesQuery(b, searchQuery));
+    }
+    const counts = {
+      namada: 0,
+      zechub: 0,
+      "zechub-wiki": 0,
+      "zec-bounties": 0,
+      untagged: 0,
+    };
+    for (const bounty of result) {
+      const repo = bountyRepo(bounty);
+      if (repo) counts[repo] += 1;
+      else counts.untagged += 1;
+    }
+    return counts;
   }, [
     chainFilteredBounties,
     bountyStatusFilter,
@@ -723,6 +790,7 @@ export default function AdminDashboard() {
   const activeFilterCount =
     (bountyStatusFilter !== "ALL" ? 1 : 0) +
     (categoryFilter !== "ALL" ? 1 : 0) +
+    (repoFilter !== "all" ? 1 : 0) +
     (showCancelledBounties ? 1 : 0);
 
   const statusCountFor = (status: BountyStatus | "ALL") =>
@@ -733,7 +801,18 @@ export default function AdminDashboard() {
   const resetFilters = () => {
     setBountyStatusFilter("ALL");
     setCategoryFilter("ALL");
+    setRepoFilter("all");
     setShowCancelledBounties(false);
+  };
+
+  const handleShowAll = async () => {
+    if (!hasMoreBounties || loadingAll) return;
+    setLoadingAll(true);
+    try {
+      await loadAllBounties();
+    } finally {
+      setLoadingAll(false);
+    }
   };
 
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
@@ -1284,6 +1363,29 @@ export default function AdminDashboard() {
                       );
                     })}
                   </div>
+                  <div className="pt-2">
+                    <RepoFilter
+                      value={repoFilter}
+                      onChange={setRepoFilter}
+                      counts={repoCounts}
+                    />
+                  </div>
+                  {hasMoreBounties && (
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleShowAll}
+                        disabled={loadingAll || bountiesLoading}
+                        className="gap-2"
+                      >
+                        {(loadingAll || bountiesLoading) && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        )}
+                        Show all bounties
+                      </Button>
+                    </div>
+                  )}
                 </CardHeader>
 
                 <CardContent className="p-0">
@@ -1347,6 +1449,7 @@ export default function AdminDashboard() {
                                     {bounty.title}
                                   </p>
                                   <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <BountyRepoMark bounty={bounty} />
                                     <span className="flex items-center gap-1">
                                       <StatusDot
                                         status={bounty.status}
@@ -1647,31 +1750,32 @@ export default function AdminDashboard() {
                                       user={bounty.createdByUser}
                                       className="inline-flex"
                                     >
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Avatar className="h-7 w-7 flex-shrink-0 border">
-                                            <AvatarImage
-                                              src={
-                                                bounty.createdByUser?.avatar ||
-                                                "/placeholder-user.jpg"
-                                              }
-                                            />
-                                            <AvatarFallback>
-                                              {
-                                                displayName(
-                                                  bounty.createdByUser,
-                                                )[0]
-                                              }
-                                            </AvatarFallback>
-                                          </Avatar>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          Created by{" "}
-                                          {displayName(bounty.createdByUser)}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Avatar className="h-7 w-7 flex-shrink-0 border">
+                                              <AvatarImage
+                                                src={
+                                                  bounty.createdByUser
+                                                    ?.avatar ||
+                                                  "/placeholder-user.jpg"
+                                                }
+                                              />
+                                              <AvatarFallback>
+                                                {
+                                                  displayName(
+                                                    bounty.createdByUser,
+                                                  )[0]
+                                                }
+                                              </AvatarFallback>
+                                            </Avatar>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            Created by{" "}
+                                            {displayName(bounty.createdByUser)}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                     </ProfileLink>
                                     <div className="min-w-0 flex-1">
                                       {/* Clicking the title opens the edit
@@ -1682,6 +1786,7 @@ export default function AdminDashboard() {
                                       >
                                         {bounty.title}
                                       </button>
+                                      <BountyRepoMark bounty={bounty} />
                                     </div>
                                   </div>
                                 </TableCell>
@@ -2271,17 +2376,18 @@ export default function AdminDashboard() {
                       {submission.description}
                     </p>
 
-                    {submission.deliverableUrl && (
+                    {parseLinks(submission.deliverableUrl).map((link) => (
                       <a
-                        href={submission.deliverableUrl}
+                        key={link}
+                        href={link}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-[14px] flex items-center gap-1.5 break-all pl-[42px] text-xs text-blue-600 hover:underline dark:text-blue-400"
                       >
                         <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                        {submission.deliverableUrl}
+                        {link}
                       </a>
-                    )}
+                    ))}
 
                     {submission.reviewNotes && (
                       <div className="ml-[14px] rounded border border-yellow-200 bg-yellow-50 p-2.5 pl-[42px] text-xs text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">

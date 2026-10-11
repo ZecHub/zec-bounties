@@ -46,6 +46,7 @@ import {
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
 import { ProfileLink } from "@/components/profile-link";
+import { BountyRepoMark } from "@/components/repo-filter";
 
 function isNewBounty(dateCreated: Date | string): boolean {
   const created = new Date(dateCreated);
@@ -144,6 +145,17 @@ export function BountyCard({
     : isDueSoon
       ? "text-yellow-500 border-yellow-500/30 bg-yellow-500/10"
       : "text-muted-foreground border-border bg-muted/30";
+  const footerMark =
+    bounty.status === "DONE"
+      ? { label: "Done", className: "text-green-600 border-green-500/30 bg-green-500/10" }
+      : bounty.status === "CANCELLED"
+        ? { label: "Cancelled", className: "text-muted-foreground border-border bg-muted/30" }
+        : dueDateLabel
+          ? {
+              label: `${isOverdue ? "⚠ " : ""}${dueDateLabel}`,
+              className: dueDateColor,
+            }
+          : null;
 
   const isNew = isNewBounty(bounty.dateCreated);
 
@@ -213,16 +225,17 @@ export function BountyCard({
             </span>
           )}
           <div className="p-3 space-y-2.5">
-            <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+            <h3 className="text-sm font-semibold leading-snug line-clamp-2 h-10 overflow-hidden group-hover:text-primary transition-colors">
               {bounty.title}
             </h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed h-10 overflow-hidden">
               {bounty.description}
             </p>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-nowrap items-center gap-1 h-4">
               <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
                 {bounty.categoryId}
               </Badge>
+              <BountyRepoMark bounty={bounty} />
               <Badge
                 variant="secondary"
                 className={`text-[10px] h-4 px-1.5 ${difficultyColors[bounty.difficulty] ?? ""}`}
@@ -232,10 +245,10 @@ export function BountyCard({
               {isSuggestedTask && (
                 <Badge
                   variant="outline"
-                  className="text-[10px] h-4 px-1.5 border-sky-500/40 text-sky-600 bg-sky-500/5 gap-1"
+                  className="text-[10px] h-4 w-4 px-0 border-sky-500/40 text-sky-600 bg-sky-500/5 justify-center"
                   title="Suggested by a hunter — no other applicants permitted"
                 >
-                  <Lock className="h-2.5 w-2.5" /> Suggested
+                  <Lock className="h-2.5 w-2.5" />
                 </Badge>
               )}
               {hasApplied && (
@@ -255,8 +268,8 @@ export function BountyCard({
                 </Badge>
               )}
             </div>
-            <div className="flex items-center justify-between pt-1 border-t border-border/50">
-              <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50 h-6">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <Avatar className="h-5 w-5 border shrink-0">
                   <AvatarImage
                     src={
@@ -265,19 +278,24 @@ export function BountyCard({
                   />
                   <AvatarFallback className="text-[9px]">?</AvatarFallback>
                 </Avatar>
-                <ProfileLink user={bounty.team ? null : bounty.createdByUser}>
-                  <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
+                <ProfileLink
+                  user={bounty.team ? null : bounty.createdByUser}
+                  className="min-w-0 hover:underline hover:text-primary"
+                >
+                  <span
+                    className="block text-[10px] text-muted-foreground truncate"
+                    title={bountyCreatorName(bounty)}
+                  >
                     {bountyCreatorName(bounty)}
                   </span>
                 </ProfileLink>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {dueDateLabel && (
+                {footerMark && (
                   <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${dueDateColor}`}
+                    className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${footerMark.className}`}
                   >
-                    {isOverdue ? "⚠ " : ""}
-                    {dueDateLabel}
+                    {footerMark.label}
                   </span>
                 )}
                 <div className="flex items-center gap-0.5">
@@ -490,6 +508,7 @@ export function BountyCard({
               <Badge variant="secondary" className="text-[10px] h-5">
                 {bounty.categoryId}
               </Badge>
+              <BountyRepoMark bounty={bounty} />
             </div>
 
             {/* Status — imd+ only (was sm:) */}
@@ -672,6 +691,7 @@ export function BountyCard({
             >
               {bounty.categoryId}
             </Badge>
+            <BountyRepoMark bounty={bounty} />
             <Badge
               variant="secondary"
               className="text-[10px] h-5 uppercase tracking-wider"

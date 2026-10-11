@@ -14,6 +14,7 @@ import {
   ArrowRight,
   Loader2,
   ChevronsDown,
+  Ban,
   Search,
   X,
   ArrowUpDown,
@@ -24,6 +25,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import { RepoFilter } from "@/components/repo-filter";
+import { bountyRepo, type RepoId } from "@/lib/repos";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
@@ -121,6 +124,7 @@ function HomeContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">("all");
   const [activeStatus, setActiveStatus] = useState<StatusFilterOption>("ALL");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
 
@@ -147,16 +151,12 @@ function HomeContent() {
     [categories]
   );
 
-  // Filtered and Sorted Bounties
-  const filteredBounties = useMemo(() => {
+  // Step 1: Filter by Team, Category, and Debounced Search
+  const categoryFilteredBounties = useMemo(() => {
     let filtered = bounties;
-
-    // Filter by Team
     if (activeTeamId) {
       filtered = filtered.filter((b) => b.teamId === activeTeamId);
     }
-
-    // Filter by Category
     if (activeCategory !== "All") {
       filtered = filtered.filter(
         (b) =>
@@ -164,19 +164,6 @@ function HomeContent() {
           b.categoryId === activeCategory
       );
     }
-
-    // Filter by Status
-    if (activeStatus === "OPEN") {
-      filtered = filtered.filter((b) => b.status === "TO_DO");
-    } else if (activeStatus === "IN_PROGRESS") {
-      filtered = filtered.filter((b) => b.status === "IN_PROGRESS");
-    } else if (activeStatus === "COMPLETED") {
-      filtered = filtered.filter(
-        (b) => b.status === "DONE" || b.status === "IN_REVIEW"
-      );
-    }
-
-    // Search Query (Title, Description, Category, Creator)
     if (debouncedSearchQuery.trim()) {
       const tokens = debouncedSearchQuery.toLowerCase().trim().split(/\s+/);
       filtered = filtered.filter((b) => {
@@ -194,8 +181,49 @@ function HomeContent() {
         );
       });
     }
+    return filtered;
+  }, [bounties, debouncedSearchQuery, activeCategory, activeTeamId]);
 
-    // Sorting Logic
+  // Step 2: Compute repo counts from category/search filtered list
+  const repoCounts = useMemo(() => {
+    const counts = {
+      namada: 0,
+      zechub: 0,
+      "zechub-wiki": 0,
+      "zec-bounties": 0,
+      untagged: 0,
+    };
+    for (const bounty of categoryFilteredBounties) {
+      const repo = bountyRepo(bounty);
+      if (repo) counts[repo] += 1;
+      else counts.untagged += 1;
+    }
+    return counts;
+  }, [categoryFilteredBounties]);
+
+  // Step 3: Apply Repo, Status filter and Sorting
+  const filteredBounties = useMemo(() => {
+    let filtered =
+      activeRepo === "all"
+        ? categoryFilteredBounties
+        : categoryFilteredBounties.filter((bounty) =>
+            activeRepo === "untagged"
+              ? bountyRepo(bounty) == null
+              : bountyRepo(bounty) === activeRepo
+          );
+
+    // Filter by Status
+    if (activeStatus === "OPEN") {
+      filtered = filtered.filter((b) => b.status === "TO_DO");
+    } else if (activeStatus === "IN_PROGRESS") {
+      filtered = filtered.filter((b) => b.status === "IN_PROGRESS");
+    } else if (activeStatus === "COMPLETED") {
+      filtered = filtered.filter(
+        (b) => b.status === "DONE" || b.status === "IN_REVIEW"
+      );
+    }
+
+    // Sort
     return [...filtered].sort((a, b) => {
       if (sortBy === "highest_reward") {
         return (b.bountyAmount || 0) - (a.bountyAmount || 0);
@@ -215,14 +243,7 @@ function HomeContent() {
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
       );
     });
-  }, [
-    bounties,
-    debouncedSearchQuery,
-    activeCategory,
-    activeStatus,
-    sortBy,
-    activeTeamId,
-  ]);
+  }, [categoryFilteredBounties, activeRepo, activeStatus, sortBy]);
 
   const kanbanGroups = useMemo(
     () =>
@@ -243,6 +264,9 @@ function HomeContent() {
       );
     });
   }, [filteredBounties]);
+
+  const missingUA = !currentUser?.UA_address;
+  const taskCreationBlocked = currentUser?.canCreateTasks === false;
 
   // Open a bounty and reflect it in the URL
   const openBounty = (bounty: Bounty) => {
@@ -275,6 +299,12 @@ function HomeContent() {
   }, [loadMoreBounties]);
 
   const handleNewBounty = () => {
+    if (taskCreationBlocked) {
+      toast.error("Task creation disabled", {
+        description: "An admin has blocked your account from creating tasks.",
+      });
+      return;
+    }
     if (!currentUser?.UA_address) {
       toast.warning("Unified Address required", {
         description: "Add a UA to your profile before creating a bounty.",
@@ -292,6 +322,7 @@ function HomeContent() {
   const isFiltered =
     searchQuery.trim() !== "" ||
     activeCategory !== "All" ||
+    activeRepo !== "all" ||
     activeStatus !== "ALL" ||
     sortBy !== "newest" ||
     activeTeamId !== null;
@@ -299,6 +330,7 @@ function HomeContent() {
   const resetAllFilters = () => {
     setSearchQuery("");
     setActiveCategory("All");
+    setActiveRepo("all");
     setActiveStatus("ALL");
     setSortBy("newest");
     setActiveTeamId(null);
@@ -308,6 +340,7 @@ function HomeContent() {
     hasMoreBounties &&
     !searchQuery &&
     activeCategory === "All" &&
+    activeRepo === "all" &&
     activeStatus === "ALL" &&
     !activeTeamId;
 
@@ -373,16 +406,16 @@ function HomeContent() {
 
       <BottomTabBar
         onNewBounty={handleNewBounty}
+        newBountyBlocked={taskCreationBlocked}
         onOpenTeams={() => setIsTeamsSheetOpen(true)}
         teamsActive={!!activeTeamId}
       />
       <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
-      <div className="xl:container xl:mx-auto px-3 sm:px-4 py-6 sm:py-8">
+      <div className="xl:container xl:mx-auto px-3 imd:px-4 py-6 imd:py-8">
         <HeroCarousel onNewBounty={handleNewBounty} />
 
-        {/* Welcome Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 sm:mb-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 imd:mb-12">
           <div className="space-y-2 min-w-0">
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight">
               Welcome!
@@ -392,12 +425,24 @@ function HomeContent() {
               ZEC for it.
             </p>
           </div>
-          <div className="hidden sm:grid sm:grid-cols-2 gap-2 sm:gap-3 shrink-0">
+          <div className="hidden imd:grid imd:grid-cols-2 gap-2 imd:gap-3 shrink-0">
             <Button
-              className="w-full sm:w-auto rounded-full shadow-lg shadow-primary/20"
+              title={
+                taskCreationBlocked
+                  ? "An admin has disabled task creation for your account"
+                  : undefined
+              }
+              className={`w-full sm:w-auto rounded-full shadow-lg shadow-primary/20 ${
+                taskCreationBlocked ? "opacity-50" : ""
+              }`}
               onClick={handleNewBounty}
             >
-              <Plus className="mr-2 h-4 w-4" /> New Bounty
+              {taskCreationBlocked ? (
+                <Ban className="mr-2 h-4 w-4" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}{" "}
+              New Bounty
             </Button>
             <Link href="/my-bounties" className="w-full sm:w-auto">
               <Button
@@ -419,11 +464,13 @@ function HomeContent() {
         <BountyDetailModal
           bounty={selectedBounty}
           open={isDetailModalOpen}
-          onOpenChange={(open) => (open ? setIsDetailModalOpen(true) : closeBounty())}
+          onOpenChange={(open) =>
+            open ? setIsDetailModalOpen(true) : closeBounty()
+          }
         />
 
-        <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 min-w-0">
-          <aside className="hidden sm:block sm:w-auto shrink-0">
+        <div className="flex flex-col imd:flex-row gap-6 imd:gap-8 min-w-0">
+          <aside className="hidden imd:block imd:w-auto shrink-0">
             <FavoriteTeamsSidebar
               activeTeamId={activeTeamId}
               onSelectTeam={setActiveTeamId}
@@ -515,7 +562,10 @@ function HomeContent() {
               {/* Category Pills */}
               <div
                 className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
-                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                style={{
+                  scrollbarWidth: "none",
+                  msOverflowStyle: "none",
+                }}
               >
                 {displayCategories.map((cat) => (
                   <button
@@ -540,231 +590,237 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* View Header with Result Count & Layout Switcher */}
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 border-b">
-              <div className="flex items-center gap-2 truncate">
-                <h2 className="truncate text-base sm:text-lg font-bold">
-                  {activeTeamId
-                    ? `${
-                        communities.find((c) => c.id === activeTeamId)?.name ??
-                        "Team"
-                      } Bounties`
-                    : activeCategory === "All"
-                    ? "All Bounties"
-                    : `${activeCategory} Bounties`}
-                </h2>
-                <span className="text-xs text-muted-foreground shrink-0">
-                  ({filteredBounties.length} found)
-                </span>
-              </div>
+            {/* Upstream RepoFilter */}
+            <RepoFilter value={activeRepo} onChange={setActiveRepo} counts={repoCounts} />
 
-              <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                <Button
-                  variant={viewMode === "grid" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setViewMode("grid")}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === "list" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setViewMode("list")}
-                  title="List view"
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={viewMode === "defrag" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setViewMode("defrag")}
-                  title="Defrag map view"
-                >
-                  <Grid3X3 className="h-4 w-4" />
-                </Button>
+            <div className="space-y-6 min-w-0 flex-1">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b">
+                <div className="flex items-center gap-2 truncate">
+                  <h2 className="truncate text-base sm:text-xl font-bold">
+                    {activeTeamId
+                      ? `${communities.find((c) => c.id === activeTeamId)?.name ?? "Team"} Bounties`
+                      : activeCategory === "All"
+                        ? "All Bounties"
+                        : `${activeCategory} Bounties`}
+                  </h2>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    ({filteredBounties.length} found)
+                  </span>
+                </div>
 
-                {canLoadMore && (
-                  <div className="relative group">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={handleLoadMore}
-                      disabled={isLoadingMore || bountiesLoading}
-                    >
-                      {isLoadingMore || bountiesLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <ChevronsDown className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
-                      Load more
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Bounties Rendering */}
-            {bountiesLoading && bounties.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 sm:py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-muted-foreground">Loading bounties...</p>
-              </div>
-            ) : filteredBounties.length === 0 ? (
-              <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20 space-y-3">
-                <p className="text-muted-foreground text-sm sm:text-base">
-                  No bounties found
-                  {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                  {activeStatus !== "ALL" ? ` with status ${activeStatus}` : ""}
-                  {debouncedSearchQuery ? ` matching "${debouncedSearchQuery}"` : ""}.
-                </p>
-                {isFiltered && (
+                <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                   <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={resetAllFilters}
-                    className="rounded-full text-xs"
+                    variant={viewMode === "grid" ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setViewMode("grid")}
+                    title="Grid view"
                   >
-                    Clear all filters
+                    <LayoutGrid className="h-4 w-4" />
                   </Button>
-                )}
-              </div>
-            ) : viewMode === "grid" ? (
-              <div className="overflow-x-auto pb-4 -mx-1 px-1">
-                <div className="flex gap-3 sm:gap-4 items-start min-w-max snap-x snap-mandatory">
-                  {kanbanGroups.map((col) => (
-                    <div
-                      key={col.status}
-                      className="snap-start flex flex-col gap-3 w-[80vw] max-w-72 sm:w-72 flex-shrink-0"
-                    >
-                      <div
-                        className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
+                  <Button
+                    variant={viewMode === "list" ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setViewMode("list")}
+                    title="List view"
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === "defrag" ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setViewMode("defrag")}
+                    title="Defrag map view"
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                  </Button>
+                  {canLoadMore && (
+                    <div className="relative group">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleLoadMore}
+                        disabled={isLoadingMore || bountiesLoading}
                       >
+                        {isLoadingMore || bountiesLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ChevronsDown className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
+                        Load more
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {bountiesLoading && bounties.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 sm:py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                  <p className="text-muted-foreground">Loading bounties...</p>
+                </div>
+              ) : filteredBounties.length === 0 ? (
+                <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20 space-y-3">
+                  <p className="text-muted-foreground text-sm sm:text-base">
+                    No bounties found
+                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
+                    {activeStatus !== "ALL" ? ` with status ${activeStatus}` : ""}
+                    {debouncedSearchQuery ? ` matching "${debouncedSearchQuery}"` : ""}.
+                  </p>
+                  {isFiltered && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={resetAllFilters}
+                      className="rounded-full text-xs"
+                    >
+                      Clear all filters
+                    </Button>
+                  )}
+                </div>
+              ) : viewMode === "grid" ? (
+                <div className="overflow-x-auto pb-4 -mx-1 px-1">
+                  <div className="flex gap-3 sm:gap-4 items-start min-w-max snap-x snap-mandatory">
+                    {kanbanGroups.map((col) => (
+                      <div
+                        key={col.status}
+                        className="snap-start flex flex-col gap-3 w-[80vw] max-w-72 sm:w-72 flex-shrink-0"
+                      >
+                        <div
+                          className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-2 w-2 rounded-full ${col.dotColor}`}
+                            />
+                            <span className="text-sm font-semibold">
+                              {col.label}
+                            </span>
+                          </div>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] h-5 px-1.5"
+                          >
+                            {col.bounties.length}
+                          </Badge>
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          {col.bounties.length === 0 ? (
+                            <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
+                              <p className="text-xs text-muted-foreground">
+                                No bounties
+                              </p>
+                            </div>
+                          ) : (
+                            col.bounties.map((bounty) => (
+                              <BountyCard
+                                key={bounty.id}
+                                bounty={bounty}
+                                viewMode="kanban"
+                                onClick={() => openBounty(bounty)}
+                              />
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : viewMode === "list" ? (
+                <div className="space-y-8">
+                  {kanbanGroups
+                    .filter((col) => col.bounties.length > 0)
+                    .map((col) => (
+                      <div key={col.status} className="space-y-3">
                         <div className="flex items-center gap-2">
                           <span
                             className={`h-2 w-2 rounded-full ${col.dotColor}`}
                           />
-                          <span className="text-sm font-semibold">
-                            {col.label}
-                          </span>
+                          <h3 className="text-sm font-semibold">{col.label}</h3>
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] h-5 px-1.5"
+                          >
+                            {col.bounties.length}
+                          </Badge>
+                          <div className="flex-1 border-t border-border/50 ml-1" />
                         </div>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] h-5 px-1.5"
-                        >
-                          {col.bounties.length}
-                        </Badge>
-                      </div>
-                      <div className="flex flex-col gap-3">
-                        {col.bounties.length === 0 ? (
-                          <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
-                            <p className="text-xs text-muted-foreground">
-                              No bounties
-                            </p>
-                          </div>
-                        ) : (
-                          col.bounties.map((bounty) => (
+                        <div className="flex flex-col gap-2">
+                          {col.bounties.map((bounty) => (
                             <BountyCard
                               key={bounty.id}
                               bounty={bounty}
-                              viewMode="kanban"
+                              viewMode="list"
                               onClick={() => openBounty(bounty)}
                             />
-                          ))
-                        )}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
-              </div>
-            ) : viewMode === "list" ? (
-              <div className="space-y-8">
-                {kanbanGroups
-                  .filter((col) => col.bounties.length > 0)
-                  .map((col) => (
-                    <div key={col.status} className="space-y-3">
-                      <div className="flex items-center gap-2">
+              ) : (
+                /* defrag view */
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                    {DEFRAG_LEGEND.map((item) => (
+                      <div
+                        key={item.status}
+                        className="flex items-center gap-1.5"
+                      >
                         <span
-                          className={`h-2 w-2 rounded-full ${col.dotColor}`}
+                          className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
                         />
-                        <h3 className="text-sm font-semibold">{col.label}</h3>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] h-5 px-1.5"
-                        >
-                          {col.bounties.length}
-                        </Badge>
-                        <div className="flex-1 border-t border-border/50 ml-1" />
+                        <span>{item.label}</span>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        {col.bounties.map((bounty) => (
-                          <BountyCard
+                    ))}
+                    <span className="w-full sm:w-auto sm:ml-auto text-[11px] opacity-70">
+                      {filteredBounties.length} bounties · click a block to open
+                    </span>
+                  </div>
+                  <div
+                    className="rounded border border-border bg-black p-1.5 overflow-hidden"
+                    style={{
+                      imageRendering: "pixelated",
+                    }}
+                  >
+                    <div className="grid gap-px [grid-template-columns:repeat(auto-fill,10px)] sm:[grid-template-columns:repeat(auto-fill,14px)] justify-start">
+                      {defragBounties.map((bounty) => {
+                        const color =
+                          DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
+                        return (
+                          <button
                             key={bounty.id}
-                            bounty={bounty}
-                            viewMode="list"
+                            type="button"
+                            title={`${bounty.title} — ${formatStatus(bounty.status)}`}
                             onClick={() => openBounty(bounty)}
-                          />
-                        ))}
-                      </div>
+                            className={`
+                              relative h-[10px] w-[10px] sm:h-[14px] sm:w-[14px]
+                              border border-black/90 ${color}
+                              hover:z-10 hover:scale-[1.8] hover:border-white
+                              focus:outline-none focus:ring-1 focus:ring-white
+                              transition-transform duration-75
+                              cursor-pointer
+                            `}
+                          >
+                            {(bounty.status === "DONE" ||
+                              bounty.status === "IN_PROGRESS") && (
+                              <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                  ))}
-              </div>
-            ) : (
-              /* defrag view */
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                  {DEFRAG_LEGEND.map((item) => (
-                    <div
-                      key={item.status}
-                      className="flex items-center gap-1.5"
-                    >
-                      <span
-                        className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
-                      />
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
-                  <span className="w-full sm:w-auto sm:ml-auto text-[11px] opacity-70">
-                    {filteredBounties.length} bounties · click a block to open
-                  </span>
-                </div>
-                <div
-                  className="rounded border border-border bg-black p-1.5 overflow-hidden"
-                  style={{ imageRendering: "pixelated" }}
-                >
-                  <div className="grid gap-px [grid-template-columns:repeat(auto-fill,10px)] sm:[grid-template-columns:repeat(auto-fill,14px)] justify-start">
-                    {defragBounties.map((bounty) => {
-                      const color =
-                        DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
-                      return (
-                        <button
-                          key={bounty.id}
-                          type="button"
-                          title={`${bounty.title} — ${formatStatus(
-                            bounty.status
-                          )}`}
-                          onClick={() => openBounty(bounty)}
-                          className={`relative h-[10px] w-[10px] sm:h-[14px] sm:w-[14px] border border-black/90 ${color} hover:z-10 hover:scale-[1.8] hover:border-white focus:outline-none focus:ring-1 focus:ring-white transition-transform duration-75 cursor-pointer`}
-                        >
-                          {(bounty.status === "DONE" ||
-                            bounty.status === "IN_PROGRESS") && (
-                            <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
-                          )}
-                        </button>
-                      );
-                    })}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {canLoadMore && <div ref={sentinelRef} className="h-4" />}
+              {canLoadMore && <div ref={sentinelRef} className="h-4" />}
+            </div>
           </div>
         </div>
       </div>

@@ -27,6 +27,7 @@ New accounts pick one role at onboarding:
 - **[Creators](creators.md)** — Propose bounties, review work, pay out
 - **[Bounty amounts](bounty-amounts.md)** — How to suggest a ZEC reward using implicit USD intervals
 - **[Privacy & payments](privacy-payments.md)** — How shielded payouts work
+- **[API](api.md)** — Methods, how to call them, and what the responses actually hide
 - **[FAQ](faq.md)** — Common questions
 
 ## Links

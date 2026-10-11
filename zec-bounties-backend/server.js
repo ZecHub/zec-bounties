@@ -21,7 +21,7 @@ const allowedOrigins = [
 ];
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (req, res) => {
   res.json({
@@ -32,6 +32,7 @@ app.get("/", (req, res) => {
 
 app.use("/auth", require("./routes/auth"));
 app.use("/api/bounties", require("./routes/bounties"));
+app.use("/api/bounties", require("./routes/bountyChat"));
 app.use("/api/transactions", require("./routes/transactions"));
 app.use("/api/zcash", require("./routes/zcash"));
 app.use("/api/teams", require("./routes/teams"));
