@@ -11,8 +11,15 @@ export function MobileNavShell({ children }: { children: React.ReactNode }) {
   const { currentUser } = useBounty();
   const router = useRouter();
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
+  const taskCreationBlocked = currentUser?.canCreateTasks === false;
 
   const handleNewBounty = () => {
+    if (taskCreationBlocked) {
+      toast.error("Task creation disabled", {
+        description: "An admin has blocked your account from creating tasks.",
+      });
+      return;
+    }
     if (!currentUser?.UA_address) {
       toast.warning("Unified Address required", {
         description: "Add a UA to your profile before creating a bounty.",
@@ -38,7 +45,10 @@ export function MobileNavShell({ children }: { children: React.ReactNode }) {
         onCancel={() => setIsNewBountyModalOpen(false)}
       />
 
-      <BottomTabBar onNewBounty={handleNewBounty} />
+      <BottomTabBar
+        onNewBounty={handleNewBounty}
+        newBountyBlocked={taskCreationBlocked}
+      />
     </div>
   );
 }

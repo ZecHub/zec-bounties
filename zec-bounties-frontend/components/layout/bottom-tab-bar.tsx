@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, LayoutGrid, PlusCircle, Users, User } from "lucide-react";
+import { Home, LayoutGrid, PlusCircle, Ban, Users, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BottomTabBarProps {
   onNewBounty: () => void;
   onOpenTeams?: () => void;
   teamsActive?: boolean;
+  newBountyBlocked?: boolean;
 }
 
 const SIDE_TABS = [
@@ -20,6 +21,7 @@ export function BottomTabBar({
   onNewBounty,
   onOpenTeams,
   teamsActive,
+  newBountyBlocked,
 }: BottomTabBarProps) {
   const pathname = usePathname();
   const isHome = pathname === "/home";
@@ -62,16 +64,31 @@ export function BottomTabBar({
             onClick={isProfile ? undefined : onNewBounty}
             disabled={isProfile}
             aria-disabled={isProfile}
-            aria-label="New bounty"
-            title={isProfile ? "Not available on Profile" : "New bounty"}
+            aria-label={
+              newBountyBlocked
+                ? "New bounty (disabled for your account)"
+                : "New bounty"
+            }
+            title={
+              isProfile
+                ? "Not available on Profile"
+                : newBountyBlocked
+                  ? "An admin has disabled task creation for your account"
+                  : "New bounty"
+            }
             className={cn(
               "-mt-6 flex h-12 w-12 items-center justify-center rounded-full",
               "bg-primary text-primary-foreground shadow-lg shadow-primary/30",
               "active:scale-95 transition-transform",
               isProfile && "opacity-40 cursor-not-allowed active:scale-100",
+              newBountyBlocked && !isProfile && "opacity-50",
             )}
           >
-            <PlusCircle className="h-6 w-6" />
+            {newBountyBlocked ? (
+              <Ban className="h-6 w-6" />
+            ) : (
+              <PlusCircle className="h-6 w-6" />
+            )}
           </button>
         </div>
 

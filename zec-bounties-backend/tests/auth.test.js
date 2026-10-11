@@ -133,7 +133,7 @@ test("authenticate: ADMIN JWT is not authorized after DB role drop", async () =>
     });
     assert.equal(nextCalled, false);
     assert.equal(res.statusCode, 403);
-    assert.equal(res.body, "Admins only");
+    assert.deepEqual(res.body, { error: "Admins only" });
   } finally {
     prisma.user.findUnique = originalFindUnique;
   }
@@ -155,7 +155,7 @@ test("isAdmin: permits ADMIN and rejects non-ADMIN", () => {
   });
   assert.equal(hunterNext, false);
   assert.equal(res.statusCode, 403);
-  assert.equal(res.body, "Admins only");
+  assert.deepEqual(res.body, { error: "Admins only" });
 });
 
 test("loadAuthUser: does not request password", async () => {

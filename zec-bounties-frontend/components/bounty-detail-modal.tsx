@@ -42,6 +42,7 @@ import {
 } from "@/lib/displayName";
 import { ProfileLink } from "@/components/profile-link";
 import { ZecToUsd } from "./ZecToUsd";
+import { BountyChat } from "@/components/bounty-chat";
 
 interface BountyDetailModalProps {
   bounty: Bounty | null;
@@ -389,6 +390,7 @@ export function BountyDetailModal({
 
   const canSubmitWork =
     isAssignedToCurrentUser &&
+    bounty.isApproved &&
     !hasCurrentUserSubmitted &&
     !submissionsLoading &&
     bounty.status !== "TO_DO" &&
@@ -407,7 +409,7 @@ export function BountyDetailModal({
   const hasApplied = !!userApplication;
 
   const notice: Notice | null = (() => {
-    if (isAssignedToCurrentUser && bounty.status === "TO_DO") {
+    if (isAssignedToCurrentUser && (!bounty.isApproved || bounty.status === "TO_DO")) {
       return {
         type: "warning",
         title: "Bounty not yet approved",
@@ -1308,6 +1310,16 @@ export function BountyDetailModal({
             </p>
           </section>
         )}
+
+        {currentUser &&
+          (currentUser.role === "ADMIN" || isAssignedToCurrentUser) && (
+            <BountyChat
+              bountyId={bounty.id}
+              active={open}
+              currentUserId={currentUser.id}
+              closed={bounty.status === "DONE"}
+            />
+          )}
       </DialogContent>
     </Dialog>
   );

@@ -28,6 +28,7 @@ import type {
   TeamVerificationStatus,
   PaymentRecord,
   LeaderboardEntry,
+  BountyActivity,
 } from "./types";
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
@@ -181,6 +182,7 @@ interface BountyContextType {
   statusCounts: Record<string, number>;
   unpaidDoneCount: number;
   fetchBountyById: (id: string) => Promise<Bounty | null>;
+  fetchBountyActivity: (bountyId: string) => Promise<BountyActivity[]>;
   fetchTransactionHashes: () => Promise<void>;
   applyToBounty: (bountyId: string, message: string) => Promise<void>;
   editBounty: (id: string, data: Partial<BountyFormData>) => void;
@@ -222,6 +224,7 @@ interface BountyContextType {
   nonAdminUsers: User[];
   usersLoading: boolean;
   fetchUsers: () => Promise<void>;
+  setUserTaskAccess: (userId: string, canCreateTasks: boolean) => Promise<void>;
   balance: Balance | undefined;
   fetchBalance: () => Promise<void>;
   address: string | undefined;
@@ -1603,6 +1606,20 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // Merge a (possibly partial) bounty into every local list without refetching.
+  const mergeBounty = (partial: Partial<Bounty> & { id: string }) => {
+    const merge = (list: Bounty[]) =>
+      list.map((b) => (b.id === partial.id ? { ...b, ...partial } : b));
+    setBounties(merge);
+    setMyBounties(merge);
+    const teamId = partial.teamId;
+    if (teamId) {
+      setTeamBounties((prev) =>
+        prev[teamId] ? { ...prev, [teamId]: merge(prev[teamId]) } : prev,
+      );
+    }
+  };
+
   const addTeamBounty = (bounty: Bounty) => {
     if (!bounty.teamId) return;
     setTeamBounties((prev) => {
@@ -1764,6 +1781,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const rejectOtherSubmissions = async (submissionId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
 
+    const bountyId_ =
+      allSubmissions.find((s) => s.id === submissionId)?.bountyId ??
+      Object.values(bountySubmissions)
+        .flat()
+        .find((s) => s.id === submissionId)?.bountyId;
+    if (!bountyId_) throw new Error("Submission not found locally");
+
     try {
       const res = await fetch(
         `${backendUrl}/api/bounties/submissions/${submissionId}/reject-others`,
@@ -1780,7 +1804,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      await fetchBounties();
+      const flip = (s: WorkSubmission) =>
+        s.bountyId === bountyId_ &&
+        s.id !== submissionId &&
+        s.status === "pending"
+          ? { ...s, status: "rejected" as const }
+          : s;
+      setAllSubmissions((p) => p.map(flip));
+      setBountySubmissions((p) => ({
+        ...p,
+        [bountyId_]: (p[bountyId_] || []).map(flip),
+      }));
+      await patchOneBounty(bountyId_);
     } catch (error) {
       console.error("Failed to reject other submissions:", error);
       throw error;
@@ -2001,6 +2036,20 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!currentUser) throw new Error("User not authenticated");
 
+    // optimistic: flip the submission status immediately
+    const setStatus = (s: WorkSubmission) =>
+      s.id === submissionId ? { ...s, status: reviewData.status } : s;
+    const prevSubs = submissions;
+    const prevAll = allSubmissions;
+    const prevByBounty = bountySubmissions;
+    setSubmissions((p) => p.map(setStatus));
+    setAllSubmissions((p) => p.map(setStatus));
+    setBountySubmissions((p) =>
+      Object.fromEntries(
+        Object.entries(p).map(([k, v]) => [k, v.map(setStatus)]),
+      ),
+    );
+
     try {
       const res = await fetch(
         `${backendUrl}/api/bounties/submissions/${submissionId}/review`,
@@ -2016,10 +2065,15 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to review submission");
       }
 
-      await fetchBounties();
-
-      return await res.json();
+      const result = await res.json();
+      // reconcile with the server's version, no list reload
+      mergeBounty(result.bounty);
+      fetchTotalStats();
+      return result;
     } catch (error) {
+      setSubmissions(prevSubs);
+      setAllSubmissions(prevAll);
+      setBountySubmissions(prevByBounty);
       console.error("Failed to review submission:", error);
       throw error;
     }
@@ -2374,6 +2428,29 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         const msg = JSON.parse(event.data);
 
         switch (msg.type) {
+          case "bounty_chat_message":
+            window.dispatchEvent(
+              new CustomEvent("bounty-chat-message", { detail: msg.payload }),
+            );
+            break;
+
+          case "bounty_chat_cleared":
+            window.dispatchEvent(
+              new CustomEvent("bounty-chat-cleared", { detail: msg.payload }),
+            );
+            window.dispatchEvent(new Event("bounty-notification"));
+            break;
+
+          case "notification_new":
+            window.dispatchEvent(new Event("bounty-notification"));
+            break;
+
+          case "bounty_activity":
+            window.dispatchEvent(
+              new CustomEvent("bounty-activity", { detail: msg.payload }),
+            );
+            break;
+
           case "new_bounties":
             setBounties((prev) =>
               prev.some((b) => b.id === msg.payload.id)
@@ -2385,12 +2462,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             break;
 
           case "bounty_updated":
-            setBounties((prev) =>
-              prev.map((bounty) =>
-                bounty.id === msg.payload.id ? msg.payload : bounty,
-              ),
-            );
-            patchTeamBounty(msg.payload);
+            mergeBounty(msg.payload);
             break;
 
           case "bounty_status_changed":
@@ -2487,7 +2559,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             break;
 
           case "work_submitted":
-            fetchBounties();
             // Mirror application_created pattern
             if (msg.payload.submittedBy === currentUser?.id) {
               setSubmissions((prev) => [...prev, msg.payload]);
@@ -2520,7 +2591,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 (s) => (s.id === msg.payload.id ? msg.payload : s),
               ),
             }));
-            fetchBounties();
             setTeamActivityVersion((v) => v + 1);
             break;
 
@@ -2563,35 +2633,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             setAddress(msg.payload.addresses?.encoded_address);
             break;
 
-          case "bounty_payment_authorized":
-            setBounties((prev) =>
-              prev.map((bounty) =>
-                bounty.id === msg.payload.id ? msg.payload : bounty,
-              ),
-            );
-            break;
-
-          case "bounty_marked_paid":
-            setBounties((prev) =>
-              prev.map((bounty) =>
-                bounty.id === msg.payload.id ? msg.payload : bounty,
-              ),
-            );
-            patchTeamBounty(msg.payload);
-            break;
-
-          case "bounty_paid":
-            fetchBounties();
-            fetchTransactionHashes();
-            fetchBalance();
-            break;
-
           case "bounties_exported":
             fetchTotalStats();
             break;
 
           case "bounty_assignees_updated":
-            fetchBounties();
+            if (!msg.payload.assignees && !msg.payload.removedUserId) {
+              patchOneBounty(msg.payload.bountyId);
+            }
             break;
 
           case "team_created":
@@ -2692,6 +2741,16 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 t.id !== msg.payload.teamId ? t : { ...t, wallet: null },
               ),
             );
+            break;
+
+          case "user_task_access_changed":
+            if (msg.payload.userId === currentUser?.id) {
+              setCurrentUser((prev) =>
+                prev
+                  ? { ...prev, canCreateTasks: msg.payload.canCreateTasks }
+                  : prev,
+              );
+            }
             break;
 
           case "user_updated":
@@ -3007,6 +3066,23 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchBountyActivity = async (
+    bountyId: string,
+  ): Promise<BountyActivity[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/${bountyId}/activity`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch activity");
+      return await res.json();
+    } catch (error) {
+      console.error("Failed to fetch bounty activity:", error);
+      return [];
+    }
+  };
+
   const fetchCommunities = async (): Promise<void> => {
     setCommunitiesLoading(true);
     try {
@@ -3126,6 +3202,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               : data.assignee,
           categoryId: data.category,
           chain: data.chain,
+          targetRepo: data.targetRepo || null,
           // teamId is now in the URL for team bounties, not the body — the
           // backend route already knows which team from req.params.
           ...(!data.teamId && { teamId: null }),
@@ -3177,6 +3254,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           ...(data.bountyAmount && { bountyAmount: data.bountyAmount }),
           ...(data.timeToComplete && { timeToComplete: data.timeToComplete }),
           ...(data.chain && { chain: data.chain }),
+          ...(data.targetRepo !== undefined && {
+            targetRepo: data.targetRepo || null,
+          }),
           notifyUsers: data.notifyUsers ?? false,
         }),
       });
@@ -3267,8 +3347,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const updated = await res.json();
 
-      // Re-fetch bounties so assignees array is fresh
-      await fetchBounties();
+      mergeBounty(updated); // PUT already returns assignees + team
+      fetchTotalStats();
     } catch (error) {
       console.error("Failed to approve bounty:", error);
       throw error;
@@ -3599,6 +3679,44 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) throw new Error("Failed to update OFAC status");
     // Refresh users list so the toggle reflects in other parts of the app
     await fetchUsers();
+  };
+
+  const setUserTaskAccess = async (
+    userId: string,
+    canCreateTasks: boolean,
+  ): Promise<void> => {
+    if (!currentUser || currentUser.role !== "ADMIN") {
+      throw new Error("Unauthorized");
+    }
+
+    const prev = users.find((u) => u.id === userId)?.canCreateTasks ?? true;
+    const patch = (value: boolean) => {
+      const apply = (list: User[]) =>
+        list.map((u) =>
+          u.id === userId ? { ...u, canCreateTasks: value } : u,
+        );
+      setUsers(apply);
+      setNonAdminUsers(apply);
+    };
+
+    patch(canCreateTasks); // optimistic
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/users/${userId}/task-access`,
+        {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ canCreateTasks }),
+        },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Failed to update task access");
+      }
+    } catch (error) {
+      patch(prev); // rollback
+      throw error;
+    }
   };
 
   const fetchUnassignedBounties = async () => {
@@ -3961,6 +4079,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         statusCounts,
         unpaidDoneCount,
         fetchBountyById,
+        fetchBountyActivity,
         applyToBounty,
         editBounty,
         users,
@@ -4085,6 +4204,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         leaderboard,
         leaderboardLoading,
         fetchLeaderboard,
+        setUserTaskAccess,
       }}
     >
       {children}
