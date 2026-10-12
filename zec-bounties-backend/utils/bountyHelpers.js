@@ -9,6 +9,7 @@ const prisma = require("../prisma/client");
 const { delCache, bumpVersion } = require("./cache");
 const sendMail = require("./sendMail");
 const notifyUser = require("./notifyUser");
+const { sendRealtimeUpdate } = require("../middleware/websocket");
 
 // ─── Email settings ─────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -61,21 +62,80 @@ async function getBroadcastRecipients(bounty) {
   admins.forEach((a) => recipients.add(a.id));
 
   if (bounty.teamId) {
-    const [members, favoriters] = await Promise.all([
-      prisma.teamMember.findMany({
-        where: { teamId: bounty.teamId },
-        select: { userId: true },
-      }),
-      prisma.teamFavorite.findMany({
-        where: { teamId: bounty.teamId },
-        select: { userId: true },
-      }),
-    ]);
+    const members = await prisma.teamMember.findMany({
+      where: { teamId: bounty.teamId },
+      select: { userId: true },
+    });
     members.forEach((m) => recipients.add(m.userId));
-    favoriters.forEach((f) => recipients.add(f.userId));
   }
 
   return [...recipients];
+}
+
+// Sends a realtime event about one team to the people allowed to see it.
+// membersOnly — internal team business (members, roles, wallets, payments):
+//   team members and platform admins, whatever the team's privacy.
+// otherwise — directory-level changes: everyone for a public team; for a
+//   private team, the same audience as its private bounties.
+// Fails closed, like broadcastBountyEvent.
+async function broadcastTeamEvent(
+  type,
+  payload,
+  teamId,
+  excludeUserId,
+  { membersOnly = false, extraUserIds = [] } = {},
+) {
+  try {
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: { isPrivate: true },
+    });
+    if (!team) return;
+
+    let recipients = null;
+    if (membersOnly) {
+      const [members, admins] = await Promise.all([
+        prisma.teamMember.findMany({
+          where: { teamId },
+          select: { userId: true },
+        }),
+        prisma.user.findMany({
+          where: { role: "ADMIN" },
+          select: { id: true },
+        }),
+      ]);
+      recipients = [
+        ...members.map((m) => m.userId),
+        ...admins.map((a) => a.id),
+        ...extraUserIds,
+      ];
+    } else if (team.isPrivate) {
+      recipients = await getBroadcastRecipients({ isPrivate: true, teamId });
+    }
+
+    sendRealtimeUpdate(type, payload, excludeUserId, recipients);
+  } catch (err) {
+    console.error(`Realtime ${type} for team ${teamId} not sent:`, err);
+  }
+}
+
+// Sends a realtime event about one bounty to that bounty's audience only:
+// everyone for a public bounty, getBroadcastRecipients() for a private one.
+// Looks the bounty up itself so callers can pass any payload shape
+// (bounty, submission, application, { bountyId }). Fails closed — if the
+// audience can't be resolved nothing is sent; clients refetch on their own.
+async function broadcastBountyEvent(type, payload, bountyId, excludeUserId) {
+  try {
+    const bounty = await prisma.bounty.findUnique({
+      where: { id: bountyId },
+      select: { isPrivate: true, createdBy: true, teamId: true },
+    });
+    if (!bounty) return;
+    const recipients = await getBroadcastRecipients(bounty);
+    sendRealtimeUpdate(type, payload, excludeUserId, recipients);
+  } catch (err) {
+    console.error(`Realtime ${type} for bounty ${bountyId} not sent:`, err);
+  }
 }
 
 // The ONE canonical bounty-cache invalidator. Every route in every router
@@ -127,8 +187,8 @@ function getAvatarOverrideTier(badges) {
   return null;
 }
 
-async function isGoldStarOrAbove(userId) {
-  const user = await prisma.user.findUnique({
+async function isGoldStarOrAbove(userId, db) {
+  const user = await db.user.findUnique({
     where: { id: userId },
     select: { badges: true },
   });
@@ -136,7 +196,7 @@ async function isGoldStarOrAbove(userId) {
   const overrideTier = getAvatarOverrideTier(user?.badges);
   if (overrideTier !== null) return overrideTier >= GOLD_STAR_THRESHOLD;
 
-  const completed = await prisma.bounty.count({
+  const completed = await db.bounty.count({
     where: { assignee: userId, status: "DONE" },
   });
 
@@ -158,21 +218,55 @@ function getCalendarWeekBounds(date = new Date()) {
   return { start, end };
 }
 
-async function getWeeklyBountyQuota(userId) {
-  const isGold = await isGoldStarOrAbove(userId);
+async function getWeeklyBountyQuota(userId, db = prisma, date = new Date()) {
+  const isGold = await isGoldStarOrAbove(userId, db);
   const limit = isGold
     ? WEEKLY_BOUNTY_LIMIT_GOLD
     : WEEKLY_BOUNTY_LIMIT_STANDARD;
 
-  const { start, end } = getCalendarWeekBounds();
+  const { start, end } = getCalendarWeekBounds(date);
 
-  const used = await prisma.bounty.count({
+  const used = await db.bounty.count({
     where: { createdBy: userId, dateCreated: { gte: start, lt: end } },
   });
 
   return { limit, used, remaining: Math.max(0, limit - used), resetsAt: end };
 }
 
+class WeeklyBountyQuotaError extends Error {
+  constructor(quota) {
+    super(`Weekly bounty creation limit reached (${quota.limit} per week)`);
+    this.quota = quota;
+  }
+}
+
+// Both creation routes must count and insert in the same transaction. A plain
+// transaction at PostgreSQL's default Read Committed isolation still allows
+// simultaneous requests to consume the same last slot.
+async function createBountyWithQuota(user, args) {
+  if (user.role === "ADMIN") return prisma.bounty.create(args);
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // Use one timestamp for the quota window and inserted row, including
+        // when a retry crosses Monday 00:00 UTC.
+        const dateCreated = new Date();
+        const quota = await getWeeklyBountyQuota(user.id, tx, dateCreated);
+        if (quota.remaining <= 0) throw new WeeklyBountyQuotaError(quota);
+
+        return tx.bounty.create({
+          ...args,
+          data: { ...args.data, dateCreated },
+        });
+      }, { isolationLevel: "Serializable" });
+    } catch (error) {
+      // Prisma reports serialization conflicts/deadlocks as P2034. Retry the
+      // entire check, so a losing request observes the newly consumed slot.
+      if (error.code !== "P2034" || attempt >= 4) throw error;
+    }
+  }
+}
 const requireTaskCreation = async (req, res, next) => {
   try {
     const u = await prisma.user.findUnique({
@@ -196,9 +290,13 @@ module.exports = {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  broadcastBountyEvent,
+  broadcastTeamEvent,
   invalidateBounty,
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  createBountyWithQuota,
+  WeeklyBountyQuotaError,
   requireTaskCreation,
 };

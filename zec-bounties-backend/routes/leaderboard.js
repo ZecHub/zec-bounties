@@ -16,7 +16,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     if (chainParam !== "MAIN" && !isAdmin) {
       return res.status(403).json({ error: "Non-MAIN chains require admin" });
     }
-    const limit = Math.min(parseInt(req.query.limit) || 25, 100);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 25), 100);
 
     const version = await getVersion("bounties"); // busts with invalidateBounty
     const cacheKey = `leaderboard:v${version}:${timeRange}:${chainParam}:${limit}`;

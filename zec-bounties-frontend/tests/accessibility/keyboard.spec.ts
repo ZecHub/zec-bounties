@@ -42,6 +42,15 @@ async function mockAuthenticatedBackend(page: Page, user = fixtureUser) {
       return;
     }
 
+    if (url.pathname === "/api/notifications") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ notifications: [], unreadCount: 0 }),
+      });
+      return;
+    }
+
     if (
       url.pathname === "/api/bounties" ||
       url.pathname.startsWith("/api/bounties?")
@@ -134,6 +143,15 @@ async function useBountyFixture(
           { id: 1, name: "Development" },
           { id: 2, name: "Design" },
         ]),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/notifications") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ notifications: [], unreadCount: 0 }),
       });
       return;
     }
@@ -476,7 +494,7 @@ test.describe("keyboard accessibility", () => {
     await expect(deliverable).toHaveAttribute("aria-invalid", "true");
     await expect(deliverable).toHaveAttribute(
       "aria-describedby",
-      "deliverable-url-help deliverable-url-error",
+      "deliverable-url-error",
     );
 
     await expect(dialog.locator("#deliverable-url-error")).toHaveText(

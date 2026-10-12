@@ -1841,7 +1841,7 @@ function CommunityTab({ team }: { team: Team }) {
       {community.length === 0 ? (
         <p className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground bg-muted/20">
           No one has joined {team.name}'s community yet. Favoriting this team
-          adds someone here — and lets them see the team's private bounties.
+          adds someone here.
         </p>
       ) : (
         <div className="divide-y rounded-xl border bg-card">
@@ -3002,9 +3002,9 @@ function SettingsTab({
           <div className="pr-4">
             <Label className="text-sm">Private team</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              When private, only {team.name}'s community (members and
-              favoriters) can see and apply to its bounties. Flipping this
-              updates every existing bounty under this team.
+              When private, only {team.name}'s members can see and apply to its
+              bounties. Flipping this updates every existing bounty under this
+              team.
             </p>
           </div>
           <Switch

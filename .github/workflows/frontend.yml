@@ -1,17 +1,25 @@
-name: Accessibility
+name: Frontend
 
 on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  accessibility:
+  frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     defaults:
       run:
@@ -31,11 +39,11 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-
       - name: Type check
         run: yarn tsc --noEmit
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run accessibility tests
         run: yarn test:a11y

@@ -13,7 +13,10 @@ function zingoKey({ chain, serverUrl, dataDir }) {
  */
 const pool = new Map();
 
-function getZingo(params = {}) {
+// `forSend`: a send needs an output window nobody else can write into, so
+// it gets a fresh process in place of one a read left tainted. Reads keep
+// using it; the worst they see is a garbled display.
+function getZingo(params = {}, { forSend = false } = {}) {
   const normalized = {
     chain: params.chain || "testnet",
     serverUrl: params.serverUrl || "https://testnet.zec.rocks:443",
@@ -22,9 +25,16 @@ function getZingo(params = {}) {
 
   const key = zingoKey(normalized);
 
-  // Reuse if exists
-  if (pool.has(key)) {
-    return pool.get(key);
+  // Reuse if exists, unless it died or (for a send) a command gave up on it
+  // with output possibly still pending (see ZingoProcess#tainted).
+  const existing = pool.get(key);
+  const dead = existing && (existing.exited || existing.proc.killed);
+  if (existing && !dead && !(forSend && existing.tainted)) {
+    return existing;
+  }
+  if (existing) {
+    existing.destroy();
+    pool.delete(key);
   }
 
   // Spawn new warm process
@@ -32,9 +42,9 @@ function getZingo(params = {}) {
 
   pool.set(key, zingo);
 
-  // Auto-cleanup if process exits
+  // Auto-cleanup if process exits — but not if it was already replaced.
   zingo.proc.on("exit", () => {
-    pool.delete(key);
+    if (pool.get(key) === zingo) pool.delete(key);
   });
 
   return zingo;

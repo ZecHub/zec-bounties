@@ -1,7 +1,7 @@
 "use client";
 
 import { SubmissionReviewThread } from "@/components/submission-review-thread";
-
+import { getErrorMessage } from "@/lib/errors";
 import { Bounty, WorkSubmission, User, Notice } from "@/lib/types";
 import {
   Dialog,
@@ -130,7 +130,6 @@ export function BountyDetailModal({
     submitWork,
     editSubmission,
     teams,
-    favoriteTeamIds,
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
@@ -233,9 +232,7 @@ export function BountyDetailModal({
     !bounty.isPrivate ||
     currentUser?.role === "ADMIN" ||
     bounty.createdBy === currentUser?.id ||
-    (bounty.teamId != null &&
-      (teams.some((t) => t.id === bounty.teamId) ||
-        favoriteTeamIds.has(bounty.teamId)));
+    (bounty.teamId != null && teams.some((t) => t.id === bounty.teamId));
 
   const isMissingUAForMainnet =
     bounty.chain === "MAIN" && !currentUser?.UA_address;
@@ -342,7 +339,7 @@ export function BountyDetailModal({
       toast.success("Submission updated");
     } catch (error) {
       console.error("Failed to edit submission:", error);
-      toast.error("Failed to update submission");
+      toast.error(getErrorMessage(error, "Failed to update submission"));
     } finally {
       setIsSavingEdit(false);
     }
@@ -484,7 +481,7 @@ export function BountyDetailModal({
       toast.success("Application submitted");
     } catch (error) {
       console.error("Failed to apply:", error);
-      toast.error("Failed to submit application");
+      toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
     }
@@ -541,7 +538,7 @@ export function BountyDetailModal({
       toast.success("Work submitted");
     } catch (error) {
       console.error("Failed to submit work:", error);
-      toast.error("Failed to submit work");
+      toast.error(getErrorMessage(error, "Failed to submit work"));
     } finally {
       setIsSubmitting(false);
     }

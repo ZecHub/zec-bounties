@@ -2,9 +2,17 @@ const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const path = require("path");
 const { promises: fs } = require("fs");
-const { authenticate, optionalAuthenticate } = require("../middleware/auth");
+const {
+  authenticate,
+  optionalAuthenticate,
+  AUTH_USER_SELECT,
+} = require("../middleware/auth");
 const { initZcashOnce, initZcashOnceForTeams } = require("../zcash/init");
-const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
+const {
+  sendRealtimeUpdate,
+  sendToUser,
+  sendUserUpdated,
+} = require("../middleware/websocket");
 const { invalidateZingo } = require("../utils/zingo/getZingo");
 const executeZingoCliSeed = require("../utils/zingo/zingoLibSeed");
 const executeZingoCliBalance = require("../utils/zingo/zingoLibBalance");
@@ -26,6 +34,7 @@ const executeZingoCliSync = require("../utils/zingo/zingoLibSync");
 const { randomUUID } = require("crypto");
 const { uploadToPinata, pinataUrl } = require("../utils/ipfs/pinata");
 const { REQUIRED_TEAM_VERIFICATIONS } = require("../utils/constants");
+const { validateBountyCreate, validateCategory } = require("../helpers/validateBounty");
 const {
   USER_SELECT,
   USER_SELECT_PUBLIC,
@@ -37,9 +46,12 @@ const {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  broadcastTeamEvent,
   invalidateBounty,
   ONBOARDED_ROLES,
   requireOnboarded,
+  createBountyWithQuota,
+  WeeklyBountyQuotaError,
   getWeeklyBountyQuota,
   requireTaskCreation,
 } = require("../utils/bountyHelpers");
@@ -417,7 +429,12 @@ router.post("/", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate("team_created", serializeTeam(team), req.user.id);
+    await broadcastTeamEvent(
+      "team_created",
+      serializeTeam(team),
+      team.id,
+      req.user.id,
+    );
     res.status(201).json(serializeTeam(team));
   } catch (err) {
     if (err.code === "P2002") {
@@ -577,6 +594,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { role: toRole },
+      select: AUTH_USER_SELECT,
     });
 
     // Bust the cached "all users" list — /api/bounties/users won't
@@ -587,7 +605,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
     }
 
-    sendRealtimeUpdate("user_updated", updatedUser, req.user.id);
+    sendUserUpdated(userId, updatedUser);
 
     res.json({
       success: true,
@@ -626,7 +644,8 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
   try {
     const { teamId } = req.params;
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+    // Clamp to 1..50 (see GET /api/bounties).
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 10), 50);
 
     const team = await prisma.team.findUnique({
       where: { id: teamId },
@@ -646,14 +665,9 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
         return res.json({ data: [], total: 0, page, limit });
       }
 
-      const [member, favorite] = await Promise.all([
-        getTeamMember(teamId, userId),
-        prisma.teamFavorite.findUnique({
-          where: { userId_teamId: { userId, teamId } },
-        }),
-      ]);
+      const member = await getTeamMember(teamId, userId);
 
-      if (!member && !favorite) {
+      if (!member) {
         return res.json({ data: [], total: 0, page, limit });
       }
     }
@@ -740,6 +754,14 @@ router.post(
 
       const { teamId } = req.params;
 
+    if (req.user.role !== "ADMIN") {
+      const membership = await getTeamMember(teamId, req.user.id);
+      if (!membership) {
+        return res
+          .status(403)
+          .json({ error: "You are not a member of this team" });
+      }
+    }
       const team = await prisma.team.findUnique({ where: { id: teamId } });
       if (!team) return res.status(404).json({ error: "Team not found" });
 
@@ -749,77 +771,78 @@ router.post(
         });
       }
 
-      if (req.user.role !== "ADMIN") {
-        const membership = await getTeamMember(teamId, req.user.id);
-        if (!membership) {
-          return res
-            .status(403)
-            .json({ error: "You are not a member of this team" });
-        }
+        const {
+      title,
+      description,
+      bountyAmount,
+      timeToComplete,
+      assignee,
+      categoryId,
+      chain,
+      targetRepo,
+    } = req.body;
 
-        // Same weekly cap as the general marketplace create route.
-        const quota = await getWeeklyBountyQuota(req.user.id);
-        if (quota.remaining <= 0) {
-          return res.status(429).json({
-            error: `Weekly bounty creation limit reached (${quota.limit} per week)`,
-            ...quota,
-          });
-        }
+    const validation = validateBountyCreate(req.body);
+    if (!validation.valid) return res.status(400).json({ error: validation.error });
+    const categoryValidation = await validateCategory(prisma, categoryId);
+    if (!categoryValidation.valid) {
+      return res.status(400).json({ error: categoryValidation.error });
+    }
+    if (chain && !["MAIN", "TEST"].includes(chain)) {
+      return res.status(400).json({ error: "Invalid chain value" });
+    }
+
+    if (req.user.role !== "ADMIN") {
+      const membership = await getTeamMember(teamId, req.user.id);
+      if (!membership) {
+        return res
+          .status(403)
+          .json({ error: "You are not a member of this team" });
       }
+      const quota = await getWeeklyBountyQuota(req.user.id);
+      if (quota.remaining <= 0) {
+        return res.status(429).json({
+          error: `Weekly bounty creation limit reached (${quota.limit} per week)`,
+          ...quota,
+        });
+      }
+    }
 
-      const {
+    const TARGET_REPOS = new Set([
+      "namada",
+      "zechub",
+      "zechub-wiki",
+      "zec-bounties",
+    ]);
+    if (
+      targetRepo != null &&
+      targetRepo !== "" &&
+      !TARGET_REPOS.has(targetRepo)
+    ) {
+      return res.status(400).json({ error: "Invalid targetRepo" });
+    }
+
+    const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
+    const resolvedAssignee =
+      canAssignOthers && assignee !== "none" ? assignee : null;
+    const bounty = await prisma.bounty.create({
+      data: {
         title,
         description,
-        bountyAmount,
-        timeToComplete,
-        assignee,
-        categoryId,
-        chain,
-        targetRepo,
-      } = req.body;
-
-      const TARGET_REPOS = new Set([
-        "namada",
-        "zechub",
-        "zechub-wiki",
-        "zec-bounties",
-      ]);
-      if (
-        targetRepo != null &&
-        targetRepo !== "" &&
-        !TARGET_REPOS.has(targetRepo)
-      ) {
-        return res.status(400).json({ error: "Invalid targetRepo" });
-      }
-
-      if (chain && !["MAIN", "TEST"].includes(chain)) {
-        return res.status(400).json({ error: "Invalid chain value" });
-      }
-
-      // Team bounties are always pre-approved — matches the frontend's
-      // existing isApproved: true whenever a teamId is set.
-      const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
-      const resolvedAssignee =
-        canAssignOthers && assignee !== "none" ? assignee : null;
-
-      const bounty = await prisma.bounty.create({
-        data: {
-          title,
-          description,
-          bountyAmount: parseFloat(bountyAmount),
-          timeToComplete: new Date(timeToComplete),
-          createdBy: req.user.id,
-          assignee: resolvedAssignee,
-          isApproved: true,
-          categoryId,
-          ...(chain && { chain }),
-          ...(targetRepo && { targetRepo }),
-          teamId,
-          isPrivate: team.isPrivate,
-          ...(resolvedAssignee && {
-            assignees: { create: { userId: resolvedAssignee } },
-          }),
-        },
+        bountyAmount: parseFloat(bountyAmount),
+        timeToComplete: new Date(timeToComplete),
+        createdBy: req.user.id,
+        assignee: resolvedAssignee,
+        isApproved: true,
+        categoryId: categoryId || null,
+        ...(chain && { chain }),
+        ...(targetRepo && { targetRepo }),
+        teamId,
+        isPrivate: team.isPrivate,
+        ...(resolvedAssignee && {
+          assignees: { create: { userId: resolvedAssignee } },
+        }),
+      },
         include: {
           createdByUser: {
             select: {
@@ -866,8 +889,8 @@ router.post(
       res.status(201).json(bounty);
 
       // Fire-and-forget notifications, scoped to the team's audience (members,
-      // favoriters, admins) rather than every user on the platform — a team
-      // bounty isn't global marketplace news the way a public one is.
+      // admins) rather than every user on the platform: a team bounty isn't
+      // global marketplace news the way a public one is.
       (async () => {
         try {
           const notifyIds = (recipients ?? []).filter(
@@ -913,17 +936,19 @@ router.post(
                 }),
               ),
             ),
-          ]);
-        } catch (notificationErr) {
-          console.error("Team bounty notification failed:", notificationErr);
-        }
-      })();
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Failed to create bounty" });
+        ]);
+      } catch (notificationErr) {
+        console.error("Team bounty notification failed:", notificationErr);
+      }
+    })();
+  } catch (err) {
+    if (err instanceof WeeklyBountyQuotaError) {
+      return res.status(429).json({ error: err.message, ...err.quota });
     }
-  },
-);
+    console.error(err);
+    res.status(500).json({ error: "Failed to create bounty" });
+  }
+});
 
 // ─── Favorites ───────────────────────────────────────────────────────────────
 
@@ -1118,7 +1143,12 @@ router.post("/:teamId/verify", authenticate, async (req, res) => {
       isVerified,
     };
 
-    sendRealtimeUpdate("team_verification_updated", payload, req.user.id);
+    await broadcastTeamEvent(
+      "team_verification_updated",
+      payload,
+      teamId,
+      req.user.id,
+    );
 
     res.status(201).json({ success: true, ...payload, verifiedByMe: true });
   } catch (err) {
@@ -1153,7 +1183,12 @@ router.delete("/:teamId/verify", authenticate, async (req, res) => {
       isVerified,
     };
 
-    sendRealtimeUpdate("team_verification_updated", payload, req.user.id);
+    await broadcastTeamEvent(
+      "team_verification_updated",
+      payload,
+      teamId,
+      req.user.id,
+    );
 
     res.json({ success: true, ...payload, verifiedByMe: false });
   } catch (err) {
@@ -1300,6 +1335,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { role: "HUNTER" },
+      select: AUTH_USER_SELECT,
     });
 
     // Bust the cached "all users" list — /api/bounties/users won't
@@ -1310,7 +1346,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
     }
 
-    sendRealtimeUpdate("user_updated", updatedUser, req.user.id);
+    sendUserUpdated(userId, updatedUser);
 
     res.json({
       success: true,
@@ -1496,7 +1532,12 @@ router.patch("/:teamId", authenticate, async (req, res) => {
       await invalidateTeamBounties(teamId);
     }
 
-    sendRealtimeUpdate("team_updated", serializeTeam(team), req.user.id);
+    await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(team),
+      team.id,
+      req.user.id,
+    );
     res.json(serializeTeam(team));
   } catch (err) {
     if (err.code === "P2002") {
@@ -1664,13 +1705,15 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
       await syncWalletToMembers(teamId, wallet, userIds);
     }
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_members_updated",
       {
         teamId,
         members,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.status(201).json({
@@ -1721,13 +1764,15 @@ router.patch("/:teamId/members/:userId", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_member_role_updated",
       {
         teamId,
         member,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.json(member);
@@ -1767,13 +1812,15 @@ router.delete("/:teamId/members/:userId", authenticate, async (req, res) => {
       await removeWalletFromMembers(teamId, wallet, [userId]);
     }
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_member_removed",
       {
         teamId,
         userId,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true, extraUserIds: [userId] },
     );
 
     res.json({
@@ -1895,13 +1942,15 @@ router.post("/:teamId/wallet", authenticate, async (req, res) => {
 
     await syncWalletToMembers(teamId, wallet, memberUserIds);
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_wallet_created",
       {
         teamId,
         wallet,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.status(201).json({
@@ -2035,13 +2084,15 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
 
     await syncWalletToMembers(teamId, wallet, memberUserIds);
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_wallet_imported",
       {
         teamId,
         wallet,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.status(201).json({
@@ -2339,10 +2390,12 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
       });
     }
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_payment_sent",
       { teamId, txids: sendResult.txids },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.json({
@@ -2591,7 +2644,7 @@ router.post(
 
       // teamId in the payload lets the frontend WS handler distinguish this
       // from an admin (non-team) payout and refetch the right team's data.
-      sendRealtimeUpdate(
+      await broadcastTeamEvent(
         "payment_authorized",
         {
           teamId,
@@ -2602,7 +2655,9 @@ router.post(
           walletAccountName: wallet.accountName,
           batchKey,
         },
+        teamId,
         req.user.id,
+        { membersOnly: true },
       );
 
       res.json({
@@ -2670,7 +2725,30 @@ router.post(
       const { teamId, id } = req.params;
       if (!(await requireTeamAdmin(teamId, req, res))) return;
 
-      const { outcome, txid } = req.body; // "broadcast" or "failed"
+      const { outcome, txid, confirm } = req.body;
+
+      if (outcome !== "broadcast" && outcome !== "failed") {
+        return res
+          .status(400)
+          .json({ error: 'outcome must be "broadcast" or "failed"' });
+      }
+      if (
+        outcome === "broadcast" &&
+        (typeof txid !== "string" || !/^[0-9a-f]{64}$/i.test(txid.trim()))
+      ) {
+        return res.status(400).json({
+          error:
+            "A 64-character hex txid from the wallet history is required to resolve as broadcast",
+        });
+      }
+      // "failed" re-opens the bounty for payment; if the send did go out, the
+      // next payout pays it twice. Make the caller say they checked.
+      if (outcome === "failed" && confirm !== true) {
+        return res.status(400).json({
+          error:
+            "Resolving as failed re-opens the bounty for payment. Pass confirm: true after checking the wallet history.",
+        });
+      }
 
       const record = await prisma.transaction.findUnique({
         where: { id },
@@ -2684,28 +2762,39 @@ router.post(
         return res.status(409).json({ error: "already settled" });
       }
 
-      if (outcome === "broadcast") {
-        await prisma.$transaction([
-          prisma.transaction.update({
-            where: { id: record.id },
-            data: { status: "BROADCAST", txid, settledAt: new Date() },
-          }),
-          prisma.bounty.update({
+      const settledAt = new Date();
+      const alreadySettled = new Error("already-settled");
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Compare-and-swap on UNKNOWN, so two admins resolving the same
+          // record can't both apply (one paying, one re-opening).
+          const { count } = await tx.transaction.updateMany({
+            where: { id: record.id, status: "UNKNOWN" },
+            data:
+              outcome === "broadcast"
+                ? {
+                    status: "BROADCAST",
+                    txid: txid.trim().toLowerCase(),
+                    settledAt,
+                  }
+                : { status: "FAILED", settledAt },
+          });
+          if (count !== 1) throw alreadySettled;
+
+          await tx.bounty.update({
             where: { id: record.bountyId },
-            data: { isPaid: true, paymentInFlight: false, paidAt: new Date() },
-          }),
-        ]);
-      } else {
-        await prisma.$transaction([
-          prisma.transaction.update({
-            where: { id: record.id },
-            data: { status: "FAILED", settledAt: new Date() },
-          }),
-          prisma.bounty.update({
-            where: { id: record.bountyId },
-            data: { paymentInFlight: false },
-          }),
-        ]);
+            data:
+              outcome === "broadcast"
+                ? { isPaid: true, paymentInFlight: false, paidAt: settledAt }
+                : { paymentInFlight: false },
+          });
+        });
+      } catch (err) {
+        if (err !== alreadySettled) throw err;
+        return res
+          .status(409)
+          .json({ error: "Record was settled by another request; refresh" });
       }
 
       await invalidateBounty(record.bountyId);
@@ -2795,12 +2884,14 @@ router.delete("/:teamId/wallet", authenticate, async (req, res) => {
       },
     });
 
-    sendRealtimeUpdate(
+    await broadcastTeamEvent(
       "team_wallet_deleted",
       {
         teamId,
       },
+      teamId,
       req.user.id,
+      { membersOnly: true },
     );
 
     res.json({
@@ -2983,7 +3074,12 @@ router.post(
 
       await invalidateTeamBounties(teamId);
 
-      sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+      await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
       res.json({
         success: true,
         logo: toMediaUrl(cid),
@@ -3038,7 +3134,12 @@ router.delete("/:teamId/logo", authenticate, async (req, res) => {
 
     await invalidateTeamBounties(teamId);
 
-    sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+    await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
     res.json({ success: true, team: serializeTeam(updated) });
   } catch (err) {
     console.error(err);
@@ -3094,7 +3195,12 @@ router.post(
 
       await invalidateTeamBounties(teamId);
 
-      sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+      await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
       res.json({
         success: true,
         banner: toMediaUrl(cid),
@@ -3125,7 +3231,12 @@ router.delete("/:teamId/banner", authenticate, async (req, res) => {
     });
 
     await invalidateTeamBounties(teamId);
-    sendRealtimeUpdate("team_updated", serializeTeam(updated), req.user.id);
+    await broadcastTeamEvent(
+      "team_updated",
+      serializeTeam(updated),
+      updated.id,
+      req.user.id,
+    );
 
     res.json({ success: true, team: serializeTeam(updated) });
   } catch (err) {
