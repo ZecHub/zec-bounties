@@ -13,7 +13,7 @@ function loadModule(relativePath, dependencies, DateClass = Date) {
       throw new Error(`Unexpected dependency: ${name}`);
     },
     process: { env: { NODE_ENV: "production" } },
-    console: { log(...a) { process.stdout.write(a.join(" ") + "\n"); }, error(...a) { process.stderr.write(a.join(" ") + "\n"); } },
+    console: { log() {}, error() {} },
     Date: DateClass,
     setTimeout,
   }, { filename });

@@ -32,11 +32,17 @@ function loadSubmissionRoute(prisma) {
     deleteCacheByPattern: async (key) => effects.invalidations.push(key),
     bumpVersion: noOp,
   };
-  const helpers = load("utils/bountyHelpers.js", {
+    const helpers = load("utils/bountyHelpers.js", {
     "../prisma/client": prisma,
     "./cache": cache,
     "./sendMail": noOp,
     "./notifyUser": noOp,
+    "../middleware/websocket": {
+      sendRealtimeUpdate() {},
+      sendToUser() {},
+      handleWebSocket() {},
+      getClientByUserId() { return null; },
+    },
   });
   let handler;
   const router = Object.fromEntries(["get", "post", "put", "delete", "patch"].map(method => [method,
@@ -49,7 +55,12 @@ function loadSubmissionRoute(prisma) {
     "../prisma/client": prisma,
     "../helpers/email": {},
     "../middleware/auth": { authenticate: noOp, isAdmin: noOp, optionalAuthenticate: noOp },
-    "../middleware/websocket": { sendRealtimeUpdate: (...args) => effects.broadcasts.push(args) },
+    "../middleware/websocket": {
+	  sendRealtimeUpdate() {},
+	  sendToUser() {},
+	  handleWebSocket() {},
+	  getClientByUserId() { return null; },
+	},
     "../utils/cache": cache,
     "../utils/sendMail": noOp,
     "../utils/notifyUser": noOp,
@@ -59,6 +70,10 @@ function loadSubmissionRoute(prisma) {
     "../helpers/validateBounty": {},
     "../utils/userSelects": require("../../utils/userSelects"),
     "../utils/bountyHelpers": helpers,
+    "../utils/bountyActivity": {
+  logActivity: async () => {},
+  publishActivity: async () => {},
+},
   });
   return {
     effects,
