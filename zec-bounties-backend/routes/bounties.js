@@ -358,7 +358,9 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
           .filter((u) => u.emailNotifications !== false)
           .map((u) => u.email)
           .filter(Boolean);
-        const notificationRecipientIds = otherUsers.map((u) => u.id);
+        const notificationRecipientIds = bounty.isPrivate
+          ? [...(recipients || [])].filter((userId) => userId !== req.user.id)
+          : otherUsers.map((u) => u.id);
         await Promise.all([
           sendPushToOptedIn(notificationRecipientIds, {
             type: "BOUNTY_CREATED",
