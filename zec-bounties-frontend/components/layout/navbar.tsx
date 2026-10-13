@@ -49,7 +49,7 @@ import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/theme/theme-picker";
-import { NotificationsInbox } from "@/components/notifications-inbox";
+import { NotificationCenter } from "@/components/notification-center";
 
 // ── Role toggle button ────────────────────────────────────────────────────────
 const ROLE_OPTIONS = [
@@ -297,7 +297,7 @@ export function Navbar({
             <ThemePicker />
 
             {currentUser && (
-              <NotificationsInbox />
+              <NotificationCenter />
             )}
 
             {!currentUser ? (
@@ -462,7 +462,7 @@ export function Navbar({
 
                       <RoleToggleButton compact />
 
-                      <NotificationsInbox fullWidth />
+                      <NotificationCenter mobile onNavigate={() => setMobileMenuOpen(false)} />
 
                       <div className="border-t" />
 
@@ -516,3 +516,5 @@ export function Navbar({
     </>
   );
 }
+
+[executed on device: ayobami-Latitude-7490 (7d1414a3-3c53-4ca4-bd2e-0634cf62f6c1)]

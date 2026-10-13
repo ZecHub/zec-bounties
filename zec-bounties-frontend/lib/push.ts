@@ -2,6 +2,12 @@
 
 import { backendUrl } from "./configENV";
 
+export type PushSubscriptionState =
+  | "unsupported"
+  | "blocked"
+  | "available"
+  | "subscribed";
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -16,65 +22,21 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export async function subscribeToPush() {
-  if (!("serviceWorker" in navigator)) {
-    throw new Error("Service workers are not supported");
+function getToken() {
+  return localStorage.getItem("authToken");
+}
+
+async function registerSubscriptionWithServer(subscription: PushSubscription) {
+  const token = getToken();
+  if (!token) {
+    throw new Error("You must be signed in to enable browser notifications");
   }
-
-  if (!("PushManager" in window)) {
-    throw new Error("Push API is not supported");
-  }
-
-  if (!("Notification" in window)) {
-    throw new Error("Notifications are not supported");
-  }
-
-  // Register the service worker first.
-  const registration = await navigator.serviceWorker.register("/sw.js", {
-    scope: "/",
-    updateViaCache: "none",
-  });
-
-  await navigator.serviceWorker.ready;
-
-  // Ask for permission only if the user hasn't decided yet.
-  let permission = Notification.permission;
-
-  if (permission === "default") {
-    permission = await Notification.requestPermission();
-  }
-
-  if (permission !== "granted") {
-    throw new Error(`Notification permission: ${permission}`);
-  }
-
-  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
-  console.log("VAPID key exists:", !!vapidKey);
-  console.log("VAPID key length:", vapidKey?.length);
-
-  if (!vapidKey) {
-    throw new Error("VAPID public key is missing");
-  }
-
-  const applicationServerKey = urlBase64ToUint8Array(vapidKey);
-
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey,
-    }));
-
-  const token = localStorage.getItem("authToken");
 
   const res = await fetch(`${backendUrl}/api/notifications/push/subscribe`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token && {
-        Authorization: `Bearer ${token}`,
-      }),
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(subscription.toJSON()),
   });
@@ -82,33 +44,124 @@ export async function subscribeToPush() {
   if (!res.ok) {
     throw new Error("Failed to register push subscription with server");
   }
+}
 
-  console.log("Push subscription registered successfully");
+function pushSupported() {
+  return (
+    typeof window !== "undefined" &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window
+  );
+}
+
+export async function getPushSubscriptionState(): Promise<PushSubscriptionState> {
+  if (!pushSupported()) return "unsupported";
+
+  if (Notification.permission === "denied") {
+    return "blocked";
+  }
+
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  if (!registration) return "available";
+
+  const subscription = await registration.pushManager.getSubscription();
+  return subscription ? "subscribed" : "available";
+}
+
+export async function syncExistingPushSubscription() {
+  if (!pushSupported() || Notification.permission !== "granted") {
+    return null;
+  }
+
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  if (!registration) return null;
+
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return null;
+
+  await registerSubscriptionWithServer(subscription);
+  return subscription;
+}
+
+export async function subscribeToPush() {
+  if (!pushSupported()) {
+    throw new Error("Browser notifications are not supported");
+  }
+
+  let permission = Notification.permission;
+  if (permission === "default") {
+    // Keep the permission request directly inside the user's click gesture.
+    // Awaiting service-worker setup first can consume transient user activation
+    // in browsers that require a gesture for notification permission prompts.
+    permission = await Notification.requestPermission();
+  }
+
+  if (permission !== "granted") {
+    throw new Error(
+      permission === "denied"
+        ? "Browser notifications are blocked in your browser settings"
+        : "Notification permission was not granted",
+    );
+  }
+
+  const registration = await navigator.serviceWorker.register("/sw.js", {
+    scope: "/",
+    updateViaCache: "none",
+  });
+
+  await navigator.serviceWorker.ready;
+
+  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!vapidKey) {
+    throw new Error("VAPID public key is missing");
+  }
+
+  const applicationServerKey = urlBase64ToUint8Array(vapidKey);
+  const subscription =
+    (await registration.pushManager.getSubscription()) ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey,
+    }));
+
+  await registerSubscriptionWithServer(subscription);
+
+  // Clear the old failed-attempt suppression flag from previous versions.
+  localStorage.removeItem("zecBountiesPushAttempted");
+  localStorage.setItem("zecBountiesPushSubscribedAt", String(Date.now()));
 
   return subscription;
 }
 
 export async function unsubscribeFromPush() {
-  const registration = await navigator.serviceWorker.ready;
+  if (!pushSupported()) return;
+
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  if (!registration) return;
 
   const subscription = await registration.pushManager.getSubscription();
-
   if (!subscription) return;
 
   const endpoint = subscription.endpoint;
+  const token = getToken();
 
   await subscription.unsubscribe();
 
-  const token = localStorage.getItem("authToken");
-
-  await fetch(`${backendUrl}/api/notifications/push/unsubscribe`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token && {
+  if (token) {
+    const res = await fetch(`${backendUrl}/api/notifications/push/unsubscribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-      }),
-    },
-    body: JSON.stringify({ endpoint }),
-  });
+      },
+      body: JSON.stringify({ endpoint }),
+    });
+
+    if (!res.ok) {
+      throw new Error("Browser alerts were disabled locally, but server cleanup failed");
+    }
+  }
+
+  localStorage.removeItem("zecBountiesPushSubscribedAt");
 }

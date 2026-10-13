@@ -358,11 +358,10 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
           .filter((u) => u.emailNotifications !== false)
           .map((u) => u.email)
           .filter(Boolean);
-        const pushCandidateIds = otherUsers
-          .filter((u) => u.pushNotifications)
-          .map((u) => u.id);
+        const notificationRecipientIds = otherUsers.map((u) => u.id);
         await Promise.all([
-          sendPushToOptedIn(pushCandidateIds, {
+          sendPushToOptedIn(notificationRecipientIds, {
+            type: "BOUNTY_CREATED",
             title: "New Bounty Available",
             body: `${bounty.title} — ${bounty.bountyAmount} ZEC`,
             url: `/bounty/${bounty.id}`,
@@ -785,59 +784,81 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       if (notifyUsers === true) {
         // Added: in the new list, weren't in the old list
         const added = assignees.filter(
-          (a) => !existingAssigneeIds.has(a.userId) && a.user?.email,
+          (a) => !existingAssigneeIds.has(a.userId),
         );
 
         // Removed: were in the old list, aren't in the new list
         const removed = existingAssignees.filter(
-          (a) => !newAssigneeIds.has(a.userId) && a.user?.email,
+          (a) => !newAssigneeIds.has(a.userId),
         );
 
         console.log(
           "[assignee notify] added:",
-          added.map((a) => a.user.email),
+          added.map((a) => a.userId),
           "removed:",
-          removed.map((a) => a.user.email),
+          removed.map((a) => a.userId),
         );
 
-        const emailJobs = [];
+        const notificationJobs = [];
 
         for (const a of added) {
-          emailJobs.push(
-            sendMailIfEnabled({
-              to: a.user.email,
-              subject: `🎉 You've been assigned: ${bounty.title}`,
-              text: `Hi ${a.user.nickname || a.user.name},\n\nCongratulations! You've been assigned to "${bounty.title}". You can start working on it now.`,
-              html: `
-                <h2>🎉 Congratulations, you were assigned!</h2>
-                <p>Hi ${a.user.nickname || a.user.name},</p>
-                <p>You've been assigned to:</p>
-                <p><strong>${bounty.title}</strong></p>
-                <p>You can start working on it now.</p>
-              `,
+          notificationJobs.push(
+            sendPushToOptedIn([a.userId], {
+              type: "BOUNTY_ASSIGNED",
+              title: "You've been assigned a bounty",
+              body: bounty.title,
+              url: `/bounty/${bounty.id}`,
             }),
           );
+
+          if (a.user?.email) {
+            notificationJobs.push(
+              sendMailIfEnabled({
+                to: a.user.email,
+                subject: `🎉 You've been assigned: ${bounty.title}`,
+                text: `Hi ${a.user.nickname || a.user.name},\n\nCongratulations! You've been assigned to "${bounty.title}". You can start working on it now.`,
+                html: `
+                  <h2>🎉 Congratulations, you were assigned!</h2>
+                  <p>Hi ${a.user.nickname || a.user.name},</p>
+                  <p>You've been assigned to:</p>
+                  <p><strong>${bounty.title}</strong></p>
+                  <p>You can start working on it now.</p>
+                `,
+              }),
+            );
+          }
         }
 
         for (const a of removed) {
-          emailJobs.push(
-            sendMailIfEnabled({
-              to: a.user.email,
-              subject: `Removed from bounty: ${bounty.title}`,
-              text: `Hi ${a.user.nickname || a.user.name},\n\nYou've been removed from "${bounty.title}". Reach out to the bounty creator if you have questions.`,
-              html: `
-                <h2>You've been removed from a bounty</h2>
-                <p>Hi ${a.user.nickname || a.user.name},</p>
-                <p>You've been removed from:</p>
-                <p><strong>${bounty.title}</strong></p>
-                <p>Reach out to the bounty creator if you have questions.</p>
-              `,
+          notificationJobs.push(
+            sendPushToOptedIn([a.userId], {
+              type: "BOUNTY_UNASSIGNED",
+              title: "Removed from bounty",
+              body: bounty.title,
+              url: `/bounty/${bounty.id}`,
             }),
           );
+
+          if (a.user?.email) {
+            notificationJobs.push(
+              sendMailIfEnabled({
+                to: a.user.email,
+                subject: `Removed from bounty: ${bounty.title}`,
+                text: `Hi ${a.user.nickname || a.user.name},\n\nYou've been removed from "${bounty.title}". Reach out to the bounty creator if you have questions.`,
+                html: `
+                  <h2>You've been removed from a bounty</h2>
+                  <p>Hi ${a.user.nickname || a.user.name},</p>
+                  <p>You've been removed from:</p>
+                  <p><strong>${bounty.title}</strong></p>
+                  <p>Reach out to the bounty creator if you have questions.</p>
+                `,
+              }),
+            );
+          }
         }
 
-        if (emailJobs.length > 0) {
-          await Promise.all(emailJobs);
+        if (notificationJobs.length > 0) {
+          await Promise.all(notificationJobs);
         }
       }
     } catch (mailErr) {
@@ -2360,6 +2381,17 @@ Your application was accepted and you've been assigned to "${bountyTitle}". You 
       });
     }
 
+    if (status === "accepted") {
+      sendPushToOptedIn([application.applicantId], {
+        type: "BOUNTY_ASSIGNED",
+        title: "Application accepted",
+        body: `You've been assigned to ${application.bounty?.title ?? "a bounty"}`,
+        url: `/bounty/${application.bountyId}`,
+      }).catch((notificationErr) => {
+        console.error("Assignment in-app notification failed:", notificationErr);
+      });
+    }
+
     // Fire-and-forget Discord notification — mirrors the /:id/assignees path
     if (status === "accepted") {
       notifyAssignment({
@@ -3052,13 +3084,23 @@ router.put("/:id", authenticate, async (req, res) => {
       }
 
       if (changes.length > 0) {
-        const recipients = updated.assignees
+        const assigneeUsers = updated.assignees
           .map((a) => a.user)
-          .filter((u) => u?.email);
+          .filter(Boolean);
 
-        if (recipients.length > 0) {
-          Promise.all(
-            recipients.map((u) =>
+        const notificationJobs = [
+          sendPushToOptedIn(
+            assigneeUsers.map((u) => u.id),
+            {
+              type: "BOUNTY_UPDATED",
+              title: `Bounty updated: ${updated.title}`,
+              body: changes.join(" · "),
+              url: `/bounty/${updated.id}`,
+            },
+          ),
+          ...assigneeUsers
+            .filter((u) => u.email)
+            .map((u) =>
               sendMailIfEnabled({
                 to: u.email,
                 subject: `Bounty update: ${updated.title}`,
@@ -3073,10 +3115,11 @@ router.put("/:id", authenticate, async (req, res) => {
                 `,
               }),
             ),
-          ).catch((mailErr) =>
-            console.error("Bounty update notification email failed:", mailErr),
-          );
-        }
+        ];
+
+        Promise.all(notificationJobs).catch((notificationErr) =>
+          console.error("Bounty update notification failed:", notificationErr),
+        );
       }
     }
   } catch (error) {

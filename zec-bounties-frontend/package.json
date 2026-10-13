@@ -10,6 +10,7 @@
     "test:a11y": "playwright test tests/accessibility",
     "test:a11y:headed": "playwright test tests/accessibility --headed",
     "test:pagination": "playwright test --config playwright.pagination.config.ts",
+    "test:notifications": "playwright test --config playwright.notifications.config.ts",
     "test:status-sync": "playwright test --config playwright.status-sync.config.ts"
   },
   "dependencies": {
