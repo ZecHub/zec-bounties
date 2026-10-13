@@ -135,5 +135,3 @@ test("in-app notifications are persisted even when users cannot receive push", a
   assert.equal(persisted[0].bountyId, "b1");
   assert.deepEqual(pushRecipients, ["u2"]);
 });
-
-[executed on device: ayobami-Latitude-7490 (7d1414a3-3c53-4ca4-bd2e-0634cf62f6c1)]
