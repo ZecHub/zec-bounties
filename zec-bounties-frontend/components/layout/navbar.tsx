@@ -516,5 +516,3 @@ export function Navbar({
     </>
   );
 }
-
-[executed on device: ayobami-Latitude-7490 (7d1414a3-3c53-4ca4-bd2e-0634cf62f6c1)]
