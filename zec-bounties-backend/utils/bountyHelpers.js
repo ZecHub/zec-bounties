@@ -240,6 +240,20 @@ class WeeklyBountyQuotaError extends Error {
   }
 }
 
+const MAX_SERIALIZATION_RETRIES = 4; // 5 attempts in total
+const RETRY_BASE_MS = 10;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Full jitter: a random delay in (0, base * 2^attempt]. Two transactions that
+// aborted each other must not retry in the same instant, or they re-read the
+// same count, re-insert, and conflict again. Randomising the whole interval
+// rather than adding jitter to a fixed one is what actually separates two
+// contenders — equal delays stay in lockstep however long they are.
+function serializationRetryDelay(attempt) {
+  return Math.floor(Math.random() * RETRY_BASE_MS * 2 ** attempt) + 1;
+}
+
 // Both creation routes must count and insert in the same transaction. A plain
 // transaction at PostgreSQL's default Read Committed isolation still allows
 // simultaneous requests to consume the same last slot.
@@ -263,7 +277,20 @@ async function createBountyWithQuota(user, args) {
     } catch (error) {
       // Prisma reports serialization conflicts/deadlocks as P2034. Retry the
       // entire check, so a losing request observes the newly consumed slot.
-      if (error.code !== "P2034" || attempt >= 4) throw error;
+      if (error.code !== "P2034") throw error;
+
+      if (attempt >= MAX_SERIALIZATION_RETRIES) {
+        // Out of attempts. Before surfacing a 500, read the window once more
+        // outside any transaction: if it is full, this caller is simply over
+        // quota and the honest answer is the 429 it would have got had it lost
+        // the race more cleanly. Only a conflict with slots still free is a
+        // real failure worth raising.
+        const quota = await getWeeklyBountyQuota(user.id);
+        if (quota.remaining <= 0) throw new WeeklyBountyQuotaError(quota);
+        throw error;
+      }
+
+      await sleep(serializationRetryDelay(attempt));
     }
   }
 }

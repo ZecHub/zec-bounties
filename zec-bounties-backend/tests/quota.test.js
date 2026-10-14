@@ -62,6 +62,32 @@ test("stops after bounded serialization retries and propagates the failure", asy
   assert.equal(fixture.created.length, 0);
 });
 
+test("exhausted retries report the quota, not a write conflict, when the week is full", async () => {
+  // The companion to the test above. There, the window still had a free slot,
+  // so an exhausted retry is a real failure and propagates. Here the window is
+  // full, which is the case that actually happens under contention: the caller
+  // lost the race and should see its 429, not a 500 from the last conflict.
+  const fixture = database({ used: 1 });
+  const conflict = Object.assign(new Error("serialization conflict"), {
+    code: "P2034",
+  });
+  let attempts = 0;
+  fixture.prisma.$transaction = async () => {
+    attempts++;
+    throw conflict;
+  };
+  const helpers = loadHelpers(fixture.prisma);
+  await assert.rejects(
+    helpers.createBountyWithQuota(user, createArgs),
+    (error) =>
+      error instanceof helpers.WeeklyBountyQuotaError &&
+      error.quota.remaining === 0 &&
+      error.quota.used === 1,
+  );
+  assert.equal(attempts, 5);
+  assert.equal(fixture.created.length, 0);
+});
+
 test("does not retry unrelated database failures", async () => {
   const failure = Object.assign(new Error("foreign key failure"), { code: "P2003" });
   const fixture = database({ failure });
@@ -114,6 +140,22 @@ for (const route of ["bounties", "teams"]) {
     assert.equal(app.effects.broadcasts.length, 0);
     assert.equal(app.effects.invalidations, 0);
     assert.equal(app.effects.discord.length, 0);
+  });
+  // Every assertion above is satisfied by a route that counts the week outside
+  // a transaction and then inserts: an exhausted quota still returns 429 and a
+  // failed write still emits nothing. Only the atomicity is lost, and only a
+  // real database shows it — which the PostgreSQL test does, but it is opt-in
+  // and does not run in CI. This asserts the shape instead: one serializable
+  // transaction, the window counted inside it, and the row stamped with that
+  // transaction's timestamp.
+  test(`${route}: counts the week and inserts in one serializable transaction`, async () => {
+    const fixture = database();
+    const app = loadRoutes(fixture.prisma);
+    const response = await app.create(route, user, "fixture-team");
+    assert.equal(response.statusCode, 201);
+    assert.equal(fixture.attempts, 1, "the insert must go through createBountyWithQuota");
+    assert.equal(fixture.quotaReads.length, 1, "the window must be counted once, inside the transaction");
+    assert.ok(fixture.created[0].data.dateCreated instanceof Date);
   });
 }
 
