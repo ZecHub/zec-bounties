@@ -261,4 +261,31 @@ describe("createBountySuggestionCheck", () => {
     assert.equal(check.aiReview.provider, "gemini");
     assert.equal(check.aiReview.status, "completed");
   });
+
+  it("excludes the bounty being checked from the candidate query", async () => {
+    let findManyArgs;
+    await createBountySuggestionCheck(
+      {
+        bounty: {
+          findMany: async (args) => {
+            findManyArgs = args;
+            return [];
+          },
+        },
+      },
+      {
+        userId: "hunter-1",
+        title: "A Zcash task",
+        description: "Done when the Zcash change passes its tests.",
+        bountyAmount: 0.4,
+        excludeBountyId: "new-bounty",
+      },
+      { env: {}, zecUsd: 100 },
+    );
+
+    assert.deepEqual(findManyArgs.where, {
+      isPrivate: false,
+      id: { not: "new-bounty" },
+    });
+  });
 });

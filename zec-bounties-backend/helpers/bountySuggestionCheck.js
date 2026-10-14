@@ -546,7 +546,10 @@ async function createBountySuggestionCheck(
 ) {
   try {
     const existingBounties = await prisma.bounty.findMany({
-      where: { isPrivate: false },
+      where: {
+        isPrivate: false,
+        ...(input.excludeBountyId && { id: { not: input.excludeBountyId } }),
+      },
       select: {
         id: true,
         title: true,

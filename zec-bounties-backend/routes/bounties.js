@@ -30,6 +30,9 @@ const {
 } = require("../helpers/validateBounty");
 const { buildSuggestionReviewUpdate } = require("../utils/bountySuggestionReview");
 const {
+  createBountySuggestionCheck,
+} = require("../helpers/bountySuggestionCheck");
+const {
   USER_SELECT,
   USER_SELECT_PUBLIC,
   USER_SELECT_FULL,
@@ -338,6 +341,43 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
     await bumpVersion("bounties");
     if (!bounty.isPrivate) notifyNewBounty(bounty);
     res.status(201).json(bounty);
+
+    // Run the advisory suggestion analysis once the bounty row exists, in the
+    // background, so submission stays fast and no AI call happens while the
+    // hunter is still editing. The result is stored on the bounty and pushed
+    // over realtime so the detail modal can show it.
+    if (isHunter) {
+      (async () => {
+        try {
+          const suggestionCheck = await createBountySuggestionCheck(prisma, {
+            title,
+            description,
+            bountyAmount,
+            userId: req.user.id,
+            excludeBountyId: bounty.id,
+          });
+          const updated = await prisma.bounty.update({
+            where: { id: bounty.id },
+            data: { suggestionCheck },
+            include: {
+              createdByUser: { select: USER_SELECT },
+              assignees: { include: { user: { select: USER_SELECT } } },
+              assigneeUser: { select: USER_SELECT },
+              team: { select: { id: true, name: true, logo: true } },
+            },
+          });
+          await invalidateBounty(bounty.id);
+          await broadcastBountyEvent(
+            "bounty_updated",
+            updated,
+            bounty.id,
+            req.user.id,
+          );
+        } catch (err) {
+          console.error("Bounty suggestion check failed:", err);
+        }
+      })();
+    }
 
     (async () => {
       try {

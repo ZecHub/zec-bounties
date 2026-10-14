@@ -27,6 +27,7 @@ import {
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
+import { BountySuggestionCheckPanel } from "@/components/bounty-suggestion-check-panel";
 import { format } from "date-fns";
 import Link from "next/link";
 import { Notice } from "@/lib/types";
@@ -319,6 +320,15 @@ export function BountyDetailModal({
                 {renderDescriptionWithLinks(bounty.description)}
               </p>
             </div>
+
+            {bounty.suggestionCheck && (
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                  Suggestion check
+                </h4>
+                <BountySuggestionCheckPanel result={bounty.suggestionCheck} />
+              </div>
+            )}
 
             {/* Submit Work */}
             {canSubmitWork && (

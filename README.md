@@ -66,6 +66,10 @@ Paste the generated keys into `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, and se
 npx prisma db push
 ```
 
+Re-run `npx prisma db push` after pulling schema changes. Bounty records store
+the advisory suggestion check, which runs after a hunter submits and is shown to
+everyone on the bounty detail view.
+
 ### 6. Start the backend
 
 ```bash
