@@ -71,6 +71,10 @@ jobs:
         if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
         run: node --test tests/bounty-edit-validation.test.cjs
 
+      - name: Run payout status tracker test
+        if: steps.changes.outputs.skip != 'true'
+        run: node --test tests/payout-status.test.cjs
+
       - name: Type check
         if: steps.changes.outputs.skip != 'true'
         run: yarn tsc --noEmit

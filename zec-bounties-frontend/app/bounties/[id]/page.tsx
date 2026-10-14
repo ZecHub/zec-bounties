@@ -19,6 +19,7 @@ import {
 import { useBounty } from "@/lib/bounty-context";
 import type { Bounty } from "@/lib/types";
 import { getExplorerUrl } from "@/lib/explorer";
+import { PayoutStatusTracker } from "@/components/payout-status-tracker";
 
 /* ─── status config ─────────────────────────────────────────────────────── */
 
@@ -291,6 +292,9 @@ export default function BountyDetailPage() {
                   ))}
               </div>
             </div>
+
+            {/* payout tracker — only people involved in the bounty can load it */}
+            {bounty.isApproved && <PayoutStatusTracker bountyId={bounty.id} />}
 
             {/* description */}
             {bounty.description && (

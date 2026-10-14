@@ -35,6 +35,7 @@ app.use("/auth", require("./routes/auth"));
 app.use("/api/bounties", hideOtherUsersEmails);
 app.use("/api/bounties", require("./routes/bounties"));
 app.use("/api/bounties", require("./routes/bountyChat"));
+app.use("/api/bounties", require("./routes/payoutStatus"));
 app.use("/api/transactions", require("./routes/transactions"));
 app.use("/api/zcash", require("./routes/zcash"));
 app.use("/api/teams", hideOtherUsersEmails, require("./routes/teams"));

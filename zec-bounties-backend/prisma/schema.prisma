@@ -172,6 +172,11 @@ model Transaction {
   rawResult   String?
   createdAt   DateTime  @default(now())
   settledAt   DateTime?
+  // Payout tracker: set once the wallet reports the tx as mined. A BROADCAST
+  // row with no confirmedAt is "Broadcast"; with one it is "Confirmed".
+  confirmedAt   DateTime?
+  // Last time the wallet was asked about this tx, so refreshes can be throttled.
+  lastCheckedAt DateTime?
 
   @@unique([bountyId, batchKey])
   @@index([batchKey])

@@ -298,6 +298,9 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
             toAddress: p.address,
             memo: p.memo,
             batchKey,
+            // Lets the payout tracker find this wallet again to check confirmations.
+            initiatedBy: req.user.id,
+            walletAccount: adminWallet.walletId ?? null,
           })),
         });
       });
