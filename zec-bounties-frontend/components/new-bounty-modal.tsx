@@ -23,13 +23,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
-import type { BountyFormData } from "@/lib/types";
 import { Loader2, Plus, Clock, Tag, AlignLeft, Users, Ban } from "lucide-react";
 import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 import { REPOS } from "@/lib/repos";
 import { RepoMenuLabel } from "@/components/repo-filter";
+import {
+  defaultDeadline,
+  formatQuotaStatus,
+  isQuotaReached,
+  validateDeadline,
+  validateReward,
+} from "@/lib/new-bounty-form";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -41,9 +47,21 @@ type FieldErrors = {
   title?: string;
   category?: string;
   reward?: string;
+  date?: string;
   description?: string;
   team?: string;
 };
+
+// A fresh form: no reward yet, deadline two weeks out.
+const emptyForm = () => ({
+  title: "",
+  description: "",
+  reward: "",
+  timeToComplete: defaultDeadline(),
+  category: "",
+  teamId: "",
+  targetRepo: "",
+});
 
 export function NewBountyModal({
   onSuccess,
@@ -61,15 +79,7 @@ export function NewBountyModal({
     fetchCommunities,
   } = useBounty();
 
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    bountyAmount: 0,
-    timeToComplete: new Date(),
-    category: "",
-    teamId: "",
-    targetRepo: "",
-  });
+  const [formData, setFormData] = useState(emptyForm);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [errorSummary, setErrorSummary] = useState("");
@@ -94,8 +104,8 @@ export function NewBountyModal({
   const isAdmin = currentUser?.role === "ADMIN";
   const isHunter = currentUser?.role === "HUNTER";
   const blocked = currentUser?.canCreateTasks === false;
-  const atLimit =
-    !isAdmin && bountyQuota?.remaining !== null && bountyQuota?.remaining === 0;
+  const atLimit = isQuotaReached(bountyQuota, isAdmin);
+  const quotaStatus = formatQuotaStatus(bountyQuota);
 
   const validateForm = () => {
     const nextErrors: FieldErrors = {};
@@ -113,7 +123,7 @@ export function NewBountyModal({
           bountyQuota?.limit === 1 ? "y" : "ies"
         } for this week.`,
       });
-      return;
+      return false;
     }
 
     if (!formData.title.trim()) {
@@ -128,8 +138,14 @@ export function NewBountyModal({
       nextErrors.team = "Choose the team this suggestion is for.";
     }
 
-    if (!formData.bountyAmount || formData.bountyAmount <= 0) {
-      nextErrors.reward = "Enter a reward amount greater than 0.";
+    const rewardError = validateReward(Number.parseFloat(formData.reward));
+    if (rewardError) {
+      nextErrors.reward = rewardError;
+    }
+
+    const dateError = validateDeadline(formData.timeToComplete);
+    if (dateError) {
+      nextErrors.date = dateError;
     }
 
     if (!formData.description.trim()) {
@@ -144,6 +160,7 @@ export function NewBountyModal({
         "team",
         "category",
         "reward",
+        "date",
         "description",
       ] as (keyof FieldErrors)[]
     ).find((field) => Boolean(nextErrors[field]));
@@ -171,8 +188,10 @@ export function NewBountyModal({
 
     setIsSubmitting(true);
     try {
+      const { reward, ...rest } = formData;
       await createBounty({
-        ...formData,
+        ...rest,
+        bountyAmount: Number.parseFloat(reward),
         ...(isHunter ? { teamId: formData.teamId } : {}),
       });
       toast.success(isHunter ? "Suggestion sent" : "Bounty created!", {
@@ -181,15 +200,7 @@ export function NewBountyModal({
           : `"${formData.title}" is now live.`,
       });
       onSuccess?.();
-      setFormData({
-        title: "",
-        description: "",
-        bountyAmount: 0,
-        timeToComplete: new Date(),
-        category: "",
-        teamId: "",
-        targetRepo: "",
-      });
+      setFormData(emptyForm());
     } catch (error: any) {
       toast.error("Failed to create bounty", {
         description: error?.message,
@@ -204,6 +215,7 @@ export function NewBountyModal({
       ...prev,
       timeToComplete: parseDateInputValue(e.target.value),
     }));
+    clearFieldError("date");
   };
 
   return (
@@ -243,20 +255,24 @@ export function NewBountyModal({
                 Provide the details for your technical challenge.
               </DialogDescription>
             </div>
-            {!isAdmin && !blocked && bountyQuota && (
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            {!isAdmin && !blocked && quotaStatus && (
+              <div
+                role="status"
+                className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                  atLimit
+                    ? "border-destructive/30 bg-destructive/10 text-destructive"
+                    : "bg-muted/50 text-muted-foreground"
+                }`}
+              >
                 <span
+                  aria-hidden="true"
                   className={`h-2 w-2 rounded-full ${
-                    (bountyQuota.remaining ?? 0) > 0
-                      ? "bg-emerald-500"
-                      : "bg-destructive"
+                    atLimit ? "bg-destructive" : "bg-emerald-500"
                   }`}
                 />
-                {(bountyQuota.remaining ?? 0) > 0
-                  ? `${bountyQuota.remaining} of ${bountyQuota.limit} bount${
-                      bountyQuota.limit === 1 ? "y" : "ies"
-                    } left this week.`
-                  : "You've reached your weekly bounty limit."}
+                {atLimit
+                  ? `Weekly limit reached: ${quotaStatus}`
+                  : `Weekly limit: ${quotaStatus}`}
               </div>
             )}
 
@@ -432,12 +448,13 @@ export function NewBountyModal({
                   id="reward"
                   type="number"
                   step="0.01"
-                  min="0"
-                  value={formData.bountyAmount}
+                  min="0.01"
+                  inputMode="decimal"
+                  value={formData.reward}
                   onChange={(e) => {
                     setFormData((prev) => ({
                       ...prev,
-                      bountyAmount: Number.parseFloat(e.target.value) || 0,
+                      reward: e.target.value,
                     }));
                     clearFieldError("reward");
                   }}
@@ -464,17 +481,24 @@ export function NewBountyModal({
                 className="flex items-center gap-2 text-sm font-medium"
               >
                 <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                Time to Complete
+                Deadline
               </Label>
               <Input
                 id="date"
                 type="date"
-                min={new Date().toISOString().split("T")[0]}
+                min={toDateInputValue(new Date())}
                 value={toDateInputValue(formData.timeToComplete)}
                 onChange={handleDateChange}
+                aria-invalid={Boolean(fieldErrors.date)}
+                aria-describedby={fieldErrors.date ? "date-error" : undefined}
                 required
                 className="h-11 rounded-xl"
               />
+              {fieldErrors.date && (
+                <p id="date-error" className="text-sm text-destructive">
+                  {fieldErrors.date}
+                </p>
+              )}
             </div>
 
             {/* Description */}
