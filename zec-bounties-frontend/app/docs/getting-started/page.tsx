@@ -31,9 +31,9 @@ export default function GettingStartedPage() {
               <Link href="/login" className="text-primary hover:underline">
                 Sign in
               </Link>{" "}
-              and authorize the app. Your GitHub identity is used for
-              authentication and profile basics. New accounts start as{" "}
-              <strong>Client</strong>.
+              and choose GitHub or Google when Google sign-in is enabled. Your
+              provider identity is used for authentication and profile basics.
+              New accounts start in setup.
             </p>
           </div>
         </li>

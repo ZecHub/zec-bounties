@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,8 +22,41 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [githubEnabled, setGithubEnabled] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
   const { login, currentUser } = useBounty();
   const router = useRouter();
+
+  useEffect(() => {
+    const errorCode = new URLSearchParams(window.location.search).get("error");
+    if (errorCode) {
+      const messages: Record<string, string> = {
+        oauth_cancelled: "GitHub sign-in was cancelled.",
+        oauth_failed: "GitHub sign-in failed. Please try again.",
+        no_email: "Your GitHub account must provide an email address.",
+        google_not_configured: "Google sign-in is not configured yet.",
+        google_sign_in_cancelled: "Google sign-in was cancelled.",
+        google_state_invalid:
+          "Google sign-in could not be verified. Please try again.",
+        google_account_conflict:
+          "That email is linked to a different Google account.",
+        google_email_unverified:
+          "Sign in with a Google account that has a verified email address.",
+      };
+      setError(messages[errorCode] || "Sign-in failed. Please try again.");
+    }
+
+    fetch(`${backendUrl}/auth/providers`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load sign-in providers");
+        const providers = await response.json();
+        setGithubEnabled(providers.github === true);
+        setGoogleEnabled(providers.google === true);
+      })
+      .catch((providerError) => {
+        console.error("Failed to load sign-in providers:", providerError);
+      });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,18 +146,42 @@ export function LoginForm() {
               </>
             )}
 
-            <a
-              href={`${backendUrl}/auth/github`}
-              className="github-login-btn block"
-            >
-              <Button
-                type="button"
-                className="w-full h-11 font-medium hover:cursor-pointer"
-                disabled={isLoading}
+            {githubEnabled && (
+              <a
+                href={`${backendUrl}/auth/github`}
+                className="github-login-btn block"
               >
-                {isLoading ? "Signing in..." : "Login with GitHub"}
-              </Button>
-            </a>
+                <Button
+                  type="button"
+                  className="w-full h-11 font-medium hover:cursor-pointer"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Signing in..." : "Login with GitHub"}
+                </Button>
+              </a>
+            )}
+            {googleEnabled && (
+              <a
+                href={`${backendUrl}/auth/google`}
+                className="block"
+                aria-label="Continue with Google"
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full font-medium"
+                  disabled={isLoading}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="mr-2 font-bold text-[#4285F4]"
+                  >
+                    G
+                  </span>
+                  Continue with Google
+                </Button>
+              </a>
+            )}
           </form>
         </CardContent>
       </Card>

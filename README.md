@@ -131,6 +131,11 @@ ZINGO_CLI=path/to/your/zingo-cli
 GITHUB_CLIENT_ID=GITHUB_CLIENT_ID
 GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET
 
+# Optional Google sign-in
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:9000/auth/google/callback
+
 FRONTEND_URL=http://localhost:3000
 BACKEND_URL=http://localhost:9000
 
@@ -142,6 +147,13 @@ DEV_EMAIL_FALLBACK=mail
 ```
 
 Update these values to match your local environment.
+
+Google sign-in is optional and appears on the login screen only when both
+Google credentials are configured. Register the redirect URI shown above in
+the Google OAuth client. New Google accounts start in onboarding, and an
+existing account with the same verified email is linked to the Google identity.
+Apply the Prisma schema update (`npx prisma db push`) before enabling Google
+sign-in.
 
 ---
 
