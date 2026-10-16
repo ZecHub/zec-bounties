@@ -209,7 +209,7 @@ export default function KpisDashboard() {
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<any>(null);
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
   const [isSavingBadges, setIsSavingBadges] = useState(false);
-  const [chainFilter, setChainFilter] = useState<ChainFilter>("all");
+  const [chainFilter, setChainFilter] = useState<ChainFilter>("MAIN");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [userFilter, setUserFilter] = useState("");

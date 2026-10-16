@@ -92,17 +92,17 @@ export function BottomTabBar({
           </button>
         </div>
 
-        {/* Teams — only interactive on Home, where the sheet + filter state live */}
+        {/* Teams */}
         <button
           type="button"
-          onClick={isHome ? onOpenTeams : undefined}
-          disabled={!isHome}
-          aria-disabled={!isHome}
-          title={isHome ? "Favorite teams" : "Go to Home to filter by team"}
+          onClick={onOpenTeams}
+          disabled={!onOpenTeams}
+          aria-disabled={!onOpenTeams}
+          title={teamsActive ? "Active team filter" : "Favorite teams"}
           className={cn(
             "flex flex-col items-center justify-center gap-0.5 h-full text-[10px] sam:text-[11px] transition-colors",
-            !isHome && "opacity-40 cursor-not-allowed",
-            isHome && teamsActive
+            !onOpenTeams && "opacity-40 cursor-not-allowed",
+            teamsActive
               ? "text-primary"
               : "text-muted-foreground hover:text-foreground",
           )}
@@ -110,7 +110,7 @@ export function BottomTabBar({
           <Users
             className={cn(
               "h-5 w-5",
-              isHome && teamsActive && "fill-primary/10",
+              teamsActive && "fill-primary/10",
             )}
           />
           Teams

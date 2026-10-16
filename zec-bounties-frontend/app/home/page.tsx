@@ -30,13 +30,8 @@ import { formatStatus } from "@/lib/utils";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { FavoriteTeamsSidebar } from "@/components/favorite-teams-sidebar";
 import { HeroCarousel } from "@/components/hero-carousel";
-import { BottomTabBar } from "@/components/layout/bottom-tab-bar";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { MobileNavShell } from "@/components/layout/mobile-nav-shell";
+import { useTaskCreationBlocked } from "@/hooks/use-task-creation-blocked";
 // import { useRoleGuard } from "@/hooks/use-role-guard";
 
 const KANBAN_COLUMNS: {
@@ -99,6 +94,7 @@ const STATUS_ORDER: BountyStatus[] = [
 ];
 
 function HomeContent() {
+  const taskCreationBlocked = useTaskCreationBlocked();
   const {
     bounties,
     currentUser,
@@ -108,6 +104,8 @@ function HomeContent() {
     loadMoreBounties,
     hasMoreBounties,
     fetchBountyById,
+    activeTeamId,
+    setActiveTeamId,
   } = useBounty();
 
   const router = useRouter();
@@ -115,16 +113,16 @@ function HomeContent() {
   const searchParams = useSearchParams();
 
   const [activeCategory, setActiveCategory] = useState("All");
-  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">("all");
+  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">(
+    "all",
+  );
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
-  const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
 
   // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
   const displayCategories = ["All", ...categories.map((c) => c.name)];
@@ -200,7 +198,6 @@ function HomeContent() {
   }, [filteredBounties]);
 
   const missingUA = !currentUser?.UA_address;
-  const taskCreationBlocked = currentUser?.canCreateTasks === false;
 
   // Open a bounty and reflect it in the URL
   const openBounty = (bounty: Bounty) => {
@@ -297,33 +294,7 @@ function HomeContent() {
   }, [searchParams, bounties, fetchBountyById]);
 
   return (
-    <main className="min-h-screen bg-background text-foregroun pb-20 md:pb-0">
-      <Sheet open={isTeamsSheetOpen} onOpenChange={setIsTeamsSheetOpen}>
-        <SheetContent
-          side="bottom"
-          className="max-h-[70vh] overflow-y-auto p-4 py-6"
-        >
-          <SheetHeader>
-            <SheetTitle>Favorite Teams</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4">
-            <FavoriteTeamsSidebar
-              activeTeamId={activeTeamId}
-              onSelectTeam={(id) => {
-                setActiveTeamId(id);
-                setIsTeamsSheetOpen(false); // close after picking, feels more native
-              }}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      <BottomTabBar
-        onNewBounty={handleNewBounty}
-        newBountyBlocked={taskCreationBlocked}
-        onOpenTeams={() => setIsTeamsSheetOpen(true)}
-        teamsActive={!!activeTeamId}
-      />
+    <main className="min-h-screen bg-background text-foreground">
       <Navbar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
       <div className="xl:container xl:mx-auto px-3 imd:px-4 py-6 imd:py-8">
@@ -439,7 +410,11 @@ function HomeContent() {
               ))}
             </div>
 
-            <RepoFilter value={activeRepo} onChange={setActiveRepo} counts={repoCounts} />
+            <RepoFilter
+              value={activeRepo}
+              onChange={setActiveRepo}
+              counts={repoCounts}
+            />
 
             <div className="space-y-6 min-w-0 flex-1">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b">
@@ -666,7 +641,9 @@ export default function HomePage() {
   // useRoleGuard("CLIENT");
   return (
     <ProtectedRoute blockAdmin blockTeam>
-      <HomeContent />
+      <MobileNavShell>
+        <HomeContent />
+      </MobileNavShell>
     </ProtectedRoute>
   );
 }

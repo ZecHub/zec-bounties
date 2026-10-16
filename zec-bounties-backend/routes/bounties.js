@@ -1229,8 +1229,11 @@ router.post("/:id/submit", authenticate, async (req, res) => {
     const { description, deliverableUrl } = req.body;
     const userId = req.user.id;
 
-    if (!description?.trim()) {
+    if (typeof description !== "string" || !description.trim()) {
       return res.status(400).json({ error: "Work description is required" });
+    }
+    if (deliverableUrl != null && typeof deliverableUrl !== "string") {
+      return res.status(400).json({ error: "Deliverable URL must be a string" });
     }
 
     // Retry serialization conflicts with a fresh eligibility snapshot. Retrying
@@ -1660,8 +1663,11 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
     const { description, deliverableUrl } = req.body;
     const userId = req.user.id;
 
-    if (!description?.trim()) {
+    if (typeof description !== "string" || !description.trim()) {
       return res.status(400).json({ error: "Work description is required" });
+    }
+    if (deliverableUrl != null && typeof deliverableUrl !== "string") {
+      return res.status(400).json({ error: "Deliverable URL must be a string" });
     }
 
     const submission = await prisma.workSubmission.findUnique({

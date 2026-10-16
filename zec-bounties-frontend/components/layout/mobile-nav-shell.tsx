@@ -1,17 +1,37 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
 import { BottomTabBar } from "@/components/layout/bottom-tab-bar";
 import { NewBountyModal } from "@/components/new-bounty-modal";
+import { FavoriteTeamsSidebar } from "@/components/favorite-teams-sidebar";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useTaskCreationBlocked } from "@/hooks/use-task-creation-blocked";
 
-export function MobileNavShell({ children }: { children: React.ReactNode }) {
-  const { currentUser } = useBounty();
+interface MobileNavShellProps {
+  children: React.ReactNode;
+  onOpenTeams?: () => void;
+  teamsActive?: boolean;
+}
+
+export function MobileNavShell({
+  children,
+  onOpenTeams,
+  teamsActive,
+}: MobileNavShellProps) {
+  const { currentUser, activeTeamId, setActiveTeamId } = useBounty();
   const router = useRouter();
+  const pathname = usePathname();
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
-  const taskCreationBlocked = currentUser?.canCreateTasks === false;
+  const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
+  const taskCreationBlocked = useTaskCreationBlocked();
 
   const handleNewBounty = () => {
     if (taskCreationBlocked) {
@@ -34,9 +54,36 @@ export function MobileNavShell({ children }: { children: React.ReactNode }) {
     setIsNewBountyModalOpen(true);
   };
 
+  const handleOpenTeams = onOpenTeams ?? (() => setIsTeamsSheetOpen(true));
+  const isTeamsActive =
+    teamsActive !== undefined ? teamsActive : !!activeTeamId;
+
   return (
     <div className="pb-20 md:pb-0">
       {children}
+
+      <Sheet open={isTeamsSheetOpen} onOpenChange={setIsTeamsSheetOpen}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[70vh] overflow-y-auto p-4 py-6"
+        >
+          <SheetHeader>
+            <SheetTitle>Favorite Teams</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4">
+            <FavoriteTeamsSidebar
+              activeTeamId={activeTeamId}
+              onSelectTeam={(id) => {
+                setActiveTeamId(id);
+                setIsTeamsSheetOpen(false);
+                if (pathname !== "/home") {
+                  router.push("/home");
+                }
+              }}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <NewBountyModal
         open={isNewBountyModalOpen}
@@ -48,6 +95,8 @@ export function MobileNavShell({ children }: { children: React.ReactNode }) {
       <BottomTabBar
         onNewBounty={handleNewBounty}
         newBountyBlocked={taskCreationBlocked}
+        onOpenTeams={handleOpenTeams}
+        teamsActive={isTeamsActive}
       />
     </div>
   );

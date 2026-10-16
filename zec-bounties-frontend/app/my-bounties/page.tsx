@@ -2,6 +2,7 @@
 
 import {
   Plus,
+  Ban,
   TrendingUp,
   Clock,
   CheckCircle,
@@ -23,6 +24,7 @@ import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { useState, useMemo } from "react";
 import { Bounty } from "@/lib/types";
 import type { BountyStatus } from "@/lib/types";
+import { useTaskCreationBlocked } from "@/hooks/use-task-creation-blocked";
 
 const STATUS_COLUMNS: {
   status: BountyStatus;
@@ -80,10 +82,12 @@ const MONTH_LABELS = [
 type ViewMode = "bounties" | "earnings";
 
 export default function MyBountiesPage() {
+  const taskCreationBlocked = useTaskCreationBlocked();
   const { myBounties, myBountiesLoading, fetchMyBounties, currentUser } =
     useBounty();
   const [selectedBountyId, setSelectedBountyId] = useState<string | null>(null);
-  const selectedBounty = myBounties.find((b) => b.id === selectedBountyId) ?? null;
+  const selectedBounty =
+    myBounties.find((b) => b.id === selectedBountyId) ?? null;
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("bounties");
@@ -167,6 +171,12 @@ export default function MyBountiesPage() {
   };
 
   const handleNewBounty = () => {
+    if (taskCreationBlocked) {
+      toast.error("Task creation disabled", {
+        description: "An admin has blocked your account from creating tasks.",
+      });
+      return;
+    }
     if (!currentUser?.UA_address) {
       toast.warning("Unified Address required", {
         description: "Add a UA to your profile before creating a bounty.",
@@ -217,10 +227,22 @@ export default function MyBountiesPage() {
               </p>
             </div>
             <Button
-              className="hidden imd:flex gap-2 rounded-full shadow-lg shadow-primary/20 shrink-0"
+              title={
+                taskCreationBlocked
+                  ? "An admin has disabled task creation for your account"
+                  : undefined
+              }
+              className={`hidden imd:flex gap-2 rounded-full shadow-lg shadow-primary/20 shrink-0 ${
+                taskCreationBlocked ? "opacity-50" : ""
+              }`}
               onClick={handleNewBounty}
             >
-              <Plus className="w-4 h-4" /> New Bounty
+              {taskCreationBlocked ? (
+                <Ban className="w-4 h-4" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}{" "}
+              New Bounty
             </Button>
           </div>
 

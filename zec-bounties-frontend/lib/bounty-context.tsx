@@ -136,6 +136,11 @@ interface BountyContextType {
     used: number;
     remaining: number | null;
     resetsAt: string | null;
+    postEligibility?: {
+      allowed: boolean;
+      completed: number;
+      required: number;
+    } | null;
   } | null;
   fetchBountyQuota: () => Promise<void>;
   updateBounty: (
@@ -451,6 +456,8 @@ interface BountyContextType {
   favoriteTeamsLoading: boolean;
   fetchFavoriteTeams: () => Promise<void>;
   toggleFavoriteTeam: (teamId: string) => Promise<void>;
+  activeTeamId: string | null;
+  setActiveTeamId: (id: string | null) => void;
 
   leaderboard: LeaderboardEntry[];
   leaderboardLoading: boolean;
@@ -579,6 +586,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     new Set(),
   );
   const [favoriteTeamsLoading, setFavoriteTeamsLoading] = useState(false);
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [teamPaymentIDs, setTeamPaymentIDs] = useState<string[] | undefined>(
     undefined,
   );
@@ -609,6 +617,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     used: number;
     remaining: number;
     resetsAt: string;
+    postEligibility?: {
+      allowed: boolean;
+      completed: number;
+      required: number;
+    } | null;
   } | null>(null);
 
   const [unassignedBounties, setUnassignedBounties] = useState<
@@ -2710,7 +2723,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                       ? {
                           ...existing,
                           ...nm,
-                          user: { ...(existing as any).user, ...(nm as any).user },
+                          user: {
+                            ...(existing as any).user,
+                            ...(nm as any).user,
+                          },
                         }
                       : nm;
                   }),
@@ -3045,7 +3061,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Failed to fetch my bounties:", error);
     } finally {
-      if (requestId === fetchMyBountiesReqId.current) setMyBountiesLoading(false);
+      if (requestId === fetchMyBountiesReqId.current)
+        setMyBountiesLoading(false);
     }
   };
 
@@ -3216,7 +3233,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           timeToComplete: data.timeToComplete,
           assignee:
             data.assignee === "none"
-              ? currentUser.role === "ADMIN" || (data.teamId && !hunterSuggestion)
+              ? currentUser.role === "ADMIN" ||
+                (data.teamId && !hunterSuggestion)
                 ? null
                 : currentUser.id
               : data.assignee,
@@ -3275,7 +3293,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "Failed to review suggestion");
 
-    setBounties((prev) => prev.map((bounty) => (bounty.id === id ? json : bounty)));
+    setBounties((prev) =>
+      prev.map((bounty) => (bounty.id === id ? json : bounty)),
+    );
     patchTeamBounty(json);
     return json;
   };
@@ -4214,6 +4234,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         favoriteTeamsLoading,
         fetchFavoriteTeams,
         toggleFavoriteTeam,
+        activeTeamId,
+        setActiveTeamId,
         removeTeamLogo,
         uploadTeamLogo,
         fetchTeamTransactionHashes,

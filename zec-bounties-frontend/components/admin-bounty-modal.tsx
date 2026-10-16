@@ -21,16 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DUMMY_USERS } from "@/lib/data";
 import { REPOS } from "@/lib/repos";
 import { RepoMenuLabel } from "@/components/repo-filter";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Loader2, Search, UserPlus, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 import { RewardAmountHint } from "@/components/reward-amount-hint";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { displayName } from "@/lib/displayName";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -63,9 +63,24 @@ export function AdminBountyModal({
     targetRepo: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedAssignee, setSelectedAssignee] = useState("unassigned");
-  const hunters = DUMMY_USERS.filter((u) => u.type === "hunter");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const availableUsers = nonAdminUsers;
+
+  const filteredUsers = availableUsers
+    .filter(
+      (u) =>
+        displayName(u).toLowerCase().includes(assigneeSearch.toLowerCase()) ||
+        (u.email || "").toLowerCase().includes(assigneeSearch.toLowerCase()),
+    )
+    .sort((a, b) => {
+      const aSel = formData.assignee === a.id;
+      const bSel = formData.assignee === b.id;
+      if (aSel !== bSel) return aSel ? -1 : 1;
+      const aHasUA = !!a.UA_address;
+      const bHasUA = !!b.UA_address;
+      if (aHasUA !== bHasUA) return aHasUA ? -1 : 1;
+      return displayName(a).localeCompare(displayName(b));
+    });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,8 +121,9 @@ export function AdminBountyModal({
         bountyAmount: 0,
         timeToComplete: new Date(),
         category: "",
-    targetRepo: "",
+        targetRepo: "",
       });
+      setAssigneeSearch("");
       onSuccess?.();
       onOpenChange(false);
     } catch (error: any) {
@@ -127,7 +143,13 @@ export function AdminBountyModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setAssigneeSearch("");
+        onOpenChange(next);
+      }}
+    >
       {/*
         - max-w-[calc(100%-2rem)] keeps a side margin on small screens.
           (We deliberately avoid `sm:` here because your `sm` is 300px,
@@ -301,43 +323,97 @@ export function AdminBountyModal({
             </div>
 
             <div className="grid min-w-0 gap-2">
-              <Label htmlFor="assignee">Assign to (Optional)</Label>
-              <Select
-                value={formData.assignee}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, assignee: value }))
-                }
-                disabled={usersLoading}
-              >
-                <SelectTrigger id="assignee" className="w-full min-w-0">
-                  <SelectValue
-                    className="truncate"
-                    placeholder={
-                      usersLoading
-                        ? "Loading users..."
-                        : "Select a user to assign this bounty to..."
-                    }
-                  />
-                  {usersLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No assignment</SelectItem>
-                  {availableUsers.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.name} ({user.email})
-                    </SelectItem>
-                  ))}
-                  {availableUsers.length === 0 && !usersLoading && (
-                    <SelectItem value="no-users" disabled>
-                      No users available for assignment
-                    </SelectItem>
+              <Label>Assign to (Optional)</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search by name or email..."
+                  value={assigneeSearch}
+                  onChange={(e) => setAssigneeSearch(e.target.value)}
+                  className="pl-9"
+                  disabled={usersLoading}
+                />
+              </div>
+              {usersLoading ? (
+                <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading users...
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden divide-y max-h-64 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, assignee: "none" }))}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                      formData.assignee === "none"
+                        ? "bg-primary/8 hover:bg-primary/12"
+                        : "hover:bg-muted/50"
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">No assignment</p>
+                      <p className="text-xs text-muted-foreground">Bounty remains open for applications</p>
+                    </div>
+                    {formData.assignee === "none" && (
+                      <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
+                    )}
+                  </button>
+                  {filteredUsers.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">
+                      <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      No users found
+                    </div>
+                  ) : (
+                    filteredUsers.map((user) => {
+                      const selected = formData.assignee === user.id;
+                      return (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, assignee: user.id }))}
+                          className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                            selected
+                              ? "bg-primary/8 hover:bg-primary/12"
+                              : "hover:bg-muted/50"
+                          }`}
+                        >
+                          <Avatar className="h-9 w-9 flex-shrink-0 border">
+                            <AvatarImage src={user.avatar || "/placeholder-user.jpg"} />
+                            <AvatarFallback className="text-xs font-semibold">
+                              {displayName(user)[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{displayName(user)}</p>
+                            <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                            {formData.chain === "TEST" ? (
+                              user.z_address ? (
+                                <span className="text-blue-600 flex items-center gap-0.5 shrink-0 text-xs">
+                                  <CheckCircle2 className="h-3 w-3" /> TA set
+                                </span>
+                              ) : (
+                                <span className="text-yellow-600 flex items-center gap-0.5 shrink-0 text-xs">
+                                  <AlertTriangle className="h-3 w-3" /> No TA
+                                </span>
+                              )
+                            ) : user.UA_address ? (
+                              <span className="text-green-600 flex items-center gap-0.5 shrink-0 text-xs">
+                                <CheckCircle2 className="h-3 w-3" /> UA set
+                              </span>
+                            ) : (
+                              <span className="text-red-600 flex items-center gap-0.5 shrink-0 text-xs">
+                                <AlertTriangle className="h-3 w-3" /> No UA
+                              </span>
+                            )}
+                          </div>
+                          {selected && (
+                            <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })
                   )}
-                </SelectContent>
-              </Select>
-              {usersLoading && (
-                <p className="text-sm text-slate-500">
-                  Loading available users...
-                </p>
+                </div>
               )}
             </div>
           </div>
