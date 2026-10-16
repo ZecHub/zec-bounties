@@ -35,7 +35,7 @@ const setCache = async (key, value, ttl = TTL.BOUNTY_SINGLE) => {
 
 const delCache = async (...keys) => {
   try {
-    if (keys.length) await redisClient.del(...keys); // single round-trip
+    if (keys.length) await redisClient.del(keys); // single round-trip
   } catch (err) {
     console.error("Redis delCache error:", err);
   }
@@ -58,7 +58,7 @@ const deleteCacheByPattern = async (pattern) => {
     }
 
     if (keys.length > 0) {
-      await redisClient.del(...keys);
+      await redisClient.del(keys);
     }
   } catch (err) {
     console.error("Redis deleteCacheByPattern error:", err);

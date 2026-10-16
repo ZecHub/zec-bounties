@@ -193,8 +193,8 @@ test("changing the assignees clears the cached list for admins and for other vie
     written.push(key);
     return null;
   };
-  redisClient.del = async (...keys) => {
-    deleted.push(...keys);
+  redisClient.del = async (keys) => {
+    deleted.push(...(Array.isArray(keys) ? keys : [keys]));
     return null;
   };
   try {

@@ -28,7 +28,7 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
   const redisClient = {
     get: async key => values.get(key) ?? null,
     setEx: async (key, _ttl, value) => values.set(key, value),
-    del: async (...keys) => keys.forEach(key => values.delete(key)),
+    del: async keys => (Array.isArray(keys) ? keys : [keys]).forEach(key => values.delete(key)),
     incr: async key => {
       const next = Number(values.get(key) ?? 0) + 1;
       values.set(key, String(next));
