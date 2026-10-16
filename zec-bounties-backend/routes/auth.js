@@ -21,6 +21,10 @@ const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const { sendUserUpdated } = require("../middleware/websocket");
 const { OtpStore } = require("../helpers/recoveryOtp");
+const {
+  verifiedPrimaryEmail,
+  isOtherGithubAccount,
+} = require("../helpers/githubLogin");
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET;
@@ -90,19 +94,22 @@ router.get("/github/callback", async (req, res) => {
     );
 
     const githubUser = userResponse.data;
-    const emails = emailResponse.data;
-
-    const primaryEmail =
-      emails.find((email) => email.primary)?.email || githubUser.email;
+    const githubId = githubUser.id.toString();
+    const primaryEmail = verifiedPrimaryEmail(emailResponse.data);
 
     if (!primaryEmail) {
-      console.log("No email found for GitHub user");
+      console.log("No verified primary email for GitHub user");
       return res.redirect(`${FRONTEND_URL}/login?error=no_email`);
     }
 
     let user = await prisma.user.findUnique({
       where: { email: primaryEmail },
     });
+
+    if (isOtherGithubAccount(user, githubId)) {
+      console.log("Email belongs to an account linked to another GitHub user");
+      return res.redirect(`${FRONTEND_URL}/login?error=account_mismatch`);
+    }
 
     if (!user) {
       let nickname = githubUser.login.toLowerCase();
@@ -120,7 +127,7 @@ router.get("/github/callback", async (req, res) => {
           name: githubUser.name || githubUser.login,
           nickname,
           email: primaryEmail,
-          githubId: githubUser.id.toString(),
+          githubId,
           avatar: githubUser.avatar_url,
           role: "CLIENT",
         },
@@ -129,7 +136,7 @@ router.get("/github/callback", async (req, res) => {
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
-          githubId: githubUser.id.toString(),
+          githubId,
           avatar: githubUser.avatar_url,
         },
       });
