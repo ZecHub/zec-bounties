@@ -29,6 +29,7 @@ New accounts pick one role at onboarding:
 - **[Privacy & payments](privacy-payments.md)** — How shielded payouts work
 - **[API](api.md)** — Methods, how to call them, and what the responses actually hide
 - **[FAQ](faq.md)** — Common questions
+- **[Glossary](glossary.md)** — Account roles, bounty statuses, and payment flags
 
 ## Links
 

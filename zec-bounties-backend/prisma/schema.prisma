@@ -99,6 +99,8 @@ model Bounty {
   exportedAt        DateTime?
   exportedBy        String?
   discordThreadId  String?
+  suggestionReviewStatus String?
+  suggestionReviewReason String?
   targetRepo       String?
   messages          BountyChat[]
   notifications     InAppNotification[]
@@ -112,6 +114,7 @@ model Bounty {
   @@index([isPaid, paidAt])
   @@index([completedAt])
   @@index([teamId])
+  @@index([teamId, suggestionReviewStatus])
   @@index([isPrivate])
   @@index([targetRepo])
 }

@@ -79,6 +79,81 @@ export default function CreatorsPage() {
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-xl font-semibold">Target repositories</h2>
+        <p className="text-sm text-muted-foreground">
+          When creating a bounty you can optionally tag a target repository.
+          These are the ZecHub projects the platform currently knows about:
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
+          <li>
+            <code className="text-xs">zechub</code> — ZecHub education hub (
+            <a
+              href="https://github.com/ZecHub/zechub"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/ZecHub/zechub
+            </a>
+            )
+          </li>
+          <li>
+            <code className="text-xs">zechub-wiki</code> — ZecHub wiki (
+            <a
+              href="https://github.com/ZecHub/zechub-wiki"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/ZecHub/zechub-wiki
+            </a>
+            , zechub.wiki)
+          </li>
+          <li>
+            <code className="text-xs">zec-bounties</code> — this bounty platform (
+            <a
+              href="https://github.com/ZecHub/zec-bounties"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/ZecHub/zec-bounties
+            </a>
+            )
+          </li>
+          <li>
+            <code className="text-xs">namada</code> —{" "}
+            <strong>ZecHub Namada Governance and Network Metrics Dashboard only</strong>{" "}
+            (
+            <a
+              href="https://github.com/ZecHub/Namada"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/ZecHub/Namada
+            </a>
+            ,{" "}
+            <a
+              href="https://namada.zechub.wiki"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              namada.zechub.wiki
+            </a>
+            ). This is <strong>not</strong> the upstream Namada protocol
+            codebase (namada-net/namada). Upstream protocol, node, MASP, or
+            client work is out of scope for this target.
+          </li>
+        </ul>
+        <p className="text-sm text-muted-foreground">
+          Pick the matching repository so reviewers and hunters know exactly
+          which codebase the work applies to.
+        </p>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-xl font-semibold">Payment notes</h2>
         <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
           <li>

@@ -13,6 +13,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
+import { useTaskCreationBlocked } from "@/hooks/use-task-creation-blocked";
 
 interface Slide {
   id: string;
@@ -31,9 +32,9 @@ interface Slide {
 const AUTOPLAY_INTERVAL = 6000;
 
 export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
+  const taskCreationBlocked = useTaskCreationBlocked();
   const router = useRouter();
-  const { currentUser } = useBounty();
-  const taskCreationBlocked = currentUser?.canCreateTasks === false;
+  // const { currentUser } = useBounty();
   const [active, setActive] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

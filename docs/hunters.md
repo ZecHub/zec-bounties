@@ -14,7 +14,7 @@ Pick **Hunter** at onboarding if you will apply to bounties yourself. You do not
 2. Add a payout UA in Profile if you skipped it — see [Addresses](addresses.md)
 3. Browse open bounties and apply
 
-The detailed apply → assign → submit → payout flow is in [Contributors](contributors.md). Hunter is that workflow.
+The detailed apply → assign → submit → payout flow is in [Contributors](contributors.md). Hunter is that workflow. Status meanings, and why you cannot apply to a Suggested task, are in [Task statuses](task-statuses.md).
 
 ## What hunters do
 

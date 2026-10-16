@@ -16,6 +16,23 @@ const STAFF_USER_SELECT = {
   createdAt: true,
 };
 
+// Bounty columns the staff view reads; keep in step with staffBountyRow.
+const STAFF_BOUNTY_SELECT = {
+  id: true,
+  title: true,
+  status: true,
+  chain: true,
+  bountyAmount: true,
+  isPrivate: true,
+  isPaid: true,
+  isApproved: true,
+  dateCreated: true,
+  completedAt: true,
+  paidAt: true,
+  exportedAt: true,
+  team: { select: { name: true } },
+};
+
 function staffBountyRow(bounty, relation, applicationStatus) {
   return {
     id: bounty.id,
@@ -57,22 +74,25 @@ function pageStaffRows(rows, offset, limit = STAFF_PAGE_LIMIT) {
   return { rows: slice, nextOffset: next, total: rows.length, limit: size };
 }
 
-async function resolveStaffUser(prisma, key) {
+// Resolves a profile key in a fixed order: id, then the unique nickname, then
+// a display name only when exactly one user has it. The public profile route
+// passes its own select.
+async function resolveStaffUser(prisma, key, select = STAFF_USER_SELECT) {
   const byId = await prisma.user.findUnique({
     where: { id: key },
-    select: STAFF_USER_SELECT,
+    select,
   });
   if (byId) return { user: byId };
 
   const byNickname = await prisma.user.findUnique({
     where: { nickname: key },
-    select: STAFF_USER_SELECT,
+    select,
   });
   if (byNickname) return { user: byNickname };
 
   const byName = await prisma.user.findMany({
     where: { name: key },
-    select: STAFF_USER_SELECT,
+    select,
     take: 2,
   });
   if (byName.length === 1) return { user: byName[0] };
@@ -112,11 +132,15 @@ function buildStaffView(
     if (STAFF_OPEN_STATUSES.includes(row.status)) open.push(row);
     else history.push(row);
   }
-  const byRecent = (a, b) => {
-    const aKey = a.completedAt || a.paidAt || a.dateCreated || "";
-    const bKey = b.completedAt || b.paidAt || b.dateCreated || "";
-    return String(bKey).localeCompare(String(aKey));
+  // Prisma hands these over as Date objects; String(date) starts with the
+  // weekday name, so compare timestamps.
+  const recency = (row) => {
+    const time = new Date(
+      row.completedAt || row.paidAt || row.dateCreated || 0,
+    ).getTime();
+    return Number.isNaN(time) ? 0 : time;
   };
+  const byRecent = (a, b) => recency(b) - recency(a);
   open.sort(byRecent);
   history.sort(byRecent);
 
@@ -164,6 +188,7 @@ module.exports = {
   STAFF_PAGE_LIMIT,
   FORBIDDEN_STAFF_KEYS,
   STAFF_USER_SELECT,
+  STAFF_BOUNTY_SELECT,
   staffBountyRow,
   resolveStaffUser,
   buildStaffView,

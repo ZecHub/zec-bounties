@@ -125,7 +125,7 @@ These return 401 or 403 for a normal hunter. Do not build a public client agains
 Treat the UI as a view, not a privacy control. A blurred name or a "Hidden Hunter" label does not mean the response was redacted.
 
 - `GET /api/users/:idOrNickname/public` honors `profileVisibility`.
-- `GET /api/leaderboard` does not. It is public, cached for about 60 seconds, and currently returns `id`, `name`, `nickname`, `avatar`, `completed`, `earned`, and `points` for hunters on the board. `points` is derived from `earned`, so hiding `earned` alone would still leak it. A fix has to redact before the cache write, or the cached body will keep serving the raw row.
+- `GET /api/leaderboard` and the user objects on `GET /api/bounties` also honor the same flags (`showDisplayName`, `showAvatar`, `showCompleted`, `showEarnings`). Redaction happens server-side before the cache write. Hidden numeric fields are `null`. `points` is withheld unless both completed and earned are visible. Admin viewers still receive the full row. Cache keys are scoped by a privacy version that is bumped when a user updates `profileVisibility`.
 - `GET /api/kpis/top-contributors` is authenticated. It nulls `totalEarned` unless `showEarnings` is true, and strips payout addresses for non-admins. It still returns name, nickname, avatar, and completed count. It is a different route from `/api/leaderboard`.
 - Non-MAIN leaderboard queries are admin-only. Do not assume `chain=TEST` or `chain=ALL` works anonymously.
 - Websocket events are a separate channel. An open change scopes those events and strips private user fields. HTTP responses are unchanged by that change. Do not assume a socket payload is as filtered as the public profile.

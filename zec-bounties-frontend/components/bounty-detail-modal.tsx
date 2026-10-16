@@ -1,5 +1,6 @@
 "use client";
 
+import { getErrorMessage } from "@/lib/errors";
 import { Bounty, WorkSubmission, User, Notice } from "@/lib/types";
 import {
   Dialog,
@@ -41,6 +42,14 @@ import {
 import { ProfileLink } from "@/components/profile-link";
 import { ZecToUsd } from "./ZecToUsd";
 import { BountyChat } from "@/components/bounty-chat";
+import { LinkListInput } from "@/components/link-list-input";
+import {
+  MAX_LINKS,
+  parseLinks,
+  splitLinks,
+  joinLinks,
+  hasInvalidLinks,
+} from "@/lib/links";
 
 interface BountyDetailModalProps {
   bounty: Bounty | null;
@@ -128,14 +137,13 @@ export function BountyDetailModal({
     submitWork,
     editSubmission,
     teams,
-    favoriteTeamIds,
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
   const [applicationError, setApplicationError] = useState("");
   const [isApplying, setIsApplying] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
-  const [deliverableUrl, setDeliverableUrl] = useState("");
+  const [deliverableUrls, setDeliverableUrls] = useState<string[]>([""]);
   const [submissionErrors, setSubmissionErrors] = useState<{
     description?: string;
     deliverableUrl?: string;
@@ -147,7 +155,9 @@ export function BountyDetailModal({
 
   const [isEditing, setIsEditing] = useState(false);
   const [editDescription, setEditDescription] = useState("");
-  const [editDeliverableUrl, setEditDeliverableUrl] = useState("");
+  const [editDeliverableUrls, setEditDeliverableUrls] = useState<string[]>([
+    "",
+  ]);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [linkCopied, setLinkCopied] = useState(false);
@@ -197,17 +207,26 @@ export function BountyDetailModal({
       bounty.assignees?.some((a) => a.userId === currentUser.id) ||
       bounty.assignee === currentUser.id;
     if (!isAssigned) return;
+    let cancelled = false;
     setSubmissionsLoading(true);
     fetchWorkSubmissions(bounty.id)
-      .then((data) => setWorkSubmissions(data ?? []))
+      .then((data) => {
+        if (!cancelled) setWorkSubmissions(data ?? []);
+      })
       .catch((err) => {
+        if (cancelled) return;
         if (!err?.message?.includes("permission")) {
           console.error("Failed to load submissions:", err);
         }
         setWorkSubmissions([]);
       })
-      .finally(() => setSubmissionsLoading(false));
-  }, [open, bounty?.id, currentUser?.id]);
+      .finally(() => {
+        if (!cancelled) setSubmissionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, bounty?.id, bounty?.status, currentUser?.id]);
 
   if (!bounty) return null;
 
@@ -231,9 +250,7 @@ export function BountyDetailModal({
     !bounty.isPrivate ||
     currentUser?.role === "ADMIN" ||
     bounty.createdBy === currentUser?.id ||
-    (bounty.teamId != null &&
-      (teams.some((t) => t.id === bounty.teamId) ||
-        favoriteTeamIds.has(bounty.teamId)));
+    (bounty.teamId != null && teams.some((t) => t.id === bounty.teamId));
 
   const isMissingUAForMainnet =
     bounty.chain === "MAIN" && !currentUser?.UA_address;
@@ -321,17 +338,21 @@ export function BountyDetailModal({
 
   const startEdit = () => {
     setEditDescription(userWorkSubmission?.description ?? "");
-    setEditDeliverableUrl(userWorkSubmission?.deliverableUrl ?? "");
+    setEditDeliverableUrls(splitLinks(userWorkSubmission?.deliverableUrl));
     setIsEditing(true);
   };
 
   const handleSaveEdit = async () => {
     if (!userWorkSubmission || !editDescription.trim()) return;
+    if (hasInvalidLinks(editDeliverableUrls)) {
+      toast.error("Each link must be a valid http:// or https:// URL");
+      return;
+    }
     setIsSavingEdit(true);
     try {
       const updated = await editSubmission(userWorkSubmission.id, {
         description: editDescription,
-        deliverableUrl: editDeliverableUrl,
+        deliverableUrl: joinLinks(editDeliverableUrls),
       });
       setWorkSubmissions((prev) =>
         prev.map((s) => (s.id === updated.id ? updated : s)),
@@ -340,7 +361,7 @@ export function BountyDetailModal({
       toast.success("Submission updated");
     } catch (error) {
       console.error("Failed to edit submission:", error);
-      toast.error("Failed to update submission");
+      toast.error(getErrorMessage(error, "Failed to update submission"));
     } finally {
       setIsSavingEdit(false);
     }
@@ -407,7 +428,10 @@ export function BountyDetailModal({
   const hasApplied = !!userApplication;
 
   const notice: Notice | null = (() => {
-    if (isAssignedToCurrentUser && (!bounty.isApproved || bounty.status === "TO_DO")) {
+    if (
+      isAssignedToCurrentUser &&
+      (!bounty.isApproved || bounty.status === "TO_DO")
+    ) {
       return {
         type: "warning",
         title: "Bounty not yet approved",
@@ -482,20 +506,26 @@ export function BountyDetailModal({
       toast.success("Application submitted");
     } catch (error) {
       console.error("Failed to apply:", error);
-      toast.error("Failed to submit application");
+      toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
     }
   };
 
   const handleSubmitWork = async () => {
+    const joinedUrls = joinLinks(deliverableUrls);
     const nextErrors: { description?: string; deliverableUrl?: string } = {};
 
     if (!submissionDescription.trim()) {
       nextErrors.description = "Describe the work you completed.";
     }
-    if (!deliverableUrl.trim()) {
-      nextErrors.deliverableUrl = "Enter a deliverable URL.";
+    if (hasInvalidLinks(deliverableUrls)) {
+      nextErrors.deliverableUrl =
+        "Each link must be a valid http:// or https:// URL.";
+    } else if (!joinedUrls) {
+      nextErrors.deliverableUrl = "Enter at least one deliverable URL.";
+    } else if (parseLinks(joinedUrls).length > MAX_LINKS) {
+      nextErrors.deliverableUrl = `You can add up to ${MAX_LINKS} links.`;
     }
 
     setSubmissionErrors(nextErrors);
@@ -521,25 +551,25 @@ export function BountyDetailModal({
     try {
       await submitWork(bounty.id, {
         description: submissionDescription,
-        deliverableUrl,
+        deliverableUrl: joinedUrls,
       });
       const optimistic: WorkSubmission = {
         id: `optimistic-${Date.now()}`,
         bountyId: bounty.id,
         submittedBy: currentUser!.id,
         description: submissionDescription,
-        deliverableUrl,
+        deliverableUrl: joinedUrls,
         status: "pending",
         submittedAt: new Date(),
         submitterUser: currentUser as User,
       };
       setWorkSubmissions((prev) => [optimistic, ...prev]);
       setSubmissionDescription("");
-      setDeliverableUrl("");
+      setDeliverableUrls([""]);
       toast.success("Work submitted");
     } catch (error) {
       console.error("Failed to submit work:", error);
-      toast.error("Failed to submit work");
+      toast.error(getErrorMessage(error, "Failed to submit work"));
     } finally {
       setIsSubmitting(false);
     }
@@ -549,7 +579,7 @@ export function BountyDetailModal({
     onOpenChange(false);
     setApplicationMessage("");
     setSubmissionDescription("");
-    setDeliverableUrl("");
+    setDeliverableUrls([""]);
     // Don't clear workSubmissions / overrides / edit mode here: the dialog is
     // still animating out, and resetting them re-renders the "Submit your
     // work" form (and reverts edits) for a few frames.
@@ -974,30 +1004,32 @@ export function BountyDetailModal({
                 htmlFor="deliverable-url"
                 className="text-xs text-muted-foreground"
               >
-                Link to your work
+                Links to your work
               </Label>
-              <input
+              <LinkListInput
                 id="deliverable-url"
-                type="url"
-                placeholder="https://github.com/username/repo"
-                value={deliverableUrl}
-                onChange={(e) => {
-                  setDeliverableUrl(e.target.value);
+                values={deliverableUrls}
+                onChange={(next) => {
+                  setDeliverableUrls(next);
                   setSubmissionErrors((prev) => ({
                     ...prev,
                     deliverableUrl: undefined,
                   }));
                   setSubmissionErrorSummary("");
                 }}
-                className={inputCls}
-                autoComplete="off"
-                aria-invalid={Boolean(submissionErrors.deliverableUrl)}
-                aria-describedby={
+                invalid={Boolean(submissionErrors.deliverableUrl)}
+                describedBy={
                   submissionErrors.deliverableUrl
-                    ? "deliverable-url-error"
-                    : undefined
+                    ? "deliverable-url-help deliverable-url-error"
+                    : "deliverable-url-help"
                 }
               />
+              <p
+                id="deliverable-url-help"
+                className="text-xs text-muted-foreground"
+              >
+                Share links where your completed work can be reviewed.
+              </p>
               {submissionErrors.deliverableUrl && (
                 <p
                   id="deliverable-url-error"
@@ -1047,13 +1079,9 @@ export function BountyDetailModal({
                   className="min-h-[80px] text-sm bg-white dark:bg-green-950/30"
                   aria-label="Work description"
                 />
-                <input
-                  type="url"
-                  value={editDeliverableUrl}
-                  onChange={(e) => setEditDeliverableUrl(e.target.value)}
-                  placeholder="https://github.com/username/repo"
-                  className={inputCls}
-                  aria-label="Deliverable URL"
+                <LinkListInput
+                  values={editDeliverableUrls}
+                  onChange={setEditDeliverableUrls}
                 />
                 <div className="flex gap-2">
                   <Button
@@ -1079,17 +1107,19 @@ export function BountyDetailModal({
                 <p className="rounded border bg-white dark:bg-green-950/30 p-2.5 text-xs leading-relaxed text-green-700 dark:text-green-300 whitespace-pre-wrap break-words">
                   {userWorkSubmission?.description}
                 </p>
-                {userWorkSubmission?.deliverableUrl && (
+
+                {parseLinks(userWorkSubmission?.deliverableUrl).map((link) => (
                   <a
-                    href={userWorkSubmission.deliverableUrl}
+                    key={link}
+                    href={link}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all"
                   >
                     <ExternalLink className="h-3 w-3 shrink-0" />
-                    {userWorkSubmission.deliverableUrl}
+                    {link}
                   </a>
-                )}
+                ))}
                 {isNeedsRevision && userWorkSubmission?.reviewNotes && (
                   <div className="rounded border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-2.5">
                     <p className="mb-1 text-xs font-semibold text-orange-700 dark:text-orange-300">
@@ -1247,6 +1277,18 @@ export function BountyDetailModal({
               )}
             </div>
           </section>
+        )}
+
+        {bounty.suggestionReviewReason && (
+          <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
+            <p className="text-sm font-medium">
+              Team review:{" "}
+              {bounty.suggestionReviewStatus?.toLowerCase() ?? "updated"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {bounty.suggestionReviewReason}
+            </p>
+          </div>
         )}
 
         {/* Application status */}

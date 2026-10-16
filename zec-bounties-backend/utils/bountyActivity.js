@@ -1,6 +1,6 @@
 const prisma = require("../prisma/client");
 const { sendToUser } = require("../middleware/websocket");
-const { USER_SELECT_BASIC } = require("./userSelects");
+const { USER_SELECT } = require("./userSelects");
 
 // Same audience as canManageBounty: global admins, creator, team OWNER/ADMIN.
 // The actor is included so their own open modal updates too.
@@ -41,7 +41,7 @@ async function publishActivity(row) {
 async function logActivity(client, { bountyId, actorId, type, meta }) {
   const row = await (client ?? prisma).bountyActivity.create({
     data: { bountyId, actorId: actorId ?? null, type, ...(meta && { meta }) },
-    include: { actor: { select: USER_SELECT_BASIC } },
+    include: { actor: { select: USER_SELECT } },
   });
   if (!client) publishActivity(row);
   return row;

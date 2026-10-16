@@ -50,7 +50,15 @@ export default function HuntersDocsPage() {
           >
             Contributors
           </Link>
-          . Hunter is that workflow.
+          . Hunter is that workflow. Status meanings, and why you cannot apply
+          to a Suggested task, are on{" "}
+          <Link
+            href="/docs/task-statuses"
+            className="text-primary hover:underline"
+          >
+            Task statuses
+          </Link>
+          .
         </p>
       </section>
 

@@ -1,17 +1,28 @@
-name: Accessibility
+name: Browser tests
 
+# These suites check visible text, so harmless UI changes can break them.
+# They run after merge, so a failure points at one merged PR and never
+# blocks a contributor's PR.
 on:
-  pull_request:
+  push:
     branches:
       - main
+    paths:
+      - "zec-bounties-frontend/**"
+      - ".github/workflows/browser-tests.yml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  accessibility:
+  browser-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     defaults:
       run:
@@ -34,16 +45,13 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Type check
-        run: yarn tsc --noEmit
-
-      - name: Run accessibility tests
-        run: yarn test:a11y
+      - name: Run browser tests
+        run: yarn test:browser
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: accessibility-playwright-report
+          name: browser-tests-playwright-report
           path: zec-bounties-frontend/playwright-report/
           retention-days: 14

@@ -78,6 +78,7 @@ import { formatStatus } from "@/lib/utils";
 import { displayName } from "@/lib/displayName";
 import { format } from "date-fns";
 import { TeamsEditBountyModal } from "@/components/teams/edit-bounty-modal";
+import { ReviewBountySuggestionModal } from "@/components/teams/review-bounty-suggestion-modal";
 import { RefreshCw } from "lucide-react";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { Switch } from "@/components/ui/switch";
@@ -621,6 +622,7 @@ function OverviewTab({
   const [isManagingSubmissions, setIsManagingSubmissions] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [editingBounty, setEditingBounty] = useState<Bounty | null>(null);
+  const [reviewingSuggestion, setReviewingSuggestion] = useState<Bounty | null>(null);
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
 
@@ -859,6 +861,14 @@ function OverviewTab({
                           >
                             {bounty.title}
                           </button>
+                          {bounty.suggestionReviewStatus === "PENDING" && (
+                            <Badge
+                              variant="outline"
+                              className="mt-1 border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-300"
+                            >
+                              Suggestion pending review
+                            </Badge>
+                          )}
                           <div className="flex items-center gap-2 mt-1 sm:hidden flex-wrap">
                             <StatusPill status={bounty.status} />
                             <span className="text-[11px] text-muted-foreground">
@@ -973,6 +983,14 @@ function OverviewTab({
                               <Pencil className="h-4 w-4 mr-2" />
                               Edit bounty
                             </DropdownMenuItem>
+                            {bounty.suggestionReviewStatus === "PENDING" && (
+                              <DropdownMenuItem
+                                onClick={() => setReviewingSuggestion(bounty)}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-2" />
+                                Review suggestion
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => openApplications(bounty.id)}
                             >
@@ -1011,6 +1029,15 @@ function OverviewTab({
         defaultSection="assignees"
         onOpenChange={(open) => {
           if (!open) setAssigneeSectionBounty(null);
+        }}
+      />
+
+      <ReviewBountySuggestionModal
+        bounty={reviewingSuggestion}
+        teamId={team.id}
+        open={!!reviewingSuggestion}
+        onOpenChange={(open) => {
+          if (!open) setReviewingSuggestion(null);
         }}
       />
 
@@ -1834,7 +1861,7 @@ function CommunityTab({ team }: { team: Team }) {
       {community.length === 0 ? (
         <p className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground bg-muted/20">
           No one has joined {team.name}'s community yet. Favoriting this team
-          adds someone here — and lets them see the team's private bounties.
+          adds someone here.
         </p>
       ) : (
         <div className="divide-y rounded-xl border bg-card">
@@ -2995,9 +3022,9 @@ function SettingsTab({
           <div className="pr-4">
             <Label className="text-sm">Private team</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              When private, only {team.name}'s community (members and
-              favoriters) can see and apply to its bounties. Flipping this
-              updates every existing bounty under this team.
+              When private, only {team.name}'s members can see and apply to its
+              bounties. Flipping this updates every existing bounty under this
+              team.
             </p>
           </div>
           <Switch

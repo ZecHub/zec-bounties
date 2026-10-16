@@ -54,6 +54,7 @@ async function openBoard(page: Page, count: number) {
     if (route.request().method() !== "GET") return route.abort();
 
     let json: unknown = [];
+    if (url.pathname === "/api/notifications") json = { notifications: [], unreadCount: 0 };
     if (url.pathname === "/auth/me") json = { user };
     if (url.pathname === "/api/bounties/categories") {
       json = [{ id: "Web Development", name: "Web Development" }];
@@ -107,8 +108,9 @@ for (const total of [20, 25]) {
     await expect(cards(page)).toHaveCount(20);
     await page.evaluate(() => window.scrollTo(0, 0));
 
-    // This real event handler calls fetchBounties() with its default reset.
-    fixture.send("bounty_assignees_updated");
+    // Visibility changes still reset the authorized list. Assignment events
+    // now patch one bounty and intentionally preserve already loaded pages.
+    fixture.send("team_bounties_privacy_changed", { teamId: "fixture-team" });
     await expect(cards(page)).toHaveCount(10);
     await expect(loadMore(page)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("after-refresh.png") });

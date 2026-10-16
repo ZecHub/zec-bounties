@@ -21,7 +21,15 @@ function isNonEmptyString(value) {
 }
 
 function isFinitePositiveNumber(value) {
-  const n = typeof value === "number" ? value : parseFloat(value);
+  if (typeof value !== "number" && typeof value !== "string") return false;
+  // Parse the entire decimal value, not a numeric prefix such as "1 ZEC".
+  if (
+    typeof value === "string" &&
+    !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())
+  ) {
+    return false;
+  }
+  const n = Number(value);
   return Number.isFinite(n) && n > 0;
 }
 
@@ -172,7 +180,12 @@ function validateBountyUpdate(body) {
 // ─── Category validation (requires prisma instance) ─────────────────────────
 
 async function validateCategory(prisma, categoryId) {
-  if (!categoryId) return { valid: true }; // optional
+  if (categoryId === undefined || categoryId === null || categoryId === "") {
+    return { valid: true }; // optional
+  }
+  if (typeof categoryId !== "string") {
+    return { valid: false, error: "Category must be a string" };
+  }
 
   const category = await prisma.bountyCategory.findUnique({
     where: { name: categoryId },

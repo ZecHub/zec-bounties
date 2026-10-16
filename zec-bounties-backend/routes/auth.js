@@ -10,6 +10,7 @@ const {
   loadAuthUser,
 } = require("../middleware/auth");
 const { verifyZaddress, verifyUaddress } = require("../helpers/db-query.js");
+const { isSafeShieldedAddress } = require("../helpers/validateAddress.js");
 const {
   getLatestZcashParams,
   getSystemWalletParams,
@@ -18,7 +19,8 @@ const {
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
 const { delCache, deleteCacheByPattern } = require("../utils/cache");
-const { sendRealtimeUpdate } = require("../middleware/websocket");
+const { sendUserUpdated } = require("../middleware/websocket");
+const { OtpStore } = require("../helpers/recoveryOtp");
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET;
@@ -226,7 +228,7 @@ router.get("/discord/callback", async (req, res) => {
     });
 
     await delCache("users:all");
-    sendRealtimeUpdate("user_updated", updated, userId);
+    sendUserUpdated(userId, updated);
 
     res.redirect(`${FRONTEND_URL}/profile?discord=success`);
   } catch (err) {
@@ -262,7 +264,7 @@ router.delete("/discord", authenticate, async (req, res) => {
     });
 
     await delCache("users:all");
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendUserUpdated(req.user.id, updated);
 
     res.json({ user: updated });
   } catch (error) {
@@ -363,7 +365,7 @@ router.patch("/update-email-notifications", authenticate, async (req, res) => {
 
     await delCache("users:all");
 
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendUserUpdated(req.user.id, updated);
 
     res.json({ user: updated });
   } catch (error) {
@@ -375,6 +377,15 @@ router.patch("/update-email-notifications", authenticate, async (req, res) => {
 router.post("/verify-zaddress", authenticate, async (req, res) => {
   try {
     const { z_address } = req.body;
+
+    // This value reaches zingo-cli's `parse_address` command. Reject anything
+    // that is not a plain base58/bech32 address before it gets there, so a
+    // shell metacharacter can never be interpreted as a command. (The sink is
+    // also hardened to avoid a shell; this is defence in depth.)
+    if (!isSafeShieldedAddress(z_address)) {
+      return res.status(400).json({ error: "Invalid z_address" });
+    }
+
     const params = getSystemWalletParams();
 
     const result = await verifyZaddress(z_address, params);
@@ -388,6 +399,11 @@ router.post("/verify-zaddress", authenticate, async (req, res) => {
 router.post("/verify-uaddress", authenticate, async (req, res) => {
   try {
     const { z_address } = req.body;
+
+    if (!isSafeShieldedAddress(z_address)) {
+      return res.status(400).json({ error: "Invalid address" });
+    }
+
     const params = getSystemWalletParams();
 
     const result = await verifyUaddress(z_address, params);
@@ -415,6 +431,20 @@ router.get("/has-zcash-params", authenticate, async (req, res) => {
 
 router.patch("/update-zaddress", authenticate, async (req, res) => {
   const { z_address } = req.body;
+
+ // Validate before storing. This value is later used as a payout destination
+  // and interpolated into the zingo-cli send command, so it must contain only
+  // the base58/bech32 characters a real Zcash address uses — no quotes,
+  // whitespace or control characters that could break out of that command.
+  const validAddress =
+    typeof z_address === "string" &&
+    z_address.length >= 8 &&
+    z_address.length <= 512 &&
+    /^[A-Za-z0-9]+$/.test(z_address);
+
+  if (!validAddress) {
+    return res.status(400).json({ error: "Invalid z_address" });
+  }
 
   try {
     if (typeof z_address !== "string" || !z_address.trim()) {
@@ -454,8 +484,9 @@ router.patch("/update-zaddress", authenticate, async (req, res) => {
   }
 });
 
-// In-memory OTP store
-const otpStore = new Map();
+// In-memory OTP store. Codes are CSPRNG-generated, single-use, rate-limited on
+// resend and burned after too many wrong guesses (see helpers/recoveryOtp.js).
+const otpStore = new OtpStore();
 
 // Step 1: Request OTP
 router.post("/recovery/request-otp", authenticate, async (req, res) => {
@@ -475,15 +506,23 @@ router.post("/recovery/request-otp", authenticate, async (req, res) => {
         .json({ error: "No email associated with account" });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const issued = otpStore.issue(req.user.id);
 
-    otpStore.set(req.user.id, {
-      otp,
-      expiresAt,
-    });
+    if (issued.error === "locked") {
+      return res.status(429).json({
+        error: "Too many incorrect attempts. Please try again later.",
+        retryAfterMs: issued.retryAfterMs,
+      });
+    }
 
-    await sendRecoveryOtpEmail(user.email, user.name, otp);
+    if (issued.error === "cooldown") {
+      return res.status(429).json({
+        error: "An OTP was sent recently. Please wait before requesting another.",
+        retryAfterMs: issued.retryAfterMs,
+      });
+    }
+
+    await sendRecoveryOtpEmail(user.email, user.name, issued.otp);
 
     res.json({
       message: "OTP sent",
@@ -505,46 +544,50 @@ router.post("/recovery/verify-otp", authenticate, async (req, res) => {
     });
   }
 
-  const record = otpStore.get(req.user.id);
+  const result = otpStore.verify(req.user.id, otp);
 
-  if (!record) {
+  if (result.status === "none") {
     return res.status(401).json({
       error: "No OTP requested. Request a new one.",
     });
   }
 
-  if (Date.now() > record.expiresAt) {
-    otpStore.delete(req.user.id);
-
+  if (result.status === "expired") {
     return res.status(401).json({
       error: "OTP expired. Request a new one.",
     });
   }
 
-  if (record.otp !== otp) {
+  if (result.status === "locked") {
+    return res.status(429).json({
+      error: "Too many incorrect attempts. Please try again later.",
+      retryAfterMs: result.retryAfterMs,
+    });
+  }
+
+  if (result.status === "incorrect") {
     return res.status(401).json({
       error: "Incorrect OTP",
     });
   }
 
-  // Valid — consume immediately
-  otpStore.delete(req.user.id);
-
   try {
-    // Find the wallet params belonging to this user.
-    // walletId is now the source of truth for the wallet directory.
+    // Find the user's PERSONAL wallet params. Team wallet copies are shared, so
+    // they are not recoverable here; scoping to teamId: null excludes them (a
+    // user may hold a personal and a team wallet with the same accountName).
+    // Team-wallet recovery, if ever needed, must be a separate OWNER-only,
+    // requireTeamAdmin-gated endpoint.
     const zcashParam = await prisma.zcashParams.findFirst({
       where: {
         accountName,
         ownerId: req.user.id,
+        teamId: null,
       },
       select: {
         walletId: true,
         accountName: true,
         chain: true,
         serverUrl: true,
-        isTeam: true,
-        teamId: true,
       },
     });
 
@@ -590,6 +633,19 @@ router.post("/recovery/verify-otp", authenticate, async (req, res) => {
 
 router.patch("/update-ua-address", authenticate, async (req, res) => {
   const { UA_address } = req.body;
+
+  // A mainnet unified address is bech32m: "u1" followed by lowercase base32
+  // characters only. Enforce the full charset (not just the "u1" prefix) so a
+  // quote/whitespace/control character can't reach the zingo-cli send command.
+  if (
+    typeof UA_address !== "string" ||
+    UA_address.length > 512 ||
+    !/^u1[a-z0-9]{10,}$/.test(UA_address)
+  ) {
+    return res.status(400).json({
+      error: "Invalid mainnet unified address",
+    });
+  }
 
   try {
     if (typeof UA_address !== "string" || !UA_address.trim().startsWith("u1")) {
@@ -693,7 +749,7 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
       deleteCacheByPattern("submissions:*"),
     ]);
 
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendUserUpdated(req.user.id, updated);
 
     res.json({ user: updated });
   } catch (error) {
@@ -742,7 +798,7 @@ router.patch("/select-role", authenticate, async (req, res) => {
 
     await delCache("users:all");
 
-    sendRealtimeUpdate("user_updated", updated, req.user.id);
+    sendUserUpdated(req.user.id, updated);
 
     const token = signSessionToken(updated);
 

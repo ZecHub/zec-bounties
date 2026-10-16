@@ -567,4 +567,124 @@ router.get(
   },
 );
 
+// Port of frontend effectiveStarKey (lib/badges.ts)
+function effectiveStarKey(completed = 0, badges = []) {
+  const list = Array.isArray(badges) ? badges : [];
+  const override = list.find((b) => b.startsWith("avatar:"));
+  if (override) {
+    const map = {
+      "avatar:1": "1-task",
+      "avatar:5": "5-tasks",
+      "avatar:10": "10-tasks",
+      "avatar:15": "15-tasks",
+      "avatar:25": "25-tasks",
+      "avatar:50": "50-tasks",
+    };
+    if (map[override]) return map[override];
+  }
+  if (completed >= 50) return "50-tasks";
+  if (completed >= 25) return "25-tasks";
+  if (completed >= 15) return "15-tasks";
+  if (completed >= 10) return "10-tasks";
+  if (completed >= 5) return "5-tasks";
+  return "1-task";
+}
+
+// GET /api/kpis/star-badges-over-time
+// Cumulative star badge counts at end of each month.
+// Uses current badges for overrides (no historical override log).
+router.get(
+  "/star-badges-over-time",
+  authenticate,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const chainFilter = getChainFilter(req.query.chain);
+
+      const users = await prisma.user.findMany({
+        select: { id: true, badges: true },
+      });
+      const userBadges = new Map(
+        users.map((u) => [u.id, Array.isArray(u.badges) ? u.badges : []])
+      );
+
+      const completedBounties = await prisma.bounty.findMany({
+        where: {
+          status: "DONE",
+          completedAt: { not: null },
+          assignee: { not: null },
+          ...chainFilter,
+        },
+        select: { completedAt: true, assignee: true },
+        orderBy: { completedAt: "asc" },
+      });
+
+      const months = [
+        ...new Set(
+          completedBounties.map((b) =>
+            new Date(b.completedAt).toISOString().slice(0, 7)
+          )
+        ),
+      ].sort();
+
+      const result = [];
+      const userCumulative = new Map();
+      let idx = 0;
+
+      for (const month of months) {
+        while (
+          idx < completedBounties.length &&
+          new Date(completedBounties[idx].completedAt)
+            .toISOString()
+            .slice(0, 7) <= month
+        ) {
+          const b = completedBounties[idx];
+          userCumulative.set(
+            b.assignee,
+            (userCumulative.get(b.assignee) || 0) + 1
+          );
+          idx++;
+        }
+
+        const counts = {
+          "1-task": 0,
+          "5-tasks": 0,
+          "10-tasks": 0,
+          "15-tasks": 0,
+          "25-tasks": 0,
+          "50-tasks": 0,
+        };
+
+                // Users with completions by this month
+        const seen = new Set();
+        for (const [userId, completed] of userCumulative) {
+          if (completed < 1) continue;
+          seen.add(userId);
+          const star = effectiveStarKey(completed, userBadges.get(userId));
+          counts[star] = (counts[star] || 0) + 1;
+        }
+
+        // Users with an avatar override (even if completed is 0)
+        for (const [userId, badges] of userBadges) {
+          if (seen.has(userId)) continue;
+          const hasOverride =
+            Array.isArray(badges) &&
+            badges.some((b) => b.startsWith("avatar:"));
+          if (!hasOverride) continue;
+          const completed = userCumulative.get(userId) || 0;
+          const star = effectiveStarKey(completed, badges);
+          counts[star] = (counts[star] || 0) + 1;
+        }
+
+        result.push({ month, ...counts });
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error in /star-badges-over-time:", error);
+      res.status(500).json({ error: "Failed to fetch star badge data" });
+    }
+  },
+);
+
 module.exports = router;

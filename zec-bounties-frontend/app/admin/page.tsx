@@ -63,7 +63,6 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
-import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { BountyRepoMark, RepoFilter } from "@/components/repo-filter";
 import { bountyRepo, type RepoId } from "@/lib/repos";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -93,6 +92,7 @@ import { profileHref } from "@/lib/profileHref";
 import { backendUrl } from "@/lib/configENV";
 import Link from "next/link";
 import { parseLinks } from "@/lib/links";
+import { BountyDetailModal } from "@/components/bounty-detail-modal";
 
 /* ------------------------------------------------------------------ */
 /* Status metadata — single source of truth (kills the repeated ternaries) */
@@ -491,13 +491,14 @@ export default function AdminDashboard() {
 
   // Read-only detail view — kept for the "View Details" menu action, but
   // no longer the default click target for a bounty's title/row.
-  const [viewingBounty, setViewingBounty] = useState<Bounty | null>(null);
   const [editingBounty, setEditingBounty] = useState<Bounty | null>(null);
+  const [viewingBounty, setViewingBounty] = useState<Bounty | null>(null);
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
   const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
   const [chainFilter, setChainFilter] = useState<"MAIN" | "TEST">("MAIN");
   const [showCancelledBounties, setShowCancelledBounties] = useState(false);
+  const [suggestionOnly, setSuggestionOnly] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
   const [loadingAll, setLoadingAll] = useState(false);
@@ -573,7 +574,12 @@ export default function AdminDashboard() {
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
-    () => bounties.filter((b) => b.chain === chainFilter && !b.teamId),
+    () =>
+      bounties.filter(
+        (b) =>
+          b.chain === chainFilter &&
+          (!b.teamId || b.suggestionReviewStatus === "PENDING"),
+      ),
     [bounties, chainFilter],
   );
 
@@ -606,6 +612,10 @@ export default function AdminDashboard() {
       );
     }
 
+    if (suggestionOnly) {
+      result = result.filter((b) => b.suggestionReviewStatus === "PENDING");
+    }
+
     return result;
   }, [
     chainFilteredBounties,
@@ -614,6 +624,7 @@ export default function AdminDashboard() {
     categoryFilter,
     searchQuery,
     repoFilter,
+    suggestionOnly,
   ]);
 
   const repoCounts = useMemo(() => {
@@ -787,11 +798,17 @@ export default function AdminDashboard() {
 
   const activeCategoryLabel =
     categoryFilter === "ALL" ? "All Categories" : categoryFilter;
+
+  const pendingSuggestionCount = chainFilteredBounties.filter(
+    (b) => b.suggestionReviewStatus === "PENDING",
+  ).length;
+
   const activeFilterCount =
     (bountyStatusFilter !== "ALL" ? 1 : 0) +
     (categoryFilter !== "ALL" ? 1 : 0) +
     (repoFilter !== "all" ? 1 : 0) +
-    (showCancelledBounties ? 1 : 0);
+    (showCancelledBounties ? 1 : 0) +
+    (suggestionOnly ? 1 : 0);
 
   const statusCountFor = (status: BountyStatus | "ALL") =>
     status === "ALL"
@@ -803,6 +820,7 @@ export default function AdminDashboard() {
     setCategoryFilter("ALL");
     setRepoFilter("all");
     setShowCancelledBounties(false);
+    setSuggestionOnly(false);
   };
 
   const handleShowAll = async () => {
@@ -1362,6 +1380,25 @@ export default function AdminDashboard() {
                         </button>
                       );
                     })}
+                    {(pendingSuggestionCount > 0 || suggestionOnly) && (
+                      <>
+                        <span className="mx-1 h-4 w-px shrink-0 bg-border" />
+                        <button
+                          onClick={() => setSuggestionOnly((v) => !v)}
+                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                            suggestionOnly
+                              ? "border-amber-500/60 bg-amber-500/20 font-medium text-amber-700 dark:text-amber-400"
+                              : "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Suggestion review
+                          <span className="tabular-nums opacity-70">
+                            {pendingSuggestionCount}
+                          </span>
+                        </button>
+                      </>
+                    )}
                   </div>
                   <div className="pt-2">
                     <RepoFilter
@@ -2126,6 +2163,7 @@ export default function AdminDashboard() {
 
         {/* Read-only detail view — still reachable via "View Details" in
             the actions menu, but no longer the default click target. */}
+
         <BountyDetailModal
           bounty={viewingBounty}
           open={!!viewingBounty}

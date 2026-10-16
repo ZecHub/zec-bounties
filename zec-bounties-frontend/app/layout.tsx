@@ -15,10 +15,42 @@ const geistSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://bounties.zechub.wiki"),
   title: "ZEC Bounties | Bounty Platform",
   description:
     "ZEC Bounties is a privacy-first bounty platform for the Zcash cryptocurrency (ZEC). Zcash is a digital currency providing censorship-resistant, secure, and private payments. ZEC Bounties enables bug bounties, community rewards, development incentives, and contributor programs designed to support innovation and growth across the Zcash ecosystem. It is a great way to earn Zcash (ZEC)",
   manifest: "/manifest.json",
+  openGraph: {
+    title: "ZEC Bounties | Bounty Platform",
+    description:
+      "Privacy-first bounty platform for the Zcash ecosystem. Earn ZEC for open source contributions, bug bounties, and development grants.",
+    url: "https://bounties.zechub.wiki",
+    siteName: "ZEC Bounties",
+    images: [
+      {
+        url: "/og/og-card-dark.png",
+        width: 1200,
+        height: 630,
+        alt: "ZEC Bounties - Privacy-First Bounties for the Zcash Ecosystem",
+      },
+      {
+        url: "/og/og-card-light.png",
+        width: 1200,
+        height: 630,
+        alt: "ZEC Bounties - Light Theme Preview",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ZEC Bounties | Privacy-First Bounty Platform",
+    description:
+      "Contribute to open source tasks and earn shielded ZEC payouts on the ZEC Bounties platform.",
+    images: ["/og/og-card-dark.png"],
+    creator: "@ZecHub",
+  },
 };
 
 export default function RootLayout({

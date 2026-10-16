@@ -11,6 +11,7 @@ const botHeaders = {
 };
 
 async function notifyNewBounty(bounty) {
+  if (bounty.suggestionReviewStatus === "PENDING") return;
   if (!NOTIFY_WEBHOOK_URL) return;
   try {
     await axios.post(NOTIFY_WEBHOOK_URL, {

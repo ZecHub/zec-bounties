@@ -62,6 +62,7 @@ export function AuthorizePaymentPanel() {
 
   const eligibleBounties = bounties.filter(
     (b) =>
+      !b.teamId &&
       b.status === "DONE" &&
       b.isApproved &&
       !b.isPaid &&

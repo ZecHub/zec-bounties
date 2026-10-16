@@ -34,7 +34,7 @@ Reviewer and payment-related tests must stop before any real transaction or paym
 
 ## CI
 
-The GitHub Actions accessibility workflow installs dependencies and Chromium, runs TypeScript validation, executes the Playwright accessibility suite, and uploads the Playwright report.
+The GitHub Actions Frontend workflow (`.github/workflows/frontend.yml`) runs on every pull request to `main` and every push to `main`. It installs dependencies, runs TypeScript validation, installs Chromium, executes the Playwright accessibility suite, and uploads the Playwright report.
 
 ## Evidence
 

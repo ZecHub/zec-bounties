@@ -2004,10 +2004,18 @@ export default function SettingsPage() {
               </span>
             </div>
 
-            <RecoveryPanel
-              key={activeConfig.accountName}
-              config={activeConfig}
-            />
+            {getWalletType(activeConfig) === "team" ? (
+              <EmptyState
+                icon={KeyRound}
+                title="Team wallet"
+                hint="You cannot recover a team wallet from a personal account. To recover the seed phrase of a personal wallet, set it as your default wallet."
+              />
+            ) : (
+              <RecoveryPanel
+                key={activeConfig.accountName}
+                config={activeConfig}
+              />
+            )}
           </div>
         ) : (
           <EmptyState

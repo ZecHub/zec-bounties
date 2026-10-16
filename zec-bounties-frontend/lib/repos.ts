@@ -13,6 +13,8 @@ export interface RepoMeta {
   short: string;
   icon: string;
   patterns: RegExp[];
+  /** Optional longer explanation shown as a tooltip in the repository picker. */
+  hint?: string;
 }
 
 export const REPOS: readonly RepoMeta[] = [
@@ -42,9 +44,10 @@ export const REPOS: readonly RepoMeta[] = [
   },
   {
     id: "namada",
-    label: "Namada",
-    short: "Namada",
+    label: "ZecHub Namada Dashboard",
+    short: "Namada Dash",
     icon: "/namada-logo.png",
+    hint: "ZecHub’s Governance and Network Metrics Dashboard (github.com/ZecHub/Namada, namada.zechub.wiki). Not the upstream Namada protocol codebase.",
     patterns: [
       /github\.com\/ZecHub\/Namada\b/i,
       /github\.com\/namada-net\/namada\b/i,

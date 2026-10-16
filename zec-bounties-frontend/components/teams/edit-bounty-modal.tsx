@@ -124,13 +124,18 @@ export function TeamsEditBountyModal({
         selectedUserIds.length !== existingIds.length ||
         selectedUserIds.some((id) => !existingIds.includes(id));
 
+      // Preserve unchanged deadlines, including expired dates and their time of day.
+      const originalDeadline = bounty.timeToComplete
+        ? new Date(bounty.timeToComplete).toISOString().slice(0, 10)
+        : "";
       await updateBounty(bounty.id, {
         title,
         description,
         bountyAmount: parseFloat(bountyAmount),
-        timeToComplete: timeToComplete
-          ? new Date(timeToComplete).toISOString()
-          : undefined,
+        timeToComplete:
+          timeToComplete && timeToComplete !== originalDeadline
+            ? new Date(timeToComplete).toISOString()
+            : undefined,
         chain,
         notifyUsers,
         // Pass userIds for assignees — handled in updateBounty

@@ -12,8 +12,11 @@ const {
   getDefaultZcashParams,
 } = require("../helpers/zcash/zcashHelper.js");
 const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
+const {
+  validateWalletConnection,
+} = require("../helpers/zcash/walletConnection");
 
-const { sendRealtimeUpdate } = require("../middleware/websocket");
+const { sendToUser } = require("../middleware/websocket");
 
 const router = express.Router();
 
@@ -55,12 +58,21 @@ router.post("/import-wallet", authenticate, async (req, res) => {
     }
 
     // Validate seed phrase format (24 words)
-    const words = seedPhrase.trim().split(/\s+/);
+    const words =
+      typeof seedPhrase === "string" ? seedPhrase.trim().split(/\s+/) : [];
     if (words.length !== 24) {
       return res.status(400).json({
         success: false,
         message: "Invalid seed phrase. Must be 24 words.",
       });
+    }
+
+    const connectionError = validateWalletConnection({
+      chain: chain || "mainnet",
+      serverUrl: serverUrl || "https://zec.rocks:443",
+    });
+    if (connectionError) {
+      return res.status(400).json({ success: false, message: connectionError });
     }
 
     // Check if account already exists for this user
@@ -113,7 +125,26 @@ router.post("/import-wallet", authenticate, async (req, res) => {
       dataDir: getWalletDataDir(params.walletId),
     };
 
-    await executeZingoCliSeed(zingoParams, seedPhrase, birthdayHeight);
+    try {
+      await executeZingoCliSeed(zingoParams, seedPhrase, birthdayHeight);
+    } catch (seedError) {
+      // If the restore fails, remove the wallet again (same steps as
+      // DELETE /params/:accountName) so the name can be reused on retry
+      invalidateZingo({
+        chain: params.chain || "mainnet",
+        serverUrl: params.serverUrl || "http://127.0.0.1:8137",
+        dataDir: zingoParams.dataDir,
+      });
+      await fs.rm(zingoParams.dataDir, { recursive: true, force: true });
+      await prisma.zcashParams.delete({ where: { id: params.id } });
+
+      console.error("Error restoring wallet from seed:", seedError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to restore wallet from seed phrase",
+        error: seedError.message,
+      });
+    }
 
     await prisma.$transaction(
       async (tx) => {
@@ -293,6 +324,14 @@ router.post("/params", authenticate, async (req, res) => {
       });
     }
 
+    const connectionError = validateWalletConnection({
+      chain: chain || "mainnet",
+      serverUrl: serverUrl || "https://zec.rocks:443",
+    });
+    if (connectionError) {
+      return res.status(400).json({ success: false, message: connectionError });
+    }
+
     // Check if account already exists for this user
     const existing = await findUserWallet(userId, accountName);
 
@@ -347,6 +386,11 @@ router.put("/params/:accountName", authenticate, async (req, res) => {
     const { accountName } = req.params;
     const { chain, serverUrl, accountName: newAccountName } = req.body;
     const userId = req.user.id;
+
+    const connectionError = validateWalletConnection({ chain, serverUrl });
+    if (connectionError) {
+      return res.status(400).json({ success: false, message: connectionError });
+    }
 
     // Check if parameters exist for this user
     const existing = await findUserWallet(userId, accountName);
@@ -444,6 +488,11 @@ router.patch("/params/:accountName", authenticate, async (req, res) => {
       });
     }
 
+    const connectionError = validateWalletConnection(updateData);
+    if (connectionError) {
+      return res.status(400).json({ success: false, message: connectionError });
+    }
+
     // If changing account name, check if new name already exists for this user
     if (updateData.accountName && updateData.accountName !== accountName) {
       const nameExists = await findUserWallet(userId, updateData.accountName);
@@ -511,6 +560,16 @@ router.delete("/params/:accountName", authenticate, async (req, res) => {
       return res.status(404).json({
         success: false,
         message: `Zcash parameters not found for account: ${accountName}`,
+      });
+    }
+
+    // A team wallet copy shares the team's wallet directory. Deleting it goes
+    // through DELETE /api/teams/:teamId/wallet, which also clears every
+    // member's copy.
+    if (existing.teamId) {
+      return res.status(403).json({
+        success: false,
+        message: "The team owner can delete a team wallet from the team page",
       });
     }
 
@@ -582,7 +641,7 @@ router.patch(
         { timeout: 10000 },
       );
 
-      sendRealtimeUpdate("default_wallet_updated", updated, userId);
+      sendToUser(userId, "default_wallet_updated", updated);
 
       res.json({ success: true, data: updated });
     } catch (error) {
@@ -613,6 +672,18 @@ router.post("/params/upsert", authenticate, async (req, res) => {
     // Prisma's upsert requires a unique key — since teamId:null breaks the
     // compound key in SQLite, we do a manual find-then-create-or-update.
     const existing = await findUserWallet(userId, accountName);
+
+    const connectionError = validateWalletConnection(
+      existing
+        ? { chain, serverUrl }
+        : {
+            chain: chain || "mainnet",
+            serverUrl: serverUrl || "https://zec.rocks:443",
+          },
+    );
+    if (connectionError) {
+      return res.status(400).json({ success: false, message: connectionError });
+    }
 
     let params;
     if (existing) {
@@ -701,7 +772,7 @@ router.get("/info", authenticate, isAdmin, async (req, res) => {
       });
     }
 
-    const info = await executeZingoCliInfo("rescan", params);
+    const info = await executeZingoCliInfo("info", params);
 
     res.json(info);
   } catch (error) {

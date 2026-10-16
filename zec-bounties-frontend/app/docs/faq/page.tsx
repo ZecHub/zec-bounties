@@ -93,10 +93,74 @@ const FAQS = [
     ),
   },
   {
+    q: "How do I get my first bounty?",
+    a: (
+      <>
+        First set a shielded UA in{" "}
+        <Link href="/profile" className="text-primary hover:underline">
+          Profile
+        </Link>
+        . Then apply to an open bounty on the board, or suggest one with{" "}
+        <strong>New Bounty</strong> and wait for it to be approved (by the team
+        you aimed it at, or by platform admins). New
+        bounties are usually posted on Mondays — only suggest work that is not
+        already listed. See{" "}
+        <Link
+          href="/docs/contributors"
+          className="text-primary hover:underline"
+        >
+          Contributors
+        </Link>
+        .
+      </>
+    ),
+  },
+  {
+    q: "Why can't I apply to a Suggested task?",
+    a: (
+      <>
+        A Suggested task was created by a hunter and is assigned to that
+        hunter. It shows <strong>Invite Only / No other applicants</strong>{" "}
+        with a lock, and the apply button is hidden. A suggestion aimed at a
+        team is reviewed by that team&apos;s OWNER or ADMIN members, who can
+        approve, edit or decline it; other suggestions are reviewed by
+        platform admins. The bounty fund is limited, so reviewers approve the
+        suggestions most useful to the community and the work stays with the
+        hunter who proposed it. See{" "}
+        <Link
+          href="/docs/task-statuses"
+          className="text-primary hover:underline"
+        >
+          Task statuses
+        </Link>{" "}
+        and{" "}
+        <a
+          href="https://github.com/ZecHub/zec-bounties/blob/main/docs/bounty-suggestions.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          Team bounty suggestions
+        </a>
+        .
+      </>
+    ),
+  },
+  {
     q: "My work was approved but I have not been paid.",
     a: (
       <>
-        Confirm the bounty is marked done / payment authorized. If it stays
+        Payouts are batched and usually go out the Sunday after a bounty is
+        marked Done, to the payout UA set in Profile — you have nothing else
+        to do. Done and paid are separate steps (an admin authorizes the
+        shielded payment and the txid is recorded) — see{" "}
+        <Link
+          href="/docs/task-statuses"
+          className="text-primary hover:underline"
+        >
+          Task statuses
+        </Link>
+        . Confirm the bounty is marked done / payment authorized. If it stays
         stuck, contact the bounty creator or ZecHub admins. Check that your
         registered UA is still valid.
       </>

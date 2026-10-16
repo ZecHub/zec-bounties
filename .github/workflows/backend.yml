@@ -1,0 +1,91 @@
+name: Backend
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: zec-bounties-backend
+
+    # Every PostgreSQL test needs its own variable, so none runs by accident
+    # against a real database.
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+      QUOTA_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+      BOUNTY_VALIDATION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+      SUBMISSION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+      SUBMISSION_EDIT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+      SUBMISSION_REVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/zec_bounties_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its base, to list the changed files.
+          fetch-depth: 2
+
+      # A skipped workflow never reports, so a required check would wait
+      # forever. The job always runs and skips its own steps instead.
+      - name: Check for backend changes
+        id: changes
+        if: github.event_name == 'pull_request'
+        run: |
+          # A separate assignment, so a failed diff fails the step instead of skipping.
+          files=$(git diff --name-only HEAD^1 HEAD)
+          relevant=$(grep -E '^(zec-bounties-backend/|\.github/workflows/backend\.yml$)' <<<"$files" \
+            | grep -v '\.md$' || true)
+          if [ -z "$relevant" ]; then
+            message="This PR has no backend changes, so the backend checks were skipped."
+            echo "::notice::$message"
+            echo "$message" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zec-bounties-backend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.changes.outputs.skip != 'true'
+        run: npm ci
+
+      # Started as a step, not a service, so a skipped job does not wait for it.
+      - name: Start PostgreSQL
+        if: steps.changes.outputs.skip != 'true'
+        run: |
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=zec_bounties_test postgres:16
+          until docker exec postgres pg_isready -h 127.0.0.1 -U postgres -d zec_bounties_test; do sleep 1; done
+
+      - name: Apply database schema
+        if: steps.changes.outputs.skip != 'true'
+        run: npx prisma db push --skip-generate
+
+      # The PostgreSQL tests share one database and race requests on purpose,
+      # so test files run one at a time.
+      - name: Run tests
+        if: steps.changes.outputs.skip != 'true'
+        run: node --test --test-concurrency=1 'tests/**/*.test.js'

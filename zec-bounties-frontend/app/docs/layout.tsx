@@ -15,12 +15,14 @@ const NAV = [
   { href: "/docs/hunters", label: "Hunters" },
   { href: "/docs/teams", label: "Teams" },
   { href: "/docs/contributors", label: "Contributors" },
+  { href: "/docs/task-statuses", label: "Task statuses" },
   { href: "/docs/creators", label: "Creators" },
   { href: "/docs/bounty-amounts", label: "Bounty amounts" },
   { href: "/docs/privacy-payments", label: "Privacy & payments" },
   { href: "/docs/api", label: "API" },
   { href: "/docs/badges", label: "Badges" },
   { href: "/docs/faq", label: "FAQ" },
+  { href: "/docs/glossary", label: "Glossary" },
 ];
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {

@@ -156,7 +156,8 @@ export default function PublicUserProfilePage() {
         if (!token) throw new Error("Admin session required");
         const params = new URLSearchParams({ chain });
         if (staffOpenOffset) params.set("openOffset", String(staffOpenOffset));
-        if (staffHistoryOffset) params.set("historyOffset", String(staffHistoryOffset));
+        if (staffHistoryOffset)
+          params.set("historyOffset", String(staffHistoryOffset));
         const res = await fetch(
           `${backendUrl}/api/users/${encodeURIComponent(idOrNickname)}/staff-bounties?${params}`,
           {
@@ -175,12 +176,16 @@ export default function PublicUserProfilePage() {
         const data = (await res.json()) as StaffBountyView;
         if (!cancelled) {
           setStaffView((prev) => {
-            const sameUser = prev?.userId === data.userId && prev?.chain === data.chain;
-            if (!sameUser || (!staffOpenOffset && !staffHistoryOffset)) return data;
+            const sameUser =
+              prev?.userId === data.userId && prev?.chain === data.chain;
+            if (!sameUser || (!staffOpenOffset && !staffHistoryOffset))
+              return data;
             return {
               ...data,
               open: staffOpenOffset ? [...prev.open, ...data.open] : data.open,
-              history: staffHistoryOffset ? [...prev.history, ...data.history] : data.history,
+              history: staffHistoryOffset
+                ? [...prev.history, ...data.history]
+                : data.history,
             };
           });
         }
@@ -460,7 +465,8 @@ export default function PublicUserProfilePage() {
                   </div>
                 </CardContent>
               </Card>
-{isAdmin && (
+
+              {isAdmin && (
                 <StaffViewCard
                   chain={chain === "TEST" ? "TEST" : "MAIN"}
                   loading={staffLoading}
@@ -468,6 +474,16 @@ export default function PublicUserProfilePage() {
                   data={staffView}
                   onLoadMoreOpen={() => loadMoreStaff("open")}
                   onLoadMoreHistory={() => loadMoreStaff("history")}
+                  taskAccess={
+                    profile.role !== "ADMIN" && !isOwn
+                      ? {
+                          userId: profile.id,
+                          name: profile.displayName || "This user",
+                          fallbackBlocked:
+                            (profile as any).canCreateTasks === false,
+                        }
+                      : undefined
+                  }
                 />
               )}
 

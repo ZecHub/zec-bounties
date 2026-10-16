@@ -37,6 +37,19 @@ If the ZEC/USD spot has moved ≥ 20% or more than 7 days have passed, edit the 
 - Links to repos, designs, or prior art when relevant
 - Realistic deadline
 
+## Target repositories
+
+When creating a bounty you can optionally tag a target repository. These are the ZecHub projects the platform currently knows about:
+
+| Id | What it means |
+| --- | --- |
+| `zechub` | ZecHub education hub (https://github.com/ZecHub/zechub) |
+| `zechub-wiki` | ZecHub wiki (https://github.com/ZecHub/zechub-wiki, zechub.wiki) |
+| `zec-bounties` | This bounty platform (https://github.com/ZecHub/zec-bounties) |
+| `namada` | **ZecHub Namada Governance and Network Metrics Dashboard only** — https://github.com/ZecHub/Namada and https://namada.zechub.wiki. This is **not** the upstream Namada protocol codebase (namada-net/namada). Upstream protocol, node, MASP, or client work is out of scope for this target. |
+
+Pick the matching repository so reviewers and hunters know exactly which codebase the work applies to.
+
 ## Payment notes
 
 - Assignees must have a UA with at least one shielded receiver. Transparent-only addresses cannot be paid. Mixed UAs (shielded + transparent) are allowed with a warning — see [Addresses](addresses.md).

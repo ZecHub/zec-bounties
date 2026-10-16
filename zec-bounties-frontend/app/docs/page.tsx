@@ -55,6 +55,11 @@ const LINKS = [
     title: "API",
     desc: "Methods, how to call them, and what responses actually hide",
   },
+  {
+    href: "/docs/glossary",
+    title: "Glossary",
+    desc: "Account roles, bounty statuses, and payment flags",
+  },
 ];
 
 export default function DocsOverviewPage() {

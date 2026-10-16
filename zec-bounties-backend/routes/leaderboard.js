@@ -3,6 +3,7 @@ const express = require("express");
 const prisma = require("../prisma/client");
 const { optionalAuthenticate } = require("../middleware/auth");
 const { getCache, setCache, getVersion } = require("../utils/cache");
+const { redactLeaderboardRow } = require("../utils/privacy");
 
 const router = express.Router();
 
@@ -16,10 +17,13 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     if (chainParam !== "MAIN" && !isAdmin) {
       return res.status(403).json({ error: "Non-MAIN chains require admin" });
     }
-    const limit = Math.min(parseInt(req.query.limit) || 25, 100);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 25), 100);
 
-    const version = await getVersion("bounties"); // busts with invalidateBounty
-    const cacheKey = `leaderboard:v${version}:${timeRange}:${chainParam}:${limit}`;
+    const version = await getVersion("bounties");
+    const privacyVersion = await getVersion("privacy");
+    // Separate cache for admin (full) vs public (redacted). Privacy version
+    // is bumped when a user changes profileVisibility so redaction stays fresh.
+    const cacheKey = `leaderboard:v${version}:p${privacyVersion}:${timeRange}:${chainParam}:${limit}:${isAdmin ? "admin" : "public"}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -50,20 +54,30 @@ router.get("/", optionalAuthenticate, async (req, res) => {
 
     const users = await prisma.user.findMany({
       where: { id: { in: grouped.map((g) => g.assignee) } },
-      select: { id: true, name: true, nickname: true, avatar: true },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        avatar: true,
+        profileVisibility: true,
+      },
     });
     const byId = new Map(users.map((u) => [u.id, u]));
 
-    const result = grouped.map((g, i) => ({
-      id: g.assignee,
-      rank: i + 1,
-      name: byId.get(g.assignee)?.name ?? "Unknown",
-      nickname: byId.get(g.assignee)?.nickname ?? null,
-      avatar: byId.get(g.assignee)?.avatar ?? null,
-      completed: g._count.id,
-      earned: g._sum.bountyAmount ?? 0,
-      points: Math.round((g._sum.bountyAmount ?? 0) * 100) + g._count.id * 10,
-    }));
+    const result = grouped.map((g, i) => {
+      const user = byId.get(g.assignee);
+      const raw = {
+        id: g.assignee,
+        rank: i + 1,
+        name: user?.name ?? "Unknown",
+        nickname: user?.nickname ?? null,
+        avatar: user?.avatar ?? null,
+        completed: g._count.id,
+        earned: g._sum.bountyAmount ?? 0,
+        points: Math.round((g._sum.bountyAmount ?? 0) * 100) + g._count.id * 10,
+      };
+      return redactLeaderboardRow(raw, user, { forceFull: isAdmin });
+    });
 
     await setCache(cacheKey, result, 60);
     res.json(result);

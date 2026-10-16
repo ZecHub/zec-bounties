@@ -26,16 +26,17 @@ export function RepoMark({
   compact?: boolean;
 }) {
   const meta = REPOS.find((item) => item.id === repo)!;
+  const title = meta.hint ?? meta.label;
   if (compact) {
     return (
-      <span title={meta.label} className="inline-flex">
+      <span title={title} className="inline-flex">
         <RepoIcon repo={repo} className="h-4 w-4" />
       </span>
     );
   }
   return (
     <span
-      title={meta.label}
+      title={title}
       className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-1.5 h-5 text-[10px] font-medium text-foreground/80"
     >
       <RepoIcon repo={repo} className="h-3.5 w-3.5" />
@@ -57,7 +58,7 @@ export function BountyRepoMark({
 export function RepoMenuLabel({ repoId }: { repoId: RepoId }) {
   const meta = REPOS.find((item) => item.id === repoId)!;
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex items-center gap-2" title={meta.hint ?? meta.label}>
       <RepoIcon repo={repoId} className="h-4 w-4" />
       {meta.label}
     </span>

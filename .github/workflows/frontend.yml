@@ -1,0 +1,92 @@
+name: Frontend
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: zec-bounties-frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # The PR merge commit and its base, to list the changed files.
+          fetch-depth: 2
+
+      # A skipped workflow never reports, so a required check would wait
+      # forever. The job always runs and skips its own steps instead.
+      - name: Check for frontend changes
+        id: changes
+        if: github.event_name == 'pull_request'
+        run: |
+          # A separate assignment, so a failed diff fails the step instead of skipping.
+          files=$(git diff --name-only HEAD^1 HEAD)
+          changed=$(grep -v '\.md$' <<<"$files" || true)
+          if grep -qE '^(zec-bounties-frontend/|\.github/workflows/frontend\.yml$)' <<<"$changed"; then
+            exit 0
+          fi
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          # The edit form test runs the real backend validation route.
+          if grep -q '^zec-bounties-backend/' <<<"$changed"; then
+            echo "only-edit-form=true" >> "$GITHUB_OUTPUT"
+            message="This PR changes only the backend, so only the bounty edit form test runs."
+          else
+            message="This PR has no frontend changes, so the frontend checks were skipped."
+          fi
+          echo "::notice::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: zec-bounties-frontend/yarn.lock
+
+      - name: Install dependencies
+        if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
+        run: yarn install --frozen-lockfile
+
+      - name: Run bounty edit form test
+        if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
+        run: node --test tests/bounty-edit-validation.test.cjs
+
+      - name: Type check
+        if: steps.changes.outputs.skip != 'true'
+        run: yarn tsc --noEmit
+
+      - name: Install Chromium
+        if: steps.changes.outputs.skip != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run accessibility tests
+        if: steps.changes.outputs.skip != 'true'
+        run: yarn test:a11y
+
+      - name: Upload Playwright report
+        if: always() && steps.changes.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: accessibility-playwright-report
+          path: zec-bounties-frontend/playwright-report/
+          retention-days: 14

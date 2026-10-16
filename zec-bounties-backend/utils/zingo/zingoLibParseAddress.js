@@ -1,6 +1,7 @@
 const { execFile } = require("child_process");
 const { existsSync } = require("fs");
 const { promisify } = require("util");
+const { isSafeShieldedAddress } = require("../../helpers/validateAddress.js");
 
 const { ADDRESS_PATTERN } = require("./replCommand");
 
@@ -14,12 +15,21 @@ async function executeZingoParseAddress(zaddress, params) {
     return { status: "invalid" };
   }
 
+  // Sink-level guard: never let a value that isn't a plain base58/bech32
+  // address reach the wallet CLI, regardless of what the caller validated.
+  if (!isSafeShieldedAddress(zaddress)) {
+    throw new Error("Invalid address");
+  }
+
   const zingoPath = process.env.ZINGO_CLI;
 
   if (!existsSync(zingoPath)) {
     throw new Error(`zingo-cli not found at ${zingoPath}`);
   }
 
+  // Pass each token as a separate argv element and run the binary directly
+  // (execFileSync does NOT spawn a shell), so nothing in `zaddress` can be
+  // interpreted as shell syntax.
   const args = [
     "--chain",
     params.chain || "testnet",

@@ -1,8 +1,13 @@
 const express = require("express");
 const prisma = require("../prisma/client");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { delCache } = require("../utils/cache");
+const { delCache, bumpVersion } = require("../utils/cache");
 const { userIdentityWhere } = require("../utils/userIdentity");
+const {
+  assignedDoneWhere,
+  recentCompletedWhere,
+  recentCreatedWhere,
+} = require("../utils/profileBounties");
 
 const router = express.Router();
 
@@ -60,15 +65,7 @@ function stripAmountsIfPrivate(rows, allowAmount) {
   });
 }
 
-function assignedDoneWhere(userId, chain) {
-  return {
-    status: "DONE",
-    chain,
-    OR: [{ assignee: userId }, { assignees: { some: { userId } } }],
-  };
-}
-
-async function loadChainStats(userId, chain) {
+async function loadChainStats(userId, chain, includePrivate) {
   const [
     completed,
     created,
@@ -94,7 +91,7 @@ async function loadChainStats(userId, chain) {
       _sum: { bountyAmount: true },
     }),
     prisma.bounty.findMany({
-      where: assignedDoneWhere(userId, chain),
+      where: recentCompletedWhere(userId, chain, includePrivate),
       orderBy: { paidAt: "desc" },
       take: 5,
       select: {
@@ -108,7 +105,7 @@ async function loadChainStats(userId, chain) {
       },
     }),
     prisma.bounty.findMany({
-      where: { createdBy: userId, chain },
+      where: recentCreatedWhere(userId, chain, includePrivate),
       orderBy: { dateCreated: "desc" },
       take: 5,
       select: {
@@ -138,10 +135,10 @@ async function loadChainStats(userId, chain) {
   };
 }
 
-async function loadStats(userId) {
+async function loadStats(userId, includePrivate) {
   const [MAIN, TEST] = await Promise.all([
-    loadChainStats(userId, "MAIN"),
-    loadChainStats(userId, "TEST"),
+    loadChainStats(userId, "MAIN", includePrivate),
+    loadChainStats(userId, "TEST", includePrivate),
   ]);
   return { MAIN, TEST };
 }
@@ -183,22 +180,11 @@ router.get("/search", authenticate, async (req, res) => {
  * Privacy-filtered public profile. Auth optional (owner/admin see more).
  */
 
-const { resolveStaffUser, buildStaffView } = require("../utils/staffBounties");
-
-const STAFF_BOUNTY_SELECT = {
-  id: true,
-  title: true,
-  status: true,
-  chain: true,
-  bountyAmount: true,
-  isPrivate: true,
-  isPaid: true,
-  isApproved: true,
-  dateCreated: true,
-  completedAt: true,
-  paidAt: true,
-  team: { select: { name: true } },
-};
+const {
+  STAFF_BOUNTY_SELECT,
+  resolveStaffUser,
+  buildStaffView,
+} = require("../utils/staffBounties");
 
 function staffOffset(value) {
   const n = Number(value);
@@ -217,9 +203,8 @@ router.get(
   isAdmin,
   async (req, res) => {
     try {
-      const key = decodeURIComponent(
-        String(req.params.idOrNickname || ""),
-      ).trim();
+      // Express has already decoded the param; decoding again throws on "%".
+      const key = String(req.params.idOrNickname || "").trim();
       if (!key) return res.status(400).json({ error: "User id required" });
 
       const chainRaw = String(req.query.chain || "MAIN").toUpperCase();
@@ -281,51 +266,52 @@ router.get(
   },
 );
 
-router.get("/:idOrNickname/public", async (req, res) => {
-  try {
-    const key = decodeURIComponent(
-      String(req.params.idOrNickname || ""),
-    ).trim();
-    if (!key) return res.status(400).json({ error: "User id required" });
-
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ id: key }, { nickname: key }, { name: key }],
-      },
-      select: {
-        id: true,
-        name: true,
-        nickname: true,
-        avatar: true,
-        role: true,
-        badges: true,
-        bio: true,
-        profileVisibility: true,
-        createdAt: true,
-        githubId: true,
-        discordUserId: true,
-        discordUsername: true,
-        discordGlobalName: true,
-        discordConnectedAt: true,
-        UA_address: true,
-        z_address: true,
-        teamMembers: {
-          select: {
-            role: true,
-            team: {
-              select: {
-                id: true,
-                name: true,
-                logo: true,
-                isVerified: true,
-              },
-            },
-          },
+const PUBLIC_PROFILE_SELECT = {
+  id: true,
+  name: true,
+  nickname: true,
+  avatar: true,
+  role: true,
+  badges: true,
+  bio: true,
+  profileVisibility: true,
+  createdAt: true,
+  githubId: true,
+  discordUserId: true,
+  discordUsername: true,
+  discordGlobalName: true,
+  discordConnectedAt: true,
+  UA_address: true,
+  z_address: true,
+  teamMembers: {
+    select: {
+      role: true,
+      team: {
+        select: {
+          id: true,
+          name: true,
+          logo: true,
+          isVerified: true,
         },
       },
-    });
+    },
+  },
+};
 
-    if (!user) return res.status(404).json({ error: "User not found" });
+router.get("/:idOrNickname/public", async (req, res) => {
+  try {
+    const key = String(req.params.idOrNickname || "").trim();
+    if (!key) return res.status(400).json({ error: "User id required" });
+
+    const resolved = await resolveStaffUser(
+      prisma,
+      key,
+      PUBLIC_PROFILE_SELECT,
+    );
+    if (!resolved.user) {
+      return res.status(resolved.status).json({ error: resolved.error });
+    }
+    const user = resolved.user;
 
     let isOwner = false;
     let isAdmin = false;
@@ -351,8 +337,10 @@ router.get("/:idOrNickname/public", async (req, res) => {
       (isAdmin && !isOwner) ||
       (isOwner && String(req.query.full || "") === "1");
 
+    // The recent lists carry titles, so private bounties stay out of them
+    // unless the viewer is the profile owner or an admin.
     const [stats, teams] = await Promise.all([
-      loadStats(user.id),
+      loadStats(user.id, isOwner || isAdmin),
       Promise.resolve(
         (user.teamMembers || []).map((row) => ({
           id: row.team.id,
@@ -636,6 +624,11 @@ router.patch("/me/profile", authenticate, async (req, res) => {
     });
 
     await delCache("users:all").catch(() => {});
+    if (data.profileVisibility) {
+      // Bust leaderboard (and any other privacy-scoped) cache so redaction
+      // reflects the new flags immediately.
+      await bumpVersion("privacy").catch(() => {});
+    }
 
     res.json({
       id: updated.id,

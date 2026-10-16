@@ -42,6 +42,15 @@ async function mockAuthenticatedBackend(page: Page, user = fixtureUser) {
       return;
     }
 
+    if (url.pathname === "/api/notifications") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ notifications: [], unreadCount: 0 }),
+      });
+      return;
+    }
+
     if (
       url.pathname === "/api/bounties" ||
       url.pathname.startsWith("/api/bounties?")
@@ -134,6 +143,15 @@ async function useBountyFixture(
           { id: 1, name: "Development" },
           { id: 2, name: "Design" },
         ]),
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/notifications") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ notifications: [], unreadCount: 0 }),
       });
       return;
     }
@@ -240,6 +258,11 @@ async function useReviewerFixture(page: Page) {
           error: "Blocked by accessibility test fixture",
         }),
       });
+      return;
+    }
+
+    if (url.pathname === "/api/notifications") {
+      await route.fulfill({ json: { notifications: [], unreadCount: 0 } });
       return;
     }
 
@@ -445,6 +468,11 @@ test.describe("keyboard accessibility", () => {
       "Accessibility Work Submission Fixture",
     );
 
+    const deliverable = dialog.locator("#deliverable-url");
+    const helpText = "Share links where your completed work can be reviewed.";
+    await expect(dialog.locator("#deliverable-url-help")).toHaveText(helpText);
+    await expect(deliverable).toHaveAccessibleDescription(helpText);
+
     const submit = dialog.getByRole("button", {
       name: "Submit Work",
     });
@@ -460,7 +488,6 @@ test.describe("keyboard accessibility", () => {
     );
 
     const description = dialog.locator("#submission-description");
-    const deliverable = dialog.locator("#deliverable-url");
 
     await expect(description).toBeFocused();
     await expect(description).toHaveAttribute("aria-invalid", "true");
@@ -480,8 +507,20 @@ test.describe("keyboard accessibility", () => {
     );
 
     await expect(dialog.locator("#deliverable-url-error")).toHaveText(
-      "Enter a deliverable URL.",
+      "Enter at least one deliverable URL.",
     );
+    await expect(deliverable).toHaveAccessibleDescription(
+      `${helpText} Enter at least one deliverable URL.`,
+    );
+
+    await deliverable.fill("https://example.invalid/completed-work");
+    await expect(deliverable).toHaveAttribute("aria-invalid", "false");
+    await expect(dialog.locator("#deliverable-url-error")).toHaveCount(0);
+    await expect(deliverable).toHaveAttribute(
+      "aria-describedby",
+      "deliverable-url-help",
+    );
+    await expect(deliverable).toHaveAccessibleDescription(helpText);
   });
 
 

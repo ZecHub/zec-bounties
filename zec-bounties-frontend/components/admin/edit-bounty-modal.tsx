@@ -35,22 +35,20 @@ import {
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
 import { Bounty, BountyActivity } from "@/lib/types";
+import Link from "next/link";
 import { displayName } from "@/lib/displayName";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 import { REPOS } from "@/lib/repos";
 import { RepoMenuLabel } from "@/components/repo-filter";
 import { ZecToUsd } from "../ZecToUsd";
 import { BountyChat } from "@/components/bounty-chat";
-
 interface EditBountyModalProps {
   bounty: Bounty | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultSection?: "details" | "assignees";
 }
-
 const fmtStatus = (s?: string) => (s ?? "").replace(/_/g, " ").toLowerCase();
-
 function describeActivity(a: BountyActivity, bounty: Bounty): string {
   const m = a.meta ?? {};
   switch (a.type) {
@@ -94,7 +92,6 @@ function describeActivity(a: BountyActivity, bounty: Bounty): string {
       return a.type.toLowerCase().replace(/_/g, " ");
   }
 }
-
 export function EditBountyModal({
   bounty,
   open,
@@ -118,7 +115,6 @@ export function EditBountyModal({
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notifyUsers, setNotifyUsers] = useState(false);
-
   useEffect(() => {
     if (!bounty) return;
     setTitle(bounty.title ?? "");
@@ -137,7 +133,6 @@ export function EditBountyModal({
     setNotifyUsers(false);
     setActiveSection(defaultSection);
   }, [bounty, open, defaultSection]);
-
   useEffect(() => {
     if (!open || !bounty || activeSection !== "activity") return;
     let cancelled = false;
@@ -151,7 +146,6 @@ export function EditBountyModal({
       cancelled = true;
     };
   }, [open, bounty?.id, activeSection]);
-
   useEffect(() => {
     if (!open || !bounty) return;
     const onActivity = (e: Event) => {
@@ -164,7 +158,6 @@ export function EditBountyModal({
     window.addEventListener("bounty-activity", onActivity);
     return () => window.removeEventListener("bounty-activity", onActivity);
   }, [open, bounty?.id]);
-
   const toggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
       prev.includes(userId)
@@ -172,7 +165,6 @@ export function EditBountyModal({
         : [...prev, userId],
     );
   };
-
   const filteredUsers = nonAdminUsers
     .filter(
       (u) =>
@@ -188,7 +180,6 @@ export function EditBountyModal({
       if (aHasUA !== bHasUA) return aHasUA ? -1 : 1;
       return 0;
     });
-
   const handleSave = async () => {
     if (!bounty) return;
     setIsSaving(true);
@@ -197,13 +188,18 @@ export function EditBountyModal({
       const assigneesChanged =
         selectedUserIds.length !== existingIds.length ||
         selectedUserIds.some((id) => !existingIds.includes(id));
+      // Preserve unchanged deadlines, including expired dates and their time of day.
+      const originalDeadline = bounty.timeToComplete
+        ? toDateInputValue(new Date(bounty.timeToComplete))
+        : "";
       await updateBounty(bounty.id, {
         title,
         description,
         bountyAmount: parseFloat(bountyAmount),
-        timeToComplete: timeToComplete
-          ? parseDateInputValue(timeToComplete)
-          : undefined,
+        timeToComplete:
+          timeToComplete && timeToComplete !== originalDeadline
+            ? parseDateInputValue(timeToComplete)
+            : undefined,
         chain,
         targetRepo: targetRepo || null,
         notifyUsers,
@@ -216,9 +212,7 @@ export function EditBountyModal({
       setIsSaving(false);
     }
   };
-
   if (!bounty) return null;
-
   const selectedUsers = nonAdminUsers.filter((u) =>
     selectedUserIds.includes(u.id),
   );
@@ -226,7 +220,7 @@ export function EditBountyModal({
     chain === "MAIN" ? !u.UA_address : !u.z_address,
   );
   const hasAddressWarning = selectedUsersWithoutAddress.length > 0;
-
+  if (currentUser?.role !== "ADMIN") return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-4">
@@ -239,7 +233,6 @@ export function EditBountyModal({
             {bounty.title}
           </p>
         </DialogHeader>
-
         <div className="flex border-b shrink-0">
           {(["details", "assignees", "activity", "chat"] as const).map(
             (tab) => (
@@ -272,7 +265,6 @@ export function EditBountyModal({
             ),
           )}
         </div>
-
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {activeSection === "details" && (
             <div className="space-y-5">
@@ -292,7 +284,6 @@ export function EditBountyModal({
                   autoComplete="off"
                 />
               </div>
-
               <div className="space-y-1.5">
                 <Label
                   htmlFor="edit-desc"
@@ -310,7 +301,6 @@ export function EditBountyModal({
                   className="resize-none"
                 />
               </div>
-
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label
@@ -397,7 +387,6 @@ export function EditBountyModal({
               </div>
             </div>
           )}
-
           {activeSection === "assignees" && (
             <div className="space-y-4">
               {selectedUsers.length > 0 && (
@@ -407,18 +396,30 @@ export function EditBountyModal({
                       key={u.id}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-background border text-xs font-medium shadow-sm"
                     >
-                      <Avatar className="h-4 w-4">
-                        <AvatarImage
-                          src={u.avatar || "/placeholder-user.jpg"}
-                        />
-                        <AvatarFallback className="text-[8px]">
-                          {displayName(u)[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      {displayName(u)}
+                      <Link
+                        href={`/users/${u.id}`}
+                        className="inline-flex items-center gap-1.5 hover:underline focus:outline-none focus:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Avatar className="h-4 w-4">
+                          <AvatarImage
+                            src={u.avatar || "/placeholder-user.jpg"}
+                          />
+                          <AvatarFallback className="text-[8px]">
+                            {displayName(u)[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        {displayName(u)}
+                      </Link>
                       <button
-                        onClick={() => toggleUser(u.id)}
-                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleUser(u.id);
+                        }}
+                        className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                        aria-label={`Remove ${displayName(u)}`}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -426,7 +427,6 @@ export function EditBountyModal({
                   ))}
                 </div>
               )}
-
               {hasAddressWarning && (
                 <div className="flex items-start gap-2.5 p-3 rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 text-sm">
                   <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
@@ -451,7 +451,6 @@ export function EditBountyModal({
                   </div>
                 </div>
               )}
-
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
@@ -461,7 +460,6 @@ export function EditBountyModal({
                   className="pl-9"
                 />
               </div>
-
               <div className="border rounded-lg overflow-hidden divide-y">
                 {filteredUsers.length === 0 ? (
                   <div className="py-10 text-center text-sm text-muted-foreground">
@@ -539,7 +537,6 @@ export function EditBountyModal({
               )}
             </div>
           )}
-
           {activeSection === "activity" && (
             <div className="space-y-1">
               {activityLoading ? (
@@ -587,7 +584,6 @@ export function EditBountyModal({
               )}
             </div>
           )}
-
           {activeSection === "chat" && currentUser && (
             <BountyChat
               bountyId={bounty.id}
@@ -597,7 +593,6 @@ export function EditBountyModal({
             />
           )}
         </div>
-
         {activeSection !== "chat" && (
           <div className="px-6 py-4 border-t flex flex-col gap-3 shrink-0 bg-muted/20">
             <label className="flex items-center gap-2 text-sm text-muted-foreground">

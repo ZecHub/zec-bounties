@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { AdminBountyModal } from "@/components/admin-bounty-modal";
-import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
 import { RepoFilter } from "@/components/repo-filter";
 import { bountyRepo, type RepoId } from "@/lib/repos";
 import { Bounty } from "@/lib/types";
@@ -168,7 +168,7 @@ export default function MarketplacePage() {
   const [statusFilter, setStatusFilter] = useState<BountyStatus | "all">("all");
   const [isAdminBountyModalOpen, setIsAdminBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [defragListOpen, setDefragListOpen] = useState(false);
 
   const [isAddingCategory, setIsAddingCategory] = useState(false);
@@ -209,12 +209,12 @@ export default function MarketplacePage() {
 
   const openBounty = (bounty: Bounty) => {
     setSelectedBounty(bounty);
-    setIsDetailModalOpen(true);
+    setIsEditModalOpen(true);
     router.push(`${pathname}?bounty=${bounty.id}`, { scroll: false });
   };
 
   const closeBounty = () => {
-    setIsDetailModalOpen(false);
+    setIsEditModalOpen(false);
     router.push(pathname, { scroll: false });
   };
 
@@ -346,14 +346,14 @@ export default function MarketplacePage() {
     const inMemory = bounties.find((b) => b.id === bountyId);
     if (inMemory) {
       setSelectedBounty(inMemory);
-      setIsDetailModalOpen(true);
+      setIsEditModalOpen(true);
       return;
     }
 
     fetchBountyById(bountyId).then((bounty) => {
       if (bounty) {
         setSelectedBounty(bounty);
-        setIsDetailModalOpen(true);
+        setIsEditModalOpen(true);
       }
     });
   }, [searchParams, bounties, fetchBountyById]);
@@ -385,11 +385,11 @@ export default function MarketplacePage() {
           onOpenChange={setIsAdminBountyModalOpen}
         />
 
-        <BountyDetailModal
+        <EditBountyModal
           bounty={selectedBounty}
-          open={isDetailModalOpen}
+          open={isEditModalOpen}
           onOpenChange={(open) =>
-            open ? setIsDetailModalOpen(true) : closeBounty()
+            open ? setIsEditModalOpen(true) : closeBounty()
           }
         />
 
