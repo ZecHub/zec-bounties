@@ -11,6 +11,7 @@ const { hideOtherUsersEmails } = require("./middleware/hideOtherUsersEmails");
 const { WebSocketServer } = require("ws");
 const prisma = require("./prisma/client");
 const { connectRedis } = require("./config/redis");
+const { startDeadlineReminderJob } = require("./utils/deadlineReminders");
 
 const app = express();
 const server = createServer(app);
@@ -97,6 +98,7 @@ app.use((req, res, next) => {
 const PORT = process.env.PORT || 9001;
 server.listen(PORT, async () => {
   await connectRedis();
+  startDeadlineReminderJob();
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}`);
 });
