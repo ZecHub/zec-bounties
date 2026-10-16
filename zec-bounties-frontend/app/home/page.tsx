@@ -11,14 +11,18 @@ import {
   List,
   Grid3X3,
   Plus,
-  Filter,
   ArrowRight,
   Loader2,
   ChevronsDown,
   Ban,
+  Search,
+  X,
+  ArrowUpDown,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { RepoFilter } from "@/components/repo-filter";
@@ -93,6 +97,9 @@ const STATUS_ORDER: BountyStatus[] = [
   "CANCELLED",
 ];
 
+type StatusFilterOption = "ALL" | "OPEN" | "IN_PROGRESS" | "COMPLETED";
+type SortOption = "newest" | "highest_reward" | "deadline";
+
 function HomeContent() {
   const taskCreationBlocked = useTaskCreationBlocked();
   const {
@@ -112,40 +119,71 @@ function HomeContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">(
     "all",
   );
+  const [activeStatus, setActiveStatus] = useState<StatusFilterOption>("ALL");
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
+
+  // View state
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
-  const [searchQuery, setSearchQuery] = useState("");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
-  const displayCategories = ["All", ...categories.map((c) => c.name)];
+  // 300ms Debounce for Search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
+  const displayCategories = useMemo(
+    () => ["All", ...categories.map((c) => c.name)],
+    [categories]
+  );
+
+  // Step 1: Filter by Team, Category, and Debounced Search
   const categoryFilteredBounties = useMemo(() => {
     let filtered = bounties;
     if (activeTeamId) {
       filtered = filtered.filter((b) => b.teamId === activeTeamId);
     }
-    if (activeCategory !== "All")
-      filtered = filtered.filter((b) => b.categoryId === activeCategory);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    if (activeCategory !== "All") {
       filtered = filtered.filter(
         (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.description.toLowerCase().includes(q) ||
-          b.createdByUser?.name?.toLowerCase().includes(q),
+          b.category?.name?.toLowerCase() === activeCategory.toLowerCase() ||
+          b.categoryId === activeCategory
       );
     }
-    return filtered;
-  }, [bounties, searchQuery, activeCategory, activeTeamId]);
+    if (debouncedSearchQuery.trim()) {
+      const tokens = debouncedSearchQuery.toLowerCase().trim().split(/\s+/);
+      filtered = filtered.filter((b) => {
+        const title = b.title.toLowerCase();
+        const description = (b.description || "").toLowerCase();
+        const author = (b.createdByUser?.name || "").toLowerCase();
+        const cat = (b.category?.name || "").toLowerCase();
 
+        return tokens.every(
+          (token) =>
+            title.includes(token) ||
+            description.includes(token) ||
+            author.includes(token) ||
+            cat.includes(token)
+        );
+      });
+    }
+    return filtered;
+  }, [bounties, debouncedSearchQuery, activeCategory, activeTeamId]);
+
+  // Step 2: Compute repo counts from category/search filtered list
   const repoCounts = useMemo(() => {
     const counts = {
       namada: 0,
@@ -162,20 +200,49 @@ function HomeContent() {
     return counts;
   }, [categoryFilteredBounties]);
 
+  // Step 3: Apply Repo, Status filter and Sorting
   const filteredBounties = useMemo(() => {
-    const filtered =
+    let filtered =
       activeRepo === "all"
         ? categoryFilteredBounties
         : categoryFilteredBounties.filter((bounty) =>
             activeRepo === "untagged"
               ? bountyRepo(bounty) == null
-              : bountyRepo(bounty) === activeRepo,
+              : bountyRepo(bounty) === activeRepo
           );
-    return filtered.sort(
-      (a, b) =>
-        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
-    );
-  }, [categoryFilteredBounties, activeRepo]);
+
+    // Filter by Status
+    if (activeStatus === "OPEN") {
+      filtered = filtered.filter((b) => b.status === "TO_DO");
+    } else if (activeStatus === "IN_PROGRESS") {
+      filtered = filtered.filter((b) => b.status === "IN_PROGRESS");
+    } else if (activeStatus === "COMPLETED") {
+      filtered = filtered.filter(
+        (b) => b.status === "DONE" || b.status === "IN_REVIEW"
+      );
+    }
+
+    // Sort
+    return [...filtered].sort((a, b) => {
+      if (sortBy === "highest_reward") {
+        return (b.bountyAmount || 0) - (a.bountyAmount || 0);
+      }
+      if (sortBy === "deadline") {
+        const now = Date.now();
+        const timeA = new Date(a.timeToComplete).getTime();
+        const timeB = new Date(b.timeToComplete).getTime();
+        const isAFuture = timeA >= now;
+        const isBFuture = timeB >= now;
+        if (isAFuture && !isBFuture) return -1;
+        if (!isAFuture && isBFuture) return 1;
+        return timeA - timeB;
+      }
+      // Default: "newest"
+      return (
+        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+      );
+    });
+  }, [categoryFilteredBounties, activeRepo, activeStatus, sortBy]);
 
   const kanbanGroups = useMemo(
     () =>
@@ -183,7 +250,7 @@ function HomeContent() {
         ...col,
         bounties: filteredBounties.filter((b) => b.status === col.status),
       })),
-    [filteredBounties],
+    [filteredBounties]
   );
 
   const defragBounties = useMemo(() => {
@@ -208,13 +275,17 @@ function HomeContent() {
 
   const closeBounty = () => {
     setIsDetailModalOpen(false);
-    router.push(pathname, { scroll: false }); // strips the query param
+    router.push(pathname, { scroll: false });
   };
 
   const getCategoryCount = (name: string) =>
     name === "All"
       ? bounties.length
-      : bounties.filter((b) => b.categoryId === name).length;
+      : bounties.filter(
+          (b) =>
+            b.category?.name?.toLowerCase() === name.toLowerCase() ||
+            b.categoryId === name
+        ).length;
 
   const handleLoadMore = useCallback(async () => {
     setIsLoadingMore(true);
@@ -246,10 +317,29 @@ function HomeContent() {
     setIsNewBountyModalOpen(true);
   };
 
+  const isFiltered =
+    searchQuery.trim() !== "" ||
+    activeCategory !== "All" ||
+    activeRepo !== "all" ||
+    activeStatus !== "ALL" ||
+    sortBy !== "newest" ||
+    activeTeamId !== null;
+
+  const resetAllFilters = () => {
+    setSearchQuery("");
+    setActiveCategory("All");
+    setActiveRepo("all");
+    setActiveStatus("ALL");
+    setSortBy("newest");
+    setActiveTeamId(null);
+  };
+
   const canLoadMore =
     hasMoreBounties &&
     !searchQuery &&
     activeCategory === "All" &&
+    activeRepo === "all" &&
+    activeStatus === "ALL" &&
     !activeTeamId;
 
   useEffect(() => {
@@ -263,7 +353,7 @@ function HomeContent() {
           handleLoadMore();
         }
       },
-      { rootMargin: "400px" }, // start loading a bit before it's fully in view
+      { rootMargin: "400px" }
     );
 
     observer.observe(node);
@@ -275,7 +365,6 @@ function HomeContent() {
     const bountyId = searchParams.get("bounty");
     if (!bountyId) return;
 
-    // Prefer the copy already in the list (avoids a flash of stale data)
     const inMemory = bounties.find((b) => b.id === bountyId);
     if (inMemory) {
       setSelectedBounty(inMemory);
@@ -283,8 +372,6 @@ function HomeContent() {
       return;
     }
 
-    // Fall back to a direct fetch — handles deep links before bounties load,
-    // or bounties the current filtered list doesn't include
     fetchBountyById(bountyId).then((bounty) => {
       if (bounty) {
         setSelectedBounty(bounty);
@@ -299,24 +386,6 @@ function HomeContent() {
 
       <div className="xl:container xl:mx-auto px-3 imd:px-4 py-6 imd:py-8">
         <HeroCarousel onNewBounty={handleNewBounty} />
-
-        {/* {taskCreationBlocked && (
-          <div
-            role="alert"
-            className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
-          >
-            <Ban className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            <div>
-              <p className="text-sm font-semibold text-destructive">
-                You can't create tasks
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                An admin has disabled task creation for your account. You can
-                still browse bounties, apply, and submit work.
-              </p>
-            </div>
-          </div>
-        )} */}
 
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-5 sm:gap-6 mb-8 imd:mb-12">
           <div className="space-y-2 min-w-0">
@@ -381,33 +450,116 @@ function HomeContent() {
           </aside>
 
           <div className="space-y-6 min-w-0 flex-1">
-            <div
-              className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
-              style={{
-                scrollbarWidth: "none",
-                msOverflowStyle: "none",
-              }}
-            >
-              {displayCategories.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setActiveCategory(cat)}
-                  className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 h-9 text-sm transition ${
-                    activeCategory === cat
-                      ? "border-primary bg-primary/10 font-semibold text-primary"
-                      : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
-                  }`}
-                >
-                  {cat}
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] h-4 px-1.5 leading-none"
+            {/* Explorer Search, Filters & Controls Bar */}
+            <div className="rounded-xl border bg-card/60 backdrop-blur-sm p-3 sm:p-4 space-y-4 shadow-sm">
+              <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+                {/* Search input with debounce */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search bounties by title, description or author..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-8 h-9.5 bg-background text-sm rounded-lg"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Status and Sort Controls */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Status Filter */}
+                  <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border text-xs">
+                    {(
+                      [
+                        { key: "ALL", label: "All" },
+                        { key: "OPEN", label: "Open" },
+                        { key: "IN_PROGRESS", label: "In Progress" },
+                        { key: "COMPLETED", label: "Completed" },
+                      ] as const
+                    ).map((status) => (
+                      <button
+                        key={status.key}
+                        type="button"
+                        onClick={() => setActiveStatus(status.key)}
+                        className={`px-2.5 py-1 rounded-md transition font-medium cursor-pointer ${
+                          activeStatus === status.key
+                            ? "bg-background text-foreground shadow-sm font-semibold"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {status.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Sort By Dropdown */}
+                  <div className="relative flex items-center">
+                    <ArrowUpDown className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as SortOption)}
+                      className="h-9 pl-8 pr-3 text-xs rounded-lg border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none cursor-pointer"
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="highest_reward">Highest reward</option>
+                      <option value="deadline">Approaching deadline</option>
+                    </select>
+                  </div>
+
+                  {/* Reset Filters button */}
+                  {isFiltered && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={resetAllFilters}
+                      className="h-9 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                      title="Reset all filters"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Reset</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Category Pills */}
+              <div
+                className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none"
+                style={{
+                  scrollbarWidth: "none",
+                  msOverflowStyle: "none",
+                }}
+              >
+                {displayCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 h-8 text-xs sm:text-sm transition cursor-pointer ${
+                      activeCategory === cat
+                        ? "border-primary bg-primary/10 font-semibold text-primary"
+                        : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
+                    }`}
                   >
-                    {getCategoryCount(cat)}
-                  </Badge>
-                </button>
-              ))}
+                    {cat}
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] h-4 px-1.5 leading-none"
+                    >
+                      {getCategoryCount(cat)}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <RepoFilter
@@ -418,13 +570,18 @@ function HomeContent() {
 
             <div className="space-y-6 min-w-0 flex-1">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b">
-                <h2 className="truncate text-base sm:text-xl font-bold">
-                  {activeTeamId
-                    ? `${communities.find((c) => c.id === activeTeamId)?.name ?? "Team"} Bounties`
-                    : activeCategory === "All"
-                      ? "All Bounties"
-                      : `${activeCategory} Bounties`}
-                </h2>
+                <div className="flex items-center gap-2 truncate">
+                  <h2 className="truncate text-base sm:text-xl font-bold">
+                    {activeTeamId
+                      ? `${communities.find((c) => c.id === activeTeamId)?.name ?? "Team"} Bounties`
+                      : activeCategory === "All"
+                        ? "All Bounties"
+                        : `${activeCategory} Bounties`}
+                  </h2>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    ({filteredBounties.length} found)
+                  </span>
+                </div>
 
                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                   <Button
@@ -483,12 +640,23 @@ function HomeContent() {
                   <p className="text-muted-foreground">Loading bounties...</p>
                 </div>
               ) : filteredBounties.length === 0 ? (
-                <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20">
-                  <p className="text-muted-foreground">
+                <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20 space-y-3">
+                  <p className="text-muted-foreground text-sm sm:text-base">
                     No bounties found
                     {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                    {searchQuery ? " matching your search" : ""}.
+                    {activeStatus !== "ALL" ? ` with status ${activeStatus}` : ""}
+                    {debouncedSearchQuery ? ` matching "${debouncedSearchQuery}"` : ""}.
                   </p>
+                  {isFiltered && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={resetAllFilters}
+                      className="rounded-full text-xs"
+                    >
+                      Clear all filters
+                    </Button>
+                  )}
                 </div>
               ) : viewMode === "grid" ? (
                 <div className="overflow-x-auto pb-4 -mx-1 px-1">
@@ -571,7 +739,7 @@ function HomeContent() {
                     ))}
                 </div>
               ) : (
-                // defrag view
+                /* defrag view */
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                     {DEFRAG_LEGEND.map((item) => (
@@ -592,7 +760,6 @@ function HomeContent() {
                   <div
                     className="rounded border border-border bg-black p-1.5 overflow-hidden"
                     style={{
-                      // Classic dense map look
                       imageRendering: "pixelated",
                     }}
                   >
@@ -615,7 +782,6 @@ function HomeContent() {
                               cursor-pointer
                             `}
                           >
-                            {/* center "data" pixel for Done / In Progress (classic map look) */}
                             {(bounty.status === "DONE" ||
                               bounty.status === "IN_PROGRESS") && (
                               <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
@@ -638,7 +804,6 @@ function HomeContent() {
 }
 
 export default function HomePage() {
-  // useRoleGuard("CLIENT");
   return (
     <ProtectedRoute blockAdmin blockTeam>
       <MobileNavShell>
