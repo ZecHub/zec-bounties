@@ -101,6 +101,7 @@ model Bounty {
   discordThreadId  String?
   suggestionReviewStatus String?
   suggestionReviewReason String?
+  suggestionCheck  Json?
   targetRepo       String?
   messages          BountyChat[]
   notifications     InAppNotification[]

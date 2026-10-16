@@ -41,6 +41,7 @@ import {
 } from "@/lib/displayName";
 import { ProfileLink } from "@/components/profile-link";
 import { ZecToUsd } from "./ZecToUsd";
+import { BountySuggestionCheckPanel } from "@/components/bounty-suggestion-check-panel";
 import { BountyChat } from "@/components/bounty-chat";
 import { LinkListInput } from "@/components/link-list-input";
 import {
@@ -878,6 +879,15 @@ export function BountyDetailModal({
             </>
           )}
         </div>
+
+        {bounty.suggestionCheck && (
+          <div className="mt-4">
+            <h3 className="mb-2 text-sm font-semibold">
+              Suggestion check
+            </h3>
+            <BountySuggestionCheckPanel result={bounty.suggestionCheck} />
+          </div>
+        )}
 
         {isDesignCategory && (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-2.5">

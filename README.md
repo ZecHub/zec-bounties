@@ -102,6 +102,10 @@ Paste the generated keys into `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, and se
 npx prisma db push
 ```
 
+Re-run `npx prisma db push` after pulling schema changes. Bounty records store
+the advisory suggestion check, which runs after a hunter submits and is shown to
+everyone on the bounty detail view.
+
 ### 6. Start the backend
 
 ```bash
@@ -156,6 +160,40 @@ For local development you only need:
 - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`: the backend won't start without them; generate the keys with `npx web-push generate-vapid-keys`
 
 Everything else (GitHub and Discord login, email, Pinata uploads, Zcash wallets and payments) can keep its example value or stay blank until you work on that feature.
+
+---
+
+# Bounty suggestion analysis
+
+`zec-bounties-backend/helpers/bountySuggestionCheck.js` produces an advisory
+analysis for hunter-submitted bounty suggestions: duplicate matches, reward-band
+guidance, and optional AI feedback. It never creates or rejects a bounty; it
+only feeds the read-only signals shown in the frontend bounty detail view.
+
+The analysis is deliberately constrained:
+
+- **Public bounties only.** Only non-private bounty records are read and shared
+  with any AI provider; private bounty text is never sent.
+- **Capped candidates.** At most the 50 most recent public bounties are compared
+  (`MAX_CANDIDATES`), bounding database work and AI payload size.
+
+## AI provider keys
+
+AI review is optional. If no key is configured, the analysis still returns the
+local duplicate and reward-band checks. Configure one or more keys in the
+backend `.env`; the service tries OpenAI, then Anthropic, then Gemini, moving to
+the next configured provider if one fails:
+
+```env
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GEMINI_API_KEY=
+```
+
+Model names can be overridden with `OPENAI_MODEL`, `ANTHROPIC_MODEL`, and
+`GEMINI_MODEL`. The analysis sends the suggestion and the full text of up to 50
+public bounty records to the configured provider; matching bounty titles,
+descriptions, and IDs are never returned to the caller.
 
 ---
 
