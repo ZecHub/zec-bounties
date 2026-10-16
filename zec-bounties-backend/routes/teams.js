@@ -194,6 +194,20 @@ async function removeWalletFromMembers(teamId, wallet, userIds) {
   }
 }
 
+// Every member's copy of a team wallet points at the team's wallet directory.
+// When the team itself is deleted, remove those copies too and give each
+// owner a fallback default. Once the team is gone there is no team page to
+// delete them from, and DELETE /api/zcash/params refuses team copies.
+async function removeTeamWalletCopies(teamId, wallet) {
+  const copies = await prisma.zcashParams.findMany({
+    where: { teamId, accountName: wallet.accountName },
+    select: { ownerId: true },
+  });
+  await removeWalletFromMembers(teamId, wallet, [
+    ...new Set(copies.map((c) => c.ownerId)),
+  ]);
+}
+
 const multer = require("multer");
 
 const imageFileFilter = (req, file, cb) => {
@@ -314,6 +328,8 @@ async function deleteTeamCascade(teamId) {
 
       await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
     }
+
+    await removeTeamWalletCopies(teamId, team.wallet).catch(() => {});
   }
 
   await prisma.team.delete({ where: { id: teamId } }).catch(() => {});
@@ -1582,6 +1598,8 @@ router.delete("/:teamId", authenticate, async (req, res) => {
           force: true,
         });
       }
+
+      await removeTeamWalletCopies(teamId, team.wallet);
     }
 
     await prisma.team.delete({
