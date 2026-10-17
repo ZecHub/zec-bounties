@@ -277,7 +277,7 @@ class ZingoProcess {
     return run;
   }
 
-  quit(command, timeout = 10000) {
+  quit(command, timeout = 30000) {
     return new Promise((resolve, reject) => {
       let buffer = "";
       let timer;
@@ -325,7 +325,7 @@ class ZingoProcess {
     });
   }
 
-  rescan(command, timeout = 10000) {
+  rescan(command, timeout = 180000) {
     return new Promise((resolve, reject) => {
       let buffer = "";
       let resolved = false;
@@ -367,7 +367,7 @@ class ZingoProcess {
     });
   }
 
-  sync(command, timeout = 10000) {
+  sync(command, timeout = 180000) {
     return new Promise((resolve, reject) => {
       const startBufferLen = this.buffer.length;
 
@@ -412,7 +412,7 @@ class ZingoProcess {
     });
   }
 
-  addresses(command, timeout = 10000) {
+  addresses(command, timeout = 30000) {
     return new Promise((resolve, reject) => {
       const startBufferLen = this.buffer.length;
 
@@ -457,45 +457,45 @@ class ZingoProcess {
     });
   }
 
-  balance(command, timeout = 10000) {
-    return new Promise((resolve, reject) => {
-      let buffer = "";
+  balance(command, timeout = 180000) {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
 
-      const onData = (chunk) => {
-        buffer += chunk.toString();
-        const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
-        const jsonText = parseZingoBalance(clean);
+    const onData = (chunk) => {
+      buffer += chunk.toString();
+      const clean = buffer.replace(/\u001b\[[0-9;]*m/g, "");
+      const jsonText = parseZingoBalance(clean);
 
-        if (jsonText && jsonText !== "{}") {
-          cleanup();
-          resolve(JSON.parse(jsonText));
-        }
-      };
-
-      const onError = (err) => {
+      if (jsonText && jsonText !== "{}") {
         cleanup();
-        reject(err);
-      };
+        resolve(JSON.parse(jsonText));
+      }
+    };
 
-      const cleanup = () => {
-        clearTimeout(timer);
-        this.proc.stdout.off("data", onData);
-        this.proc.stderr.off("data", onError);
-      };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
 
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error("Zingo command timeout"));
-      }, timeout);
+    const cleanup = () => {
+      clearTimeout(timer);
+      this.proc.stdout.off("data", onData);
+      this.proc.stderr.off("data", onError);
+    };
 
-      this.proc.stdout.on("data", onData);
-      this.proc.stderr.on("data", onError);
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Zingo command timeout"));
+    }, timeout);
 
-      this.proc.stdin.write(assertFixedCommand(command) + "\n");
-    });
-  }
+    this.proc.stdout.on("data", onData);
+    this.proc.stderr.on("data", onError);
 
-  parseAddress(zaddress, timeout = 10000) {
+    this.proc.stdin.write(assertFixedCommand(command) + "\n");
+  });
+}
+
+  parseAddress(zaddress, timeout = 30000) {
     return new Promise((resolve, reject) => {
       if (!zaddress) {
         reject(new Error("No zaddress provided"));
@@ -556,7 +556,7 @@ class ZingoProcess {
   //   txids non-empty -> sent
   //   error           -> zingo reported a failure, nothing sent
   //   neither         -> outcome unknown (timedOut says why), NOT "did not happen"
-  async quicksend(recipients, timeout = 60000) {
+  async quicksend(recipients, timeout = 180000) {
     // An address rides inside the single-quoted REPL command and mutating
     // one would redirect funds, so reject, never sanitize.
     const sanitizedRecipients = recipients.map((r) => {
@@ -661,7 +661,7 @@ class ZingoProcess {
     });
   }
 
-  transactions(timeout = 10000) {
+  transactions(timeout = 180000) {
     const command = "transactions";
     return new Promise((resolve, reject) => {
       let buffer = "";
@@ -714,7 +714,7 @@ class ZingoProcess {
     });
   }
 
-  recovery_info(command = "recovery_info", timeout = 10000) {
+  recovery_info(command = "recovery_info", timeout = 30000) {
     return new Promise((resolve, reject) => {
       let buffer = "";
 
@@ -754,7 +754,7 @@ class ZingoProcess {
     });
   }
 
-  info(command = "info", timeout = 10000) {
+  info(command = "info", timeout = 180000) {
     return new Promise((resolve, reject) => {
       let buffer = "";
 
