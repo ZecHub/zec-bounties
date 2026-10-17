@@ -1,4 +1,20 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// Follow the application's global pause without importing its client-only hook.
+// Fail loudly if the flag stops being a literal, rather than silently skipping tests.
+const taskCreationSource = readFileSync(
+  resolve(__dirname, "../../hooks/use-task-creation-blocked.ts"),
+  "utf8",
+);
+const taskCreationFlag = taskCreationSource.match(
+  /^export const FORCE_TASK_CREATION_BLOCKED = (true|false);$/m,
+);
+if (!taskCreationFlag) {
+  throw new Error("Update the accessibility tests for the task-creation policy.");
+}
+const taskCreationPaused = taskCreationFlag[1] === "true";
 
 const fixtureUser = {
   id: "a11y-fixture-user",
@@ -327,9 +343,37 @@ test.describe("keyboard accessibility", () => {
     await mockAuthenticatedBackend(page, user);
   });
 
+  test("New Bounty announces the global pause and does not open a form from the keyboard", async ({
+    page,
+  }) => {
+    test.skip(!taskCreationPaused, "Task creation is no longer globally paused.");
+    const creationRequests: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/bounties"
+      ) {
+        creationRequests.push(request.url());
+      }
+    });
+
+    await page.goto("/home");
+    const trigger = page.getByRole("button", { name: /new bounty/i }).first();
+    await expect(trigger).toBeVisible({ timeout: 15000 });
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByText("Task creation disabled", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(creationRequests).toEqual([]);
+  });
+
   test("Create Bounty errors are announced and focus moves to the first invalid field", async ({
     page,
   }) => {
+    test.skip(taskCreationPaused, "The global task-creation pause makes this modal unreachable.");
     const { dialog } = await openCreateBountyDialog(page);
 
     const submitButton = dialog.getByRole("button", {
@@ -377,6 +421,7 @@ test.describe("keyboard accessibility", () => {
   test("Create Bounty modal traps focus, shows keyboard focus, and restores focus after Escape", async ({
     page,
   }) => {
+    test.skip(taskCreationPaused, "The global task-creation pause makes this modal unreachable.");
     const { trigger, dialog } = await openCreateBountyDialog(page);
 
     // Radix Dialog should keep keyboard focus inside the modal.
