@@ -343,7 +343,7 @@ test.describe("keyboard accessibility", () => {
     await mockAuthenticatedBackend(page, user);
   });
 
-  test("New Bounty announces the global pause and does not open a form from the keyboard", async ({
+  test("New Bounty shows the global pause and does not open a form from the keyboard", async ({
     page,
   }) => {
     test.skip(!taskCreationPaused, "Task creation is no longer globally paused.");
