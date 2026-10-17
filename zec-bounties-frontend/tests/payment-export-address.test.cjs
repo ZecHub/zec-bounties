@@ -109,17 +109,45 @@ test("missing recipient produces an empty address without crashing", async () =>
 });
 
 for (const [chain, address] of [["MAIN", recipient.UA_address], ["TEST", recipient.z_address]]) {
-  test(`${chain}: payment details show the same network address as the report`, () => {
-    const page = mount([]);
-    const tree = page.panel({ ...row(chain), isPaid: true, status: "DONE", description: "Fixture" });
-    function text(node) {
-      if (Array.isArray(node)) return node.map(text).join(" ");
-      if (!node || typeof node === "boolean") return "";
-      if (typeof node === "object") return text(node.props?.children);
-      return String(node);
-    }
-    const rendered = text(tree);
-    assert.ok(rendered.includes(address), rendered);
-    assert.ok(!rendered.includes(chain === "MAIN" ? recipient.z_address : recipient.UA_address));
+  for (const fallback of [false, true]) {
+    test(`${chain} ${fallback ? "fallback" : "primary"}: payment details show the same network address as the report`, () => {
+      const page = mount([]);
+      const tree = page.panel({ ...row(chain, recipient, fallback), isPaid: true, status: "DONE", description: "Fixture" });
+      function text(node) {
+        if (Array.isArray(node)) return node.map(text).join(" ");
+        if (!node || typeof node === "boolean") return "";
+        if (typeof node === "object") return text(node.props?.children);
+        return String(node);
+      }
+      const rendered = text(tree);
+      assert.ok(rendered.includes(address), rendered);
+      assert.ok(!rendered.includes(chain === "MAIN" ? recipient.z_address : recipient.UA_address));
+    });
+  }
+}
+
+for (const chain of ["MAIN", "TEST"]) {
+  for (const missing of [null, undefined, ""]) {
+    test(`${chain}: ${String(missing)} address does not borrow another assignee's address`, async () => {
+      const field = chain === "MAIN" ? "UA_address" : "z_address";
+      const primary = { ...recipient, [field]: missing };
+      const other = { ...recipient, id: "different-hunter", name: "Other hunter",
+        UA_address: "u1other-person-address", z_address: "ztestother-person-address" };
+      const bounty = { ...row(chain, primary), assignees: [{ user: other }] };
+      const page = mount([bounty]);
+      await page.load();
+      const csv = await page.csv();
+      assert.equal(csv.split("\n")[1].split(",")[7], "");
+      assert.equal(page.addressCell(), "—");
+      assert.ok(!csv.includes(other.UA_address));
+      assert.ok(!csv.includes(other.z_address));
+    });
+  }
+  test(`${chain}: populated primary assignee wins over a different fallback`, async () => {
+    const other = { ...recipient, id: "other", UA_address: "u1other", z_address: "ztestother" };
+    const page = mount([{ ...row(chain), assignees: [{ user: other }] }]);
+    await page.load();
+    assert.equal((await page.csv()).split("\n")[1].split(",")[7],
+      chain === "MAIN" ? recipient.UA_address : recipient.z_address);
   });
 }
