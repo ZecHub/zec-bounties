@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { taskCreationPaused } from "../helpers/task-creation-policy";
 import { Backend, admin, bounty, column, hunter } from "./fixtures";
 
 test("bounty approval applies the response without reloading the list", async ({ page }) => {
@@ -23,6 +24,7 @@ test("bounty approval applies the response without reloading the list", async ({
 });
 
 test("task-access changes remain effective alongside bounty status events", async ({ page }) => {
+  test.skip(taskCreationPaused, "The global pause masks account-level creation access.");
   const api = new Backend();
   await api.open(page);
   const create = page.getByRole("button", { name: "New Bounty", exact: true }).filter({ visible: true }).first();
@@ -41,4 +43,23 @@ test("task-access changes remain effective alongside bounty status events", asyn
   await expect(create).not.toHaveAttribute("title");
   await create.click();
   await expect(page.getByRole("dialog").getByRole("heading", { name: "Create New Bounty" })).toBeVisible();
+});
+
+test("restoring account access cannot bypass the global task-creation pause", async ({ page }) => {
+  test.skip(!taskCreationPaused, "Task creation is not globally paused.");
+  const api = new Backend();
+  await api.open(page);
+  const create = page.getByRole("button", { name: "New Bounty", exact: true }).filter({ visible: true }).first();
+
+  await expect(create).toHaveAttribute("title", "An admin has disabled task creation for your account");
+
+  api.broadcast("user_task_access_changed", { userId: hunter.id, canCreateTasks: false });
+  api.broadcast("user_task_access_changed", { userId: hunter.id, canCreateTasks: true });
+  api.broadcast("bounty_updated", api.change("sync-1", "IN_REVIEW"));
+  await expect(column(page, "In Review").getByText("Status bounty 1", { exact: true })).toBeVisible();
+
+  await expect(create).toHaveAttribute("title", "An admin has disabled task creation for your account");
+  await create.click();
+  await expect(page.getByText("Task creation disabled", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
