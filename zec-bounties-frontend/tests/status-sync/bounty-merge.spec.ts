@@ -65,3 +65,31 @@ test("a dated update can replace an unversioned current record", () => {
   const update = record({ status: "DONE" });
   expect(mergeBounty(record({ updatedAt: undefined }), update)).toEqual(update);
 });
+
+for (const preservePayoutAddresses of [false, true]) {
+  for (const missing of [undefined, null]) {
+    test(`absent users normalize to undefined (value=${missing}, payouts=${preservePayoutAddresses})`, () => {
+      const merged = mergeBounty(record(), record({
+        assigneeUser: missing, createdByUser: missing,
+      }), { preservePayoutAddresses });
+      expect(merged.assigneeUser).toBeUndefined();
+      expect(merged.createdByUser).toBeUndefined();
+    });
+  }
+
+  test(`public user updates ${preservePayoutAddresses ? "retain" : "remove"} payout addresses`, () => {
+    const currentUser = { id: "fixture-user", name: "Before",
+      UA_address: "fixture-mainnet", z_address: "fixture-testnet" };
+    const current = record({ assigneeUser: currentUser, createdByUser: currentUser });
+    const updateUser = { id: "fixture-user", name: "After" };
+    const merged = mergeBounty(current, record({
+      assigneeUser: updateUser, createdByUser: updateUser,
+    }), { preservePayoutAddresses });
+    const expected = preservePayoutAddresses
+      ? { ...updateUser, UA_address: "fixture-mainnet", z_address: "fixture-testnet" }
+      : updateUser;
+    expect(merged.assigneeUser).toEqual(expected);
+    expect(merged.createdByUser).toEqual(expected);
+    expect(current.assigneeUser).toEqual(currentUser);
+  });
+}

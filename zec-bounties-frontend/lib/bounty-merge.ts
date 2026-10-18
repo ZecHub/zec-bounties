@@ -24,8 +24,8 @@ function mergeUser(
   current: User | null | undefined,
   update: User | null | undefined,
   keepAddresses: boolean,
-): User | null | undefined {
-  if (!update) return current ?? update;
+): User | undefined {
+  if (!update) return current ?? undefined;
   if (!current) return update;
   const merged = { ...current, ...update };
   delete (merged as { email?: string }).email;
