@@ -7,6 +7,7 @@ const createArgs = { data: { createdBy: user.id, title: "Fixture" } };
 
 function database({ used = 0, badges = [], completed = 0, failure } = {}) {
   let attempts = 0;
+  let writes = 0;
   const created = [];
   const quotaReads = [];
   const tx = {
@@ -18,6 +19,7 @@ function database({ used = 0, badges = [], completed = 0, failure } = {}) {
         return used;
       },
       create: async (args) => {
+        writes++;
         if (failure) throw failure;
         created.push(args);
         return { id: "fixture-bounty", ...args.data, createdByUser: { name: "Fixture" } };
@@ -35,7 +37,7 @@ function database({ used = 0, badges = [], completed = 0, failure } = {}) {
       return callback(tx);
     },
   };
-  return { prisma, tx, created, quotaReads, get attempts() { return attempts; } };
+  return { prisma, tx, created, quotaReads, get attempts() { return attempts; }, get writes() { return writes; } };
 }
 
 test("retries serialization conflicts, then returns the successful creation", async () => {
@@ -81,12 +83,32 @@ test("quota reads use the transaction client and share the inserted timestamp's 
   assert.equal(fixture.quotaReads[0].dateCreated.lt.toISOString(), "2026-09-28T00:00:00.000Z");
 });
 
+for (const completed of [0, 5]) {
+  test(`bounties: Hunters cannot create even with ${completed} completed bounties`, async () => {
+    const fixture = database({ completed });
+    const app = loadRoutes(fixture.prisma);
+    const response = await app.create("bounties", user, "fixture-team");
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.body.error, "Hunters are not allowed to create bounties");
+    assert.equal(fixture.attempts, 0);
+    assert.equal(fixture.writes, 0);
+    assert.equal(app.effects.broadcasts.length, 0);
+    assert.equal(app.effects.invalidations, 0);
+    assert.equal(app.effects.discord.length, 0);
+  });
+}
+
 for (const route of ["bounties", "teams"]) {
+  // The public creation route rejects HUNTER before quota/write handling.
+  // Exercise those paths with an allowed non-admin; team membership is unchanged.
+  const creator = route === "bounties" ? { ...user, role: "TEAM" } : user;
   test(`${route}: rejects exhausted quota with its metadata and no side effects`, async () => {
     const fixture = database({ used: 1 });
     const app = loadRoutes(fixture.prisma);
-    const response = await app.create(route, user, "fixture-team");
+    const response = await app.create(route, creator, "fixture-team");
     assert.equal(response.statusCode, 429);
+    assert.equal(fixture.attempts, 1);
+    assert.equal(fixture.writes, 0);
     assert.equal(response.body.limit, 1);
     assert.equal(response.body.used, 1);
     assert.equal(response.body.remaining, 0);
@@ -109,8 +131,10 @@ for (const route of ["bounties", "teams"]) {
   test(`${route}: failed creates do not emit success side effects`, async () => {
     const fixture = database({ failure: new Error("write failed") });
     const app = loadRoutes(fixture.prisma);
-    const response = await app.create(route, user, "fixture-team");
+    const response = await app.create(route, creator, "fixture-team");
     assert.equal(response.statusCode, 500);
+    assert.equal(fixture.attempts, 1);
+    assert.equal(fixture.writes, 1);
     assert.equal(app.effects.broadcasts.length, 0);
     assert.equal(app.effects.invalidations, 0);
     assert.equal(app.effects.discord.length, 0);
