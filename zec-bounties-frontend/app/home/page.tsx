@@ -113,6 +113,11 @@ function HomeContent() {
     fetchBountyById,
     activeTeamId,
     setActiveTeamId,
+    teamBounties,
+    teamBountiesLoading,
+    teamBountiesHasMore,
+    fetchTeamBounties,
+    loadMoreTeamBounties,
   } = useBounty();
 
   const router = useRouter();
@@ -157,6 +162,26 @@ function HomeContent() {
       filtered = filtered.filter((b) => b.teamId === activeTeamId);
     }
     if (activeCategory !== "All") {
+  useEffect(() => {
+    if (activeTeamId) fetchTeamBounties(activeTeamId);
+  }, [activeTeamId]);
+
+  const sourceBounties = activeTeamId
+    ? (teamBounties[activeTeamId] ?? [])
+    : bounties;
+  const sourceLoading = activeTeamId
+    ? !!teamBountiesLoading[activeTeamId]
+    : bountiesLoading;
+  const sourceHasMore = activeTeamId
+    ? !!teamBountiesHasMore[activeTeamId]
+    : hasMoreBounties;
+
+  const categoryFilteredBounties = useMemo(() => {
+    let filtered = sourceBounties;
+    if (activeCategory !== "All")
+      filtered = filtered.filter((b) => b.categoryId === activeCategory);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (b) =>
           b.category?.name?.toLowerCase() === activeCategory.toLowerCase() ||
@@ -182,6 +207,7 @@ function HomeContent() {
     }
     return filtered;
   }, [bounties, debouncedSearchQuery, activeCategory, activeTeamId]);
+  }, [sourceBounties, searchQuery, activeCategory]);
 
   // Step 2: Compute repo counts from category/search filtered list
   const repoCounts = useMemo(() => {
@@ -286,15 +312,18 @@ function HomeContent() {
             b.category?.name?.toLowerCase() === name.toLowerCase() ||
             b.categoryId === name
         ).length;
+      ? sourceBounties.length
+      : sourceBounties.filter((b) => b.categoryId === name).length;
 
   const handleLoadMore = useCallback(async () => {
     setIsLoadingMore(true);
     try {
-      await loadMoreBounties();
+      if (activeTeamId) await loadMoreTeamBounties(activeTeamId);
+      else await loadMoreBounties();
     } finally {
       setIsLoadingMore(false);
     }
-  }, [loadMoreBounties]);
+  }, [loadMoreBounties, loadMoreTeamBounties, activeTeamId]);
 
   const handleNewBounty = () => {
     if (taskCreationBlocked) {
@@ -341,6 +370,7 @@ function HomeContent() {
     activeRepo === "all" &&
     activeStatus === "ALL" &&
     !activeTeamId;
+  const canLoadMore = sourceHasMore && !searchQuery && activeCategory === "All";
 
   useEffect(() => {
     if (!canLoadMore) return;
@@ -349,7 +379,7 @@ function HomeContent() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !isLoadingMore && !bountiesLoading) {
+        if (entries[0].isIntersecting && !isLoadingMore && !sourceLoading) {
           handleLoadMore();
         }
       },
@@ -358,7 +388,7 @@ function HomeContent() {
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [canLoadMore, isLoadingMore, bountiesLoading, handleLoadMore]);
+  }, [canLoadMore, isLoadingMore, sourceLoading, handleLoadMore]);
 
   // On load / when the URL param changes, open the matching bounty
   useEffect(() => {
@@ -634,7 +664,7 @@ function HomeContent() {
                 </div>
               </div>
 
-              {bountiesLoading && bounties.length === 0 ? (
+              {sourceLoading && sourceBounties.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 sm:py-20">
                   <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
                   <p className="text-muted-foreground">Loading bounties...</p>

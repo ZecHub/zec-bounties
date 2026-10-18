@@ -59,6 +59,7 @@ export function NewBountyModal({
     fetchBountyQuota,
     communities,
     fetchCommunities,
+    favoriteTeamIds,
   } = useBounty();
 
   const [formData, setFormData] = useState({
@@ -101,6 +102,8 @@ export function NewBountyModal({
     !notEligible &&
     bountyQuota?.remaining !== null &&
     bountyQuota?.remaining === 0;
+
+  const joinedTeams = communities.filter((t) => favoriteTeamIds.has(t.id));
 
   const validateForm = () => {
     const nextErrors: FieldErrors = {};
@@ -375,7 +378,7 @@ export function NewBountyModal({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    {communities.map((team) => (
+                    {joinedTeams.map((team) => (
                       <SelectItem key={team.id} value={team.id}>
                         {team.name}
                       </SelectItem>

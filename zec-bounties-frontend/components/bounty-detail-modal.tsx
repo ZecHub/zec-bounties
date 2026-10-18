@@ -137,6 +137,7 @@ export function BountyDetailModal({
     submitWork,
     editSubmission,
     teams,
+    favoriteTeamIds,
   } = useBounty();
 
   const [applicationMessage, setApplicationMessage] = useState("");
@@ -246,11 +247,17 @@ export function BountyDetailModal({
     bounty.categoryId?.toLowerCase().replace(/[^a-z]+/g, "-") ===
     "design-and-videos";
 
+  const isCommunityMember =
+    currentUser?.role === "HUNTER" &&
+    bounty.teamId != null &&
+    favoriteTeamIds.has(bounty.teamId);
+
   const canViewPrivate =
     !bounty.isPrivate ||
     currentUser?.role === "ADMIN" ||
     bounty.createdBy === currentUser?.id ||
-    (bounty.teamId != null && teams.some((t) => t.id === bounty.teamId));
+    (bounty.teamId != null && teams.some((t) => t.id === bounty.teamId)) ||
+    isCommunityMember;
 
   const isMissingUAForMainnet =
     bounty.chain === "MAIN" && !currentUser?.UA_address;
@@ -459,7 +466,7 @@ export function BountyDetailModal({
           type: "info",
           title: "Private bounty",
           message:
-            "This bounty belongs to a private team you're not a member of.",
+            "This bounty belongs to a private team. Favorite the team to join its community and apply.",
         };
       }
       if (isSuggestedTask) {

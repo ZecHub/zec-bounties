@@ -432,7 +432,7 @@ router.get("/has-zcash-params", authenticate, async (req, res) => {
 router.patch("/update-zaddress", authenticate, async (req, res) => {
   const { z_address } = req.body;
 
- // Validate before storing. This value is later used as a payout destination
+  // Validate before storing. This value is later used as a payout destination
   // and interpolated into the zingo-cli send command, so it must contain only
   // the base58/bech32 characters a real Zcash address uses — no quotes,
   // whitespace or control characters that could break out of that command.
@@ -517,7 +517,8 @@ router.post("/recovery/request-otp", authenticate, async (req, res) => {
 
     if (issued.error === "cooldown") {
       return res.status(429).json({
-        error: "An OTP was sent recently. Please wait before requesting another.",
+        error:
+          "An OTP was sent recently. Please wait before requesting another.",
         retryAfterMs: issued.retryAfterMs,
       });
     }

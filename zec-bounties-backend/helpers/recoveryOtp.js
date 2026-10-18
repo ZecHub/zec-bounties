@@ -75,7 +75,10 @@ class OtpStore {
     }
     const existing = this.store.get(key);
     if (existing && now - existing.issuedAt < this.resendCooldownMs) {
-      return { error: "cooldown", retryAfterMs: this.resendCooldownMs - (now - existing.issuedAt) };
+      return {
+        error: "cooldown",
+        retryAfterMs: this.resendCooldownMs - (now - existing.issuedAt),
+      };
     }
     const otp = generateOtp();
     this.store.set(key, { otp, issuedAt: now, expiresAt: now + this.ttlMs });
@@ -96,7 +99,9 @@ class OtpStore {
       return { status: "expired" };
     }
 
-    if (!safeEqual(record.otp, typeof candidate === "string" ? candidate : "")) {
+    if (
+      !safeEqual(record.otp, typeof candidate === "string" ? candidate : "")
+    ) {
       const failures = this.recordFailure(key, now);
       if (failures >= this.maxAttempts) {
         this.lock(key, now);

@@ -605,7 +605,7 @@ router.get(
         select: { id: true, badges: true },
       });
       const userBadges = new Map(
-        users.map((u) => [u.id, Array.isArray(u.badges) ? u.badges : []])
+        users.map((u) => [u.id, Array.isArray(u.badges) ? u.badges : []]),
       );
 
       const completedBounties = await prisma.bounty.findMany({
@@ -622,8 +622,8 @@ router.get(
       const months = [
         ...new Set(
           completedBounties.map((b) =>
-            new Date(b.completedAt).toISOString().slice(0, 7)
-          )
+            new Date(b.completedAt).toISOString().slice(0, 7),
+          ),
         ),
       ].sort();
 
@@ -641,7 +641,7 @@ router.get(
           const b = completedBounties[idx];
           userCumulative.set(
             b.assignee,
-            (userCumulative.get(b.assignee) || 0) + 1
+            (userCumulative.get(b.assignee) || 0) + 1,
           );
           idx++;
         }
@@ -655,7 +655,7 @@ router.get(
           "50-tasks": 0,
         };
 
-                // Users with completions by this month
+        // Users with completions by this month
         const seen = new Set();
         for (const [userId, completed] of userCumulative) {
           if (completed < 1) continue;
