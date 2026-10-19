@@ -18,8 +18,13 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   CheckCircle2,
   XCircle,
@@ -31,12 +36,20 @@ import {
   AlertCircle,
   Globe,
   FlaskConical,
+  Info,
+  ExternalLink,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { cn } from "@/lib/utils";
 import { backendUrl } from "@/lib/configENV";
+import {
+  isShieldedAddress,
+  isTransparentAddress,
+  TRANSPARENT_ADDRESS_WARNING,
+  WALLET_GUIDE_URL,
+} from "@/lib/address-utils";
 
 type SaveState = "idle" | "saving" | "success" | "error";
 
@@ -185,14 +198,15 @@ export default function TeamProfilePage() {
     // Clear any pending debounce
     if (uaDebounceRef.current) clearTimeout(uaDebounceRef.current);
 
-    // Too short — no need to call API
-    if (value.trim().length <= 20) return;
+    const trimmed = value.trim();
+    // Too short or transparent address — no need to call API
+    if (trimmed.length <= 20 || isTransparentAddress(trimmed)) return;
 
     // Debounce the verification call by 600ms
     uaDebounceRef.current = setTimeout(async () => {
       setUaVerifying(true);
       try {
-        const result = await verifyUaddress(value.trim());
+        const result = await verifyUaddress(trimmed);
         setUaVerified(result ?? false);
       } catch {
         setUaVerified(false);
@@ -254,9 +268,12 @@ export default function TeamProfilePage() {
   const isZcashAddress = zAddress.startsWith("u") || zAddress.startsWith("z");
 
   const uaAddressDirty = uaAddress !== (currentUser?.UA_address ?? "");
-  const isTooShort = uaAddress.length > 0 && uaAddress.trim().length <= 20;
+  const isTransparent = isTransparentAddress(uaAddress);
+  const isShielded = isShieldedAddress(uaAddress);
+  const isTooShort =
+    uaAddress.length > 0 && uaAddress.trim().length <= 20 && !isTransparent;
   // Mainnet unified addresses always start with "u1"
-  const isValidUaAddress = uaAddress.startsWith("u1");
+  const isValidUaAddress = isShielded || uaAddress.startsWith("u1");
 
   return (
     <ProtectedRoute blockAdmin requireTeam>
@@ -576,12 +593,45 @@ export default function TeamProfilePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-1.5">
-                <Label
-                  htmlFor="ua-address"
-                  className="text-xs text-muted-foreground"
-                >
-                  Unified address
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label
+                    htmlFor="ua-address"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Unified address
+                  </Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          aria-label="Unified address guide"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs space-y-1.5 p-3">
+                        <p className="font-medium text-xs">
+                          Copy a Unified Address (UA)
+                        </p>
+                        <p className="text-xs opacity-90">
+                          To receive shielded bounty rewards, copy a Unified Address (starting with{" "}
+                          <code className="font-mono">u1</code>) from a supported wallet like Zashi, YWallet, or Zingo.
+                        </p>
+                        <a
+                          href={WALLET_GUIDE_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2 hover:opacity-80"
+                        >
+                          <span>Wallet setup guide</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <div className="relative">
                   <Input
                     id="ua-address"
@@ -590,9 +640,13 @@ export default function TeamProfilePage() {
                     placeholder="u1…"
                     className={cn(
                       "pr-8 font-mono text-sm",
+                      isTransparent &&
+                        "border-amber-500 focus-visible:ring-amber-500",
                       uaVerified === true &&
+                        !isTransparent &&
                         "border-green-500 focus-visible:ring-green-500",
                       uaVerified === false &&
+                        !isTransparent &&
                         "border-destructive focus-visible:ring-destructive",
                       uaSaveState === "success" &&
                         "border-green-500 focus-visible:ring-green-500",
@@ -603,13 +657,25 @@ export default function TeamProfilePage() {
                   {uaVerifying && (
                     <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
                   )}
-                  {!uaVerifying && uaVerified === true && (
+                  {!uaVerifying && isTransparent && (
+                    <AlertCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-amber-500" />
+                  )}
+                  {!uaVerifying && !isTransparent && uaVerified === true && (
                     <CheckCircle2 className="absolute right-2.5 top-2.5 h-4 w-4 text-green-500" />
                   )}
-                  {!uaVerifying && uaVerified === false && (
+                  {!uaVerifying && !isTransparent && uaVerified === false && (
                     <XCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />
                   )}
                 </div>
+
+                {isTransparent && (
+                  <Alert className="py-2.5 border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+                    <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <AlertDescription className="text-xs leading-relaxed">
+                      {TRANSPARENT_ADDRESS_WARNING}
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 {isTooShort && (
                   <p className="text-xs text-destructive flex items-center gap-1">
@@ -625,14 +691,14 @@ export default function TeamProfilePage() {
                   </p>
                 )} */}
 
-                {uaVerified === true && uaSaveState === "idle" && (
+                {uaVerified === true && !isTransparent && uaSaveState === "idle" && (
                   <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Address is valid
                   </p>
                 )}
 
-                {uaVerified === false && !uaError && (
+                {uaVerified === false && !isTransparent && !uaError && (
                   <p className="text-xs text-destructive flex items-center gap-1">
                     <XCircle className="h-3.5 w-3.5" />
                     Address could not be verified
@@ -682,6 +748,7 @@ export default function TeamProfilePage() {
                   disabled={
                     !uaAddressDirty ||
                     !uaAddress.trim() ||
+                    isTransparent ||
                     uaSaveState === "saving" ||
                     !isValidUaAddress ||
                     uaVerified !== true

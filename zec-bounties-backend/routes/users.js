@@ -303,11 +303,7 @@ router.get("/:idOrNickname/public", async (req, res) => {
     const key = String(req.params.idOrNickname || "").trim();
     if (!key) return res.status(400).json({ error: "User id required" });
 
-    const resolved = await resolveStaffUser(
-      prisma,
-      key,
-      PUBLIC_PROFILE_SELECT,
-    );
+    const resolved = await resolveStaffUser(prisma, key, PUBLIC_PROFILE_SELECT);
     if (!resolved.user) {
       return res.status(resolved.status).json({ error: resolved.error });
     }

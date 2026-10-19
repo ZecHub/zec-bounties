@@ -81,6 +81,7 @@ import {
   Ban,
 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
+import { backendUrl } from "@/lib/configENV";
 import type { ZcashParams, Team, RecoveryData } from "@/lib/types";
 import { ImportWalletModal } from "@/components/settings/import-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -330,6 +331,7 @@ type Section =
   | "wallets"
   | "recovery"
   | "network"
+  | "system"
   | "sync"
   | "team-hunter"
   | "task-access"
@@ -345,6 +347,7 @@ const NAV: {
   { id: "wallets", label: "Wallets", icon: Wallet, group: "config" },
   { id: "recovery", label: "Recovery", icon: KeyRound, group: "config" },
   { id: "network", label: "Network", icon: Globe, group: "config" },
+  { id: "system", label: "System", icon: Cpu, adminOnly: true, group: "config" },
   {
     id: "team-hunter",
     label: "Team → Hunter",
@@ -1597,6 +1600,105 @@ function WalletCard({
 // Main settings page
 // ─────────────────────────────────────────────────────────────────────────────
 
+type VersionRow = {
+  name: string;
+  version: string;
+  source: string;
+  status: "ok" | "missing" | "unavailable";
+  detail: string | null;
+};
+
+function SystemPanel() {
+  const [rows, setRows] = useState<VersionRow[]>([]);
+  const [collectedAt, setCollectedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem("authToken");
+      const res = await fetch(`${backendUrl}/api/admin/versions`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setRows(data.components ?? []);
+      setCollectedAt(data.collectedAt ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load versions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const dot = (status: VersionRow["status"]) =>
+    status === "ok"
+      ? "bg-emerald-500"
+      : status === "missing"
+        ? "bg-amber-500"
+        : "bg-red-500";
+
+  return (
+    <div>
+      <PageHeader
+        icon={Cpu}
+        title="System"
+        description="Versions of the software this install is running. Cached for 60 seconds."
+        actions={
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", loading && "animate-spin")} />
+            Refresh
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div className="rounded-xl border bg-card divide-y">
+        {rows.map((r) => (
+          <div key={r.name} className="flex items-center gap-3 px-4 py-3">
+            <span className={cn("h-2 w-2 rounded-full shrink-0", dot(r.status))} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{r.name}</p>
+              <p className="text-[11px] text-muted-foreground truncate">
+                {r.source}
+                {r.detail ? ` · ${r.detail}` : ""}
+              </p>
+            </div>
+            {r.name === "nym-proxy" && r.status === "ok" ? (
+              <span className="inline-flex items-center gap-1.5 shrink-0">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#6C4AB6] text-[10px] font-bold text-white">N</span>
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              </span>
+            ) : (
+              <span className="font-mono text-xs text-right shrink-0">{r.version}</span>
+            )}
+          </div>
+        ))}
+        {!loading && rows.length === 0 && !error && (
+          <p className="px-4 py-6 text-sm text-muted-foreground">No version data.</p>
+        )}
+      </div>
+
+      {collectedAt && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Collected {new Date(collectedAt).toLocaleString()}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const {
     currentUser,
@@ -2028,6 +2130,11 @@ export default function SettingsPage() {
     );
   }
 
+
+  function renderSystem() {
+    return <SystemPanel />;
+  }
+
   function renderNetwork() {
     return (
       <div>
@@ -2226,6 +2333,7 @@ export default function SettingsPage() {
     wallets: renderWallets,
     recovery: renderRecovery,
     network: renderNetwork,
+    system: renderSystem,
     sync: renderSync,
     "team-hunter": renderTeamHunter,
     "task-access": renderTaskAccess,

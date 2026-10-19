@@ -36,11 +36,15 @@ function mergeVisibility(raw) {
 function redactPublicUser(user, { forceFull = false } = {}) {
   if (!user) return null;
   if (forceFull) {
+    // Admin-only: addresses are selected solely for admins (USER_SELECT_FULL).
+    // Non-admin path below never includes them.
     return {
       id: user.id,
       name: user.name ?? null,
       nickname: user.nickname ?? null,
       avatar: user.avatar ?? null,
+      z_address: user.z_address ?? null,
+      UA_address: user.UA_address ?? null,
     };
   }
 
@@ -91,14 +95,43 @@ function redactLeaderboardRow(row, user, { forceFull = false } = {}) {
     id: row.id,
     rank: row.rank,
     name: showName
-      ? user?.name ?? row.name ?? "Unknown"
+      ? (user?.name ?? row.name ?? "Unknown")
       : "Anonymous contributor",
-    nickname: showName ? user?.nickname ?? null : null,
-    avatar: showAvatar ? user?.avatar ?? null : null,
+    nickname: showName ? (user?.nickname ?? null) : null,
+    avatar: showAvatar ? (user?.avatar ?? null) : null,
     completed: showCompleted ? row.completed : null,
     earned: showEarnings ? row.earned : null,
     points: showCompleted && showEarnings ? row.points : null,
   };
+}
+
+// Fields that must never leave the server on a broadcast. sendToUser is
+// exempt (owner-only). Applied at every broadcast boundary so a FULL select
+// on an HTTP response cannot leak through the websocket payload.
+const BROADCAST_PRIVATE_FIELDS = new Set([
+  "email",
+  "password",
+  "z_address",
+  "UA_address",
+  "githubId",
+  "discordUserId",
+  "emailNotifications",
+  "pushNotifications",
+  "ofacVerified",
+  "profileVisibility",
+]);
+
+function redactBroadcastPayload(value) {
+  if (Array.isArray(value)) return value.map(redactBroadcastPayload);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    const out = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (BROADCAST_PRIVATE_FIELDS.has(key)) continue;
+      out[key] = redactBroadcastPayload(child);
+    }
+    return out;
+  }
+  return value;
 }
 
 module.exports = {
@@ -106,4 +139,6 @@ module.exports = {
   mergeVisibility,
   redactPublicUser,
   redactLeaderboardRow,
+  redactBroadcastPayload,
+  BROADCAST_PRIVATE_FIELDS,
 };

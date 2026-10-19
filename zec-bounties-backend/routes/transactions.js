@@ -64,7 +64,9 @@ async function defaultWalletParams(userId, { create = true } = {}) {
 }
 
 const noWallet = (res) =>
-  res.status(404).json({ success: false, message: "No Zcash wallet available" });
+  res
+    .status(404)
+    .json({ success: false, message: "No Zcash wallet available" });
 
 // List transactions (Admin)
 router.get("/", authenticate, isAdmin, async (req, res) => {
@@ -108,12 +110,18 @@ router.get("/sync-status", authenticate, isAdmin, async (req, res) => {
 router.get("/balance", authenticate, isAdmin, async (req, res) => {
   const params = await defaultWalletParams(req.user.id);
   if (!params) return noWallet(res);
-  const data = await executeZingoCliBalance("balance", params);
-
-  // ✅ Send balance only to the requesting admin (not broadcast)
-  sendToUser(req.user.id, "balance_fetched", { balance: data });
-
-  res.json(data);
+  try {
+    const data = await executeZingoCliBalance("balance", params);
+    // Send balance only to the requesting admin (not broadcast)
+    sendToUser(req.user.id, "balance_fetched", { balance: data });
+    res.json(data);
+  } catch (err) {
+    console.error("balance failed:", err.message);
+    res.status(503).json({
+      error: "Balance unavailable",
+      details: err.message,
+    });
+  }
 });
 
 router.post("/accounts", authenticate, async (req, res) => {
@@ -335,7 +343,12 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       // release the claim so these bounties become payable again.
       console.error("❌ Zingo payment error:", sendResult.error);
 
-      await releaseClaim(batchKey, payableIds, sendResult.error, sendResult.raw);
+      await releaseClaim(
+        batchKey,
+        payableIds,
+        sendResult.error,
+        sendResult.raw,
+      );
 
       return res.status(422).json({
         success: false,
@@ -522,7 +535,11 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
           where: { id: record.id, status: "UNKNOWN" },
           data:
             outcome === "broadcast"
-              ? { status: "BROADCAST", txid: txid.trim().toLowerCase(), settledAt }
+              ? {
+                  status: "BROADCAST",
+                  txid: txid.trim().toLowerCase(),
+                  settledAt,
+                }
               : {
                   status: "FAILED",
                   settledAt,

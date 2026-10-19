@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { loadHelpers, loadRoutes } = require("./helpers/quotaHarness");
 
-const user = { id: "fixture-user", role: "HUNTER" };
+const user = { id: "fixture-user", role: "TEAM" };
 const createArgs = { data: { createdBy: user.id, title: "Fixture" } };
 
 function database({ used = 0, badges = [], completed = 0, failure } = {}) {

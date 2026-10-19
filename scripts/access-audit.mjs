@@ -41,7 +41,6 @@ const UI = [
   { path: "/docs/faq", expected: "public" },
   { path: "/docs/glossary", expected: "public" },
   { path: "/home", expected: "private", note: "Signed-in home" },
-  { path: "/dashboard", expected: "private" },
   { path: "/profile", expected: "private" },
   { path: "/my-bounties", expected: "private" },
   { path: "/teams", expected: "private" },
@@ -236,7 +235,7 @@ async function run() {
   writeFileSync(OUT, html);
   console.log(`Wrote ${OUT}`);
   console.log(
-    `UI ${uiResults.length} (browser) · API ${apiResults.length} (http) · leaks ${leakResults.length} · public ${summary.public} · private ${summary.private} · error ${summary.error} · mismatch ${summary.fail}`,
+    `UI ${uiResults.length} (browser) · API ${apiResults.length} (http) · leaks ${summary.leaks}/${leakResults.length} · public ${summary.public} · private ${summary.private} · error ${summary.error} · mismatch ${summary.fail}`,
   );
   if (summary.error) {
     console.log("Errors:");

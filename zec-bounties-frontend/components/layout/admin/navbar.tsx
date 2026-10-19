@@ -23,6 +23,8 @@ import {
   Target,
   Check,
   ChevronDown,
+  LayoutDashboard,
+  BarChart3,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -630,19 +632,43 @@ export function AdminNavbar({
               Profile
             </Link>
             <Link
-              href="/admin/kpis"
-              prefetch
-              className="transition-colors hover:text-primary"
-            >
-              KPIs
-            </Link>
-            <Link
               href="/admin/settings"
               prefetch
               className="transition-colors hover:text-primary"
             >
               Settings
             </Link>
+
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+
+            <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/admin/dashboard"
+                  prefetch
+                  aria-label="Admin dashboard"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-500 transition-colors hover:bg-amber-500/10 hover:text-amber-400"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Dashboard</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/admin/kpis"
+                  prefetch
+                  aria-label="KPIs"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-sky-400 transition-colors hover:bg-sky-500/10 hover:text-sky-300"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">KPIs</TooltipContent>
+            </Tooltip>
+            </TooltipProvider>
           </div>
 
           {/* Desktop right side — grouped into fixed-width sections separated
@@ -910,6 +936,7 @@ export function AdminNavbar({
 
                   <div className="flex flex-col gap-1">
                     {[
+                      { href: "/admin/dashboard", label: "Dashboard" },
                       { href: "/admin/bounties", label: "Bounties" },
                       { href: "/admin/export", label: "Export" },
                       { href: "/admin/teams", label: "Teams" },

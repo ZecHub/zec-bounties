@@ -1,3 +1,5 @@
+const { redactBroadcastPayload } = require("../utils/privacy");
+
 const clients = new Map(); // userId -> { ws, userId, userName }
 
 // User fields that must never reach another user's socket. Every name here
@@ -18,7 +20,9 @@ const PRIVATE_USER_FIELDS = new Set([
 ]);
 
 function serializeForBroadcast(data) {
-  return JSON.stringify(data, (key, value) =>
+  // Clone-and-strip first so the same object can still be returned on the
+  // HTTP response. The replacer stays as a second pass.
+  return JSON.stringify(redactBroadcastPayload(data), (key, value) =>
     PRIVATE_USER_FIELDS.has(key) ? undefined : value,
   );
 }

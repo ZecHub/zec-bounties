@@ -20,9 +20,15 @@ import {
   Info,
   Loader2,
   XCircle,
+  ExternalLink,
 } from "lucide-react";
+import {
+  isTransparentAddress,
+  TRANSPARENT_ADDRESS_WARNING,
+  WALLET_GUIDE_URL,
+} from "@/lib/address-utils";
 
-type ValidationState = "idle" | "checking" | "valid" | "invalid";
+type ValidationState = "idle" | "checking" | "valid" | "invalid" | "transparent";
 
 interface ZAddressCollectionModalProps {
   isOpen: boolean;
@@ -69,20 +75,26 @@ export function ZAddressCollectionModal({
   }, [isOpen]);
 
   const validateAddress = async (address: string) => {
-    if (!address.trim()) {
+    const trimmed = address.trim();
+    if (!trimmed) {
       setValidationState("idle");
+      return;
+    }
+
+    if (isTransparentAddress(trimmed)) {
+      setValidationState("transparent");
       return;
     }
 
     // Optimistic: flag obviously-wrong addresses immediately without a round-trip
     // Zcash unified addresses start with "u1", sapling with "zs1", sprout with "zc"
     const looksLikeZcash =
-      address.startsWith("utest") ||
-      address.startsWith("u1") ||
-      address.startsWith("zs1") ||
-      address.startsWith("zc");
+      trimmed.startsWith("utest") ||
+      trimmed.startsWith("u1") ||
+      trimmed.startsWith("zs1") ||
+      trimmed.startsWith("zc");
 
-    if (!looksLikeZcash || address.length < 10) {
+    if (!looksLikeZcash || trimmed.length < 10) {
       setValidationState("invalid");
       return;
     }
@@ -119,6 +131,11 @@ export function ZAddressCollectionModal({
       return;
     }
 
+    if (isTransparentAddress(value)) {
+      setValidationState("transparent");
+      return;
+    }
+
     // Show "checking" almost immediately so the user knows something is happening
     setValidationState("checking");
 
@@ -140,6 +157,11 @@ export function ZAddressCollectionModal({
 
     if (!zAddress.trim()) {
       setError("A shielded address is required to continue");
+      return;
+    }
+
+    if (validationState === "transparent") {
+      setError("Transparent addresses are not supported. Please enter a shielded Unified Address.");
       return;
     }
 
@@ -197,6 +219,17 @@ export function ZAddressCollectionModal({
       );
     }
 
+    if (validationState === "transparent") {
+      return (
+        <Alert className="mt-2 py-2.5 border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+          <AlertDescription className="text-xs leading-relaxed">
+            {TRANSPARENT_ADDRESS_WARNING}
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
     // invalid
     return (
       <div className="flex items-center gap-1.5 text-xs text-red-500 dark:text-red-400 mt-1">
@@ -210,11 +243,13 @@ export function ZAddressCollectionModal({
   const inputBorderClass =
     validationState === "valid"
       ? "border-emerald-500 focus-visible:ring-emerald-500"
-      : validationState === "invalid"
-        ? "border-red-500 focus-visible:ring-red-500"
-        : validationState === "checking"
-          ? "border-yellow-400 focus-visible:ring-yellow-400"
-          : "";
+      : validationState === "transparent"
+        ? "border-amber-500 focus-visible:ring-amber-500"
+        : validationState === "invalid"
+          ? "border-red-500 focus-visible:ring-red-500"
+          : validationState === "checking"
+            ? "border-yellow-400 focus-visible:ring-yellow-400"
+            : "";
 
   const canSubmit = !isSubmitting && validationState === "valid";
 
@@ -333,12 +368,23 @@ export function ZAddressCollectionModal({
         {/* Help section */}
         <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100">
-              Need help finding your UA-address?
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                Need help finding your UA-address?
+              </h4>
+              <a
+                href={WALLET_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary underline underline-offset-2 hover:opacity-80"
+              >
+                <span>Wallet guide</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
             <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
-              <p>• Open your Zcash wallet (Zingo, Zkool, etc.)</p>
-              <p>• Look for "Receive" or "Shielded Address"</p>
+              <p>• Open your Zcash wallet (Zashi, YWallet, Zingo, etc.)</p>
+              <p>• Look for "Receive" or "Unified / Shielded Address"</p>
               <p>• Copy the address that starts with u1…</p>
               <p>• Paste it in the field above</p>
             </div>

@@ -102,6 +102,8 @@ model Bounty {
   suggestionReviewStatus String?
   suggestionReviewReason String?
   targetRepo       String?
+  dueSoonReminderSentAt DateTime?
+  overdueReminderSentAt DateTime?
   messages          BountyChat[]
   notifications     InAppNotification[]
   activity          BountyActivity[]
@@ -117,6 +119,7 @@ model Bounty {
   @@index([teamId, suggestionReviewStatus])
   @@index([isPrivate])
   @@index([targetRepo])
+  @@index([status, timeToComplete])
 }
 
 model BountyAssignee {
