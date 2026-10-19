@@ -40,5 +40,9 @@ export default defineConfig({
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    // The tests open the Create Bounty form, which the halt would block.
+    env: {
+      NEXT_PUBLIC_TASK_CREATION_HALTED: "false",
+    },
   },
 });
