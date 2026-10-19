@@ -44,7 +44,7 @@ function loadRoutes(prisma) {
   const dependencies = {
     "../prisma/client": prisma,
     "@prisma/client": { PrismaClient: function () { return prisma; } },
-    "../helpers/email": { formatEmailText: (text) => text },
+    "../helpers/email": require("../../helpers/email"),
     "../middleware/auth": { authenticate: noOp, isAdmin: noOp, optionalAuthenticate: noOp },
     "../middleware/websocket": { sendRealtimeUpdate: (...args) => effects.broadcasts.push(args), sendToUser: noOp },
     "../utils/cache": cache,

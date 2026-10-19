@@ -24,6 +24,20 @@ function loadRoutes(team) {
       updateMany: async () => ({ count: 1 }),
     },
   };
+  db.$transaction = async (fn) =>
+    fn({
+      bountyAssignee: { deleteMany: async () => ({ count: 0 }) },
+      bounty: {
+        update: async ({ data }) => ({
+          id: "b1",
+          ...newBounty,
+          teamId: null,
+          createdBy: "creator",
+          createdByUser: { name: "Creator" },
+          ...data,
+        }),
+      },
+    });
   const helpers = withDefaults({
     requireOnboarded: () => true,
     requireTaskCreation: (req, res, next) => next(),
@@ -35,7 +49,10 @@ function loadRoutes(team) {
       ...data,
       createdByUser: { name: "Creator" },
     }),
-    sendMailIfEnabled: async (mail) => effects.emails.push(mail.to),
+    sendMailIfEnabled: async (mail) => {
+      effects.emails.push(mail.to);
+      effects.html = mail.html;
+    },
     sendPushToOptedIn: async (ids) => effects.pushes.push(...ids),
     invalidateBounty: async () => {},
   });
@@ -45,7 +62,7 @@ function loadRoutes(team) {
         new Proxy({}, { get: (_, method) => (url, ...handlers) => { routes[`${method} ${url}`] = handlers; } }),
     },
     "../prisma/client": db,
-    "../helpers/email": { formatEmailText: (text) => text },
+    "../helpers/email": require("../helpers/email"),
     "../middleware/websocket": withDefaults({
       sendRealtimeUpdate: (...args) => effects.realtime.push(args),
     }),
@@ -76,6 +93,7 @@ function loadRoutes(team) {
   );
   return {
     effects,
+    db,
     async call(route, req) {
       const res = {
         statusCode: 200,
@@ -133,4 +151,59 @@ test("a suggestion review is sent only to the bounty's audience", async () => {
   assert.deepEqual(routes.effects.realtime, []);
   assert.equal(routes.effects.scoped[0][0], "bounty_updated");
   assert.equal(routes.effects.scoped[0][2], "b1");
+});
+
+const unverifiedCreator = { id: "creator", role: "TEAM" };
+const soloBounty = { ...newBounty, teamId: undefined };
+
+test("an unapproved bounty is not emailed or pushed to anyone", async () => {
+  const routes = loadRoutes(null);
+  const res = await routes.call("post /", { user: unverifiedCreator, body: soloBounty });
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.isApproved, false);
+  assert.deepEqual(routes.effects.emails, []);
+  assert.deepEqual(routes.effects.pushes, []);
+});
+
+test("approving a bounty announces it to everyone but its creator", async () => {
+  const routes = loadRoutes(null);
+  routes.db.bounty.findUnique = async () => ({
+    createdBy: "creator",
+    assignee: null,
+    isApproved: false,
+  });
+  const res = await routes.call("patch /:id/approve", {
+    user: { id: "admin", role: "ADMIN" },
+    params: { id: "b1" },
+  });
+  assert.equal(res.statusCode, 200);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(routes.effects.emails, ["teammate@example.com", "outsider@example.com"]);
+  assert.deepEqual(routes.effects.pushes, ["teammate", "outsider"]);
+});
+
+test("approving an already approved bounty does not announce it again", async () => {
+  const routes = loadRoutes(null);
+  routes.db.bounty.findUnique = async () => ({
+    createdBy: "creator",
+    assignee: null,
+    isApproved: true,
+  });
+  await routes.call("patch /:id/approve", {
+    user: { id: "admin", role: "ADMIN" },
+    params: { id: "b1" },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(routes.effects.emails, []);
+});
+
+test("the announcement email escapes the bounty's text", async () => {
+  const routes = loadRoutes({ id: "team-1", name: "Team", isVerified: true, isPrivate: false });
+  await routes.call("post /", {
+    user: creator,
+    body: { ...newBounty, title: '<a href="x">Claim</a>', description: "<img src=x>\nline" },
+  });
+  assert.ok(routes.effects.html.includes("&lt;a href=&quot;x&quot;&gt;Claim&lt;/a&gt;"));
+  assert.ok(routes.effects.html.includes("&lt;img src=x&gt;<br/>line"));
+  assert.ok(!routes.effects.html.includes("<img"));
 });

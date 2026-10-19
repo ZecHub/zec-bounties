@@ -1,6 +1,6 @@
 const express = require("express");
 const prisma = require("../prisma/client");
-const { formatEmailText } = require("../helpers/email");
+const { escapeHtml, formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
   authenticate,
@@ -268,6 +268,73 @@ function getCalendarWeekBounds(date = new Date()) {
   return { start, end };
 }
 
+// Emails and pushes a new bounty to its audience. Called only once the bounty
+// is approved: before that, nobody has reviewed the text that goes out.
+async function announceNewBounty(bounty, creatorId, recipients) {
+  try {
+    const creatorDisplayName =
+      bounty.createdByUser.nickname || bounty.createdByUser.name;
+
+    const cachedUsers = await getCache("users:all");
+
+    const users =
+      cachedUsers ??
+      (await prisma.user.findMany({
+        select: {
+          id: true,
+          email: true,
+          emailNotifications: true,
+          pushNotifications: true,
+        },
+      }));
+
+    const audience = recipients && new Set(recipients);
+
+    const otherUsers = users.filter(
+      (u) => u.id !== creatorId && (!audience || audience.has(u.id)),
+    );
+
+    const emailRecipients = otherUsers
+      .filter((u) => u.emailNotifications !== false)
+      .map((u) => u.email)
+      .filter(Boolean);
+
+    const pushCandidateIds = otherUsers
+      .filter((u) => u.pushNotifications)
+      .map((u) => u.id);
+
+    await Promise.all([
+      sendPushToOptedIn(pushCandidateIds, {
+        title: "New Bounty Available",
+        body: `${bounty.title} — ${bounty.bountyAmount} ZEC`,
+        url: `/bounty/${bounty.id}`,
+      }),
+
+      Promise.all(
+        emailRecipients.map((recipient) =>
+          sendMailIfEnabled({
+            to: recipient,
+            subject: `New Bounty Created: ${bounty.title}`,
+            text: `A new bounty has been created.\n\nCreated by: ${creatorDisplayName}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
+            html: `
+              <h2>New Bounty Created</h2>
+              <p><strong>Created by:</strong> ${escapeHtml(creatorDisplayName)}</p>
+              <p><strong>Title:</strong> ${escapeHtml(bounty.title)}</p>
+              <p><strong>Description:</strong><br/>
+                ${formatEmailText(bounty.description)}
+              </p>
+              <p><strong>Amount:</strong> ${bounty.bountyAmount} ZEC</p>
+              <p><strong>Time to complete:</strong> ${escapeHtml(bounty.timeToComplete)}</p>
+            `,
+          }),
+        ),
+      ),
+    ]);
+  } catch (notificationErr) {
+    console.error("Bounty notification failed:", notificationErr);
+  }
+}
+
 // ─── Create bounty ────────────────────────────────────────────────────────────
 router.post("/", authenticate, requireTaskCreation, async (req, res) => {
   try {
@@ -417,74 +484,12 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
 
     await bumpVersion("bounties");
 
-    if (!bounty.isPrivate) notifyNewBounty(bounty);
-
     res.status(201).json(bounty);
 
-    (async () => {
-      try {
-        const creatorDisplayName =
-          bounty.createdByUser.nickname || bounty.createdByUser.name;
-
-        const cachedUsers = await getCache("users:all");
-
-        const users =
-          cachedUsers ??
-          (await prisma.user.findMany({
-            select: {
-              id: true,
-              email: true,
-              emailNotifications: true,
-              pushNotifications: true,
-            },
-          }));
-
-        const audience = recipients && new Set(recipients);
-
-        const otherUsers = users.filter(
-          (u) => u.id !== req.user.id && (!audience || audience.has(u.id)),
-        );
-
-        const emailRecipients = otherUsers
-          .filter((u) => u.emailNotifications !== false)
-          .map((u) => u.email)
-          .filter(Boolean);
-
-        const pushCandidateIds = otherUsers
-          .filter((u) => u.pushNotifications)
-          .map((u) => u.id);
-
-        await Promise.all([
-          sendPushToOptedIn(pushCandidateIds, {
-            title: "New Bounty Available",
-            body: `${bounty.title} — ${bounty.bountyAmount} ZEC`,
-            url: `/bounty/${bounty.id}`,
-          }),
-
-          Promise.all(
-            emailRecipients.map((recipient) =>
-              sendMailIfEnabled({
-                to: recipient,
-                subject: `New Bounty Created: ${bounty.title}`,
-                text: `A new bounty has been created.\n\nCreated by: ${creatorDisplayName}\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
-                html: `
-                  <h2>New Bounty Created</h2>
-                  <p><strong>Created by:</strong> ${creatorDisplayName}</p>
-                  <p><strong>Title:</strong> ${bounty.title}</p>
-                  <p><strong>Description:</strong><br/>
-                    ${formatEmailText(bounty.description)}
-                  </p>
-                  <p><strong>Amount:</strong> ${bounty.bountyAmount} ZEC</p>
-                  <p><strong>Time to complete:</strong> ${bounty.timeToComplete}</p>
-                `,
-              }),
-            ),
-          ),
-        ]);
-      } catch (notificationErr) {
-        console.error("Bounty notification failed:", notificationErr);
-      }
-    })();
+    if (bounty.isApproved) {
+      if (!bounty.isPrivate) notifyNewBounty(bounty);
+      announceNewBounty(bounty, req.user.id, recipients);
+    }
   } catch (err) {
     if (err instanceof WeeklyBountyQuotaError) {
       return res.status(429).json({
@@ -1087,7 +1092,7 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
     const bountyId = req.params.id;
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { createdBy: true, assignee: true },
+      select: { createdBy: true, assignee: true, isApproved: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
@@ -1113,6 +1118,7 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
           isPrivate: false,
           ...(releaseSelfAssignment && { assignee: null }),
         },
+        include: { createdByUser: { select: USER_SELECT } },
       });
     });
     await broadcastBountyEvent(
@@ -1129,6 +1135,16 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
 
     await invalidateBounty(req.params.id);
     res.json(updated);
+
+    // A bounty created unapproved was not announced, so announce it now.
+    if (!bounty.isApproved) {
+      if (!updated.isPrivate) notifyNewBounty(updated);
+      getBroadcastRecipients(updated)
+        .then((recipients) =>
+          announceNewBounty(updated, bounty.createdBy, recipients),
+        )
+        .catch(console.error);
+    }
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to approve bounty" });
