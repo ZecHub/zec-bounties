@@ -43,15 +43,14 @@ async function openBoard(page: Page, count: number) {
     localStorage.setItem("zecBountiesPushAttempted", String(Date.now()));
   }, user);
 
-  await page.routeWebSocket("ws://localhost:9000/**", (ws) => {
-    socket = ws;
-  });
-  await page.route("**/*", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.origin === "http://127.0.0.1:3127") return route.continue();
-    // All backend traffic is local test data; never contact the live service.
-    if (url.origin !== "http://localhost:9000") return route.abort();
-    if (route.request().method() !== "GET") return route.abort();
+  await page.routeWebSocket("ws://localhost:9000/**", (ws) => { socket = ws; });
+await page.routeWebSocket("ws://localhost:9001/**", (ws) => { socket = ws; });
+await page.route("**/*", async (route) => {
+  const url = new URL(route.request().url());
+  if (url.origin === "http://127.0.0.1:3127") return route.continue();
+  if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204 });
+  if (!["http://localhost:9000", "http://localhost:9001"].includes(url.origin)) return route.abort();
+  if (route.request().method() !== "GET") return route.abort();
 
     let json: unknown = [];
     if (url.pathname === "/api/notifications") json = { notifications: [], unreadCount: 0 };

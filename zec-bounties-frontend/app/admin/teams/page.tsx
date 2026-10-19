@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { ElementType, ReactNode } from "react";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useRoleGuard } from "@/hooks/use-role-guard";
@@ -43,6 +44,7 @@ import {
   UserMinus,
   Wallet,
   Shield,
+  ShieldCheck,
   Crown,
   User,
   ChevronRight,
@@ -52,26 +54,22 @@ import {
   Check,
   X,
   Edit2,
-  RefreshCw,
+  Copy,
   Eye,
   EyeOff,
   ArrowLeft,
-  XIcon,
   Link2,
   ExternalLink,
+  Calendar,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
-import type { Balance, Team, TeamVerificationStatus } from "@/lib/types";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { FaXTwitter } from "react-icons/fa6";
+import type { Team } from "@/lib/types";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { TeamBanner } from "@/components/teams/team-banner";
 import { CreateTeamPanel } from "@/components/teams/create-team-panel";
+import { QRCodeSVG } from "qrcode.react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -95,6 +93,7 @@ interface TeamWallet {
   accountName: string;
   chain: string;
   serverUrl: string;
+  address?: string;
   createdAt: string;
 }
 
@@ -158,88 +157,257 @@ function RoleBadge({ role }: { role: TeamMember["role"] }) {
   );
 }
 
-function SocialLinksCard({ team }: { team: Team }) {
-  const hasAny =
-    team.twitterUrl || team.discordUrl || team.additionalLinks?.length > 0;
+// ── Team links ────────────────────────────────────────────────────────────────
 
-  if (!hasAny) {
-    return (
-      <div className="p-3 sm:p-4 border-b">
-        <p className="text-xs text-muted-foreground">
-          No social links provided for this team.
-        </p>
-      </div>
-    );
+interface TeamLink {
+  key: string;
+  label: string;
+  href: string;
+  icon: ElementType;
+}
+
+// Only allow http(s) so a malicious "javascript:" URL can't end up in an href
+const isSafeUrl = (url: string) => /^https?:\/\//i.test(url.trim());
+
+function getTeamLinks(team: Team): TeamLink[] {
+  const links: TeamLink[] = [];
+  if (team.twitterUrl)
+    links.push({
+      key: "twitter",
+      label: "X / Twitter",
+      href: team.twitterUrl,
+      icon: FaXTwitter,
+    });
+  if (team.discordUrl)
+    links.push({
+      key: "discord",
+      label: "Discord",
+      href: team.discordUrl,
+      icon: RxDiscordLogo,
+    });
+  (team.additionalLinks ?? []).forEach((href, i) =>
+    links.push({ key: `extra-${i}`, label: "Link", href, icon: Link2 }),
+  );
+  return links.filter((l) => isSafeUrl(l.href));
+}
+
+/** "https://www.x.com/acme/" -> "x.com/acme" */
+function displayUrl(href: string) {
+  try {
+    const u = new URL(href);
+    const path = u.pathname === "/" ? "" : u.pathname.replace(/\/$/, "");
+    const text = u.hostname.replace(/^www\./, "") + path;
+    return text.length > 60 ? text.slice(0, 57) + "…" : text;
+  } catch {
+    return href.length > 60 ? href.slice(0, 57) + "…" : href;
   }
+}
 
+// ── Shared overview building blocks ───────────────────────────────────────────
+
+function OverviewCard({
+  title,
+  action,
+  children,
+  className = "",
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="p-3 sm:p-4 border-b space-y-2">
-      <h3 className="text-xs font-semibold text-muted-foreground mb-1">
-        Social & links
-      </h3>
-      <div className="flex flex-col gap-1.5">
-        {team.twitterUrl && (
-          <a
-            href={team.twitterUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
-          >
-            <XIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="truncate">{team.twitterUrl}</span>
-            <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </a>
-        )}
-        {team.discordUrl && (
-          <a
-            href={team.discordUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
-          >
-            <RxDiscordLogo className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="truncate">{team.discordUrl}</span>
-            <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </a>
-        )}
-        {team.additionalLinks?.map((link, i) => (
-          <a
-            key={i}
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"
-          >
-            <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="truncate">{link}</span>
-            <ExternalLink className="h-3 w-3 text-muted-foreground/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </a>
-        ))}
+    <section
+      className={`min-w-0 overflow-hidden rounded-2xl border bg-card/50 ${className}`}
+    >
+      <div className="flex items-center justify-between gap-2 px-4 pt-4 sm:px-5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </h3>
+        {action}
+      </div>
+      <div className="p-4 pt-3 sm:p-5 sm:pt-3">{children}</div>
+    </section>
+  );
+}
+
+function StatTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ElementType;
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border bg-card/50 px-4 py-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[11px] text-muted-foreground">{label}</div>
+        <div className="truncate text-sm font-semibold capitalize">{value}</div>
       </div>
     </div>
   );
 }
 
-function VerificationCard({ team }: { team: Team }) {
+// ── Verification modal ────────────────────────────────────────────────────────
+
+function TeamVerificationModal({
+  open,
+  onOpenChange,
+  team,
+  loading,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  team: Team;
+  loading: boolean;
+  onConfirm: () => void;
+}) {
+  const links = getTeamLinks(team);
+  const [clicked, setClicked] = useState<Set<string>>(new Set());
+
+  // Reset progress every time the modal closes
+  useEffect(() => {
+    if (!open) setClicked(new Set());
+  }, [open]);
+
+  const markClicked = (key: string) =>
+    setClicked((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+
+  const total = links.length;
+  const done = links.filter((l) => clicked.has(l.key)).length;
+  const allClicked = done === total; // true when there are no links too
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85dvh] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col gap-4 overflow-hidden rounded-xl p-4 sm:max-w-md md:p-6">
+        <DialogHeader className="shrink-0 text-left sm:text-left">
+          <DialogTitle className="flex min-w-0 items-center gap-2 text-base md:text-lg">
+            <Shield className="h-5 w-5 shrink-0" />
+            <span className="truncate">Verify {team.name}</span>
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Scrolls inside the modal when there are many links */}
+        <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden">
+          <p className="text-xs leading-relaxed text-muted-foreground md:text-sm">
+            {total > 0
+              ? "Open each of the team's links and make sure they look legitimate before verifying."
+              : "This team has no social links. You can still verify it, but consider whether that's enough."}
+          </p>
+
+          {total > 0 && (
+            <>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Links reviewed</span>
+                  <span className="tabular-nums">
+                    {done}/{total}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${(done / total) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                {links.map(({ key, label, href, icon: Icon }) => {
+                  const visited = clicked.has(key);
+                  return (
+                    <a
+                      key={key}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => markClicked(key)}
+                      onAuxClick={() => markClicked(key)} // middle-click
+                      className={`group flex min-w-0 items-center gap-3 rounded-xl border px-3 py-3 text-sm transition-colors active:bg-muted/60 ${
+                        visited
+                          ? "border-green-500/30 bg-green-500/5"
+                          : "hover:border-primary/40 hover:bg-muted/40"
+                      }`}
+                    >
+                      <Icon
+                        className={`h-4 w-4 shrink-0 ${
+                          visited ? "text-green-600" : "text-muted-foreground"
+                        }`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium">{label}</div>
+                        <div className="truncate text-[11px] text-muted-foreground md:text-xs">
+                          {displayUrl(href)}
+                        </div>
+                      </div>
+                      {visited ? (
+                        <span className="flex shrink-0 items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-1.5 py-0.5 text-[10px] font-medium text-green-600">
+                          <Check className="h-2.5 w-2.5" />
+                          <span className="hidden imd:inline">Visited</span>
+                        </span>
+                      ) : (
+                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 group-hover:text-primary" />
+                      )}
+                    </a>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Stacked + full-width on mobile, side by side from md up */}
+        <DialogFooter className="shrink-0 flex-col-reverse gap-2 sm:flex-col-reverse md:flex-row md:justify-end">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={loading}
+            className="w-full md:w-auto"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={!allClicked || loading}
+            className="w-full md:w-auto"
+          >
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {allClicked ? "Verify team" : `Visit all (${done}/${total})`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Verification control (lives in the header, next to the ⋯ menu) ────────────
+
+function VerificationControl({ team }: { team: Team }) {
   const { teamVerifications, fetchTeamVerification, verifyTeam, unverifyTeam } =
     useBounty();
   const status = teamVerifications[team.id] ?? null;
-  const [loading, setLoading] = useState(!status);
   const [acting, setActing] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!status) {
-      setLoading(true);
-      fetchTeamVerification(team.id).finally(() => setLoading(false));
-    }
+    if (!status) fetchTeamVerification(team.id).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team.id]);
 
-  const handleToggle = async () => {
+  if (!status) {
+    return <div className="h-8 w-28 animate-pulse rounded-full bg-muted" />;
+  }
+
+  const handleUnverify = async () => {
     setActing(true);
     try {
-      status?.verifiedByMe
-        ? await unverifyTeam(team.id)
-        : await verifyTeam(team.id);
+      await unverifyTeam(team.id);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -247,55 +415,335 @@ function VerificationCard({ team }: { team: Team }) {
     }
   };
 
-  if (loading || !status) {
-    return (
-      <div className="p-3 sm:p-4 border-b flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" /> Loading verification...
+  const handleConfirmVerify = async () => {
+    setActing(true);
+    try {
+      await verifyTeam(team.id);
+      setModalOpen(false);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const verified = status.isVerified;
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        {/* Status pill */}
+        <div
+          title={
+            verified
+              ? "This team is verified"
+              : `Needs ${status.requiredVerifications} admin sign-offs before it can post bounties`
+          }
+          className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium ${
+            verified
+              ? "border-green-500/30 bg-green-500/10 text-green-600"
+              : "border-amber-500/30 bg-amber-500/10 text-amber-600"
+          }`}
+        >
+          {verified ? (
+            <ShieldCheck className="h-3.5 w-3.5" />
+          ) : (
+            <AlertTriangle className="h-3.5 w-3.5" />
+          )}
+          <span className="hidden md:inline">
+            {verified ? "Verified" : "Unverified"}
+          </span>
+          <span className="tabular-nums opacity-70">
+            {status.verificationCount}/{status.requiredVerifications}
+          </span>
+        </div>
+
+        {/* Action */}
+        <Button
+          size="sm"
+          variant={status.verifiedByMe ? "outline" : "default"}
+          className="h-8 rounded-full px-3 text-xs"
+          disabled={acting}
+          onClick={
+            status.verifiedByMe ? handleUnverify : () => setModalOpen(true)
+          }
+        >
+          {acting && status.verifiedByMe && (
+            <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+          )}
+          {status.verifiedByMe ? "Unverify" : "Verify"}
+        </Button>
       </div>
+
+      <TeamVerificationModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        team={team}
+        loading={acting}
+        onConfirm={handleConfirmVerify}
+      />
+    </>
+  );
+}
+
+// ── Links card ────────────────────────────────────────────────────────────────
+
+function LinksCard({ team }: { team: Team }) {
+  const links = getTeamLinks(team);
+
+  return (
+    <OverviewCard title="Links">
+      {links.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          This team hasn't added any links.
+        </p>
+      ) : (
+        <ul className="-mx-2 min-w-0 space-y-0.5">
+          {links.map(({ key, label, href, icon: Icon }) => (
+            <li key={key} className="min-w-0">
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-medium">{label}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {displayUrl(href)}
+                  </span>
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </OverviewCard>
+  );
+}
+
+// ── About card ────────────────────────────────────────────────────────────────
+
+function AboutCard({ team, onEdit }: { team: Team; onEdit: () => void }) {
+  return (
+    <OverviewCard
+      title="About"
+      action={
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-mr-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
+          onClick={onEdit}
+        >
+          <Edit2 className="h-3 w-3" /> Edit
+        </Button>
+      }
+    >
+      {team.description ? (
+        <p className="whitespace-pre-line break-words text-sm leading-relaxed text-foreground/90">
+          {team.description}
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">No description yet.</p>
+      )}
+    </OverviewCard>
+  );
+}
+
+// Cache keyed by team + wallet so switching teams is instant, and replacing
+// a wallet naturally busts the cache.
+const donationAddressCache = new Map<string, string | null>();
+
+function useDonationAddress(teamId: string, walletId?: string) {
+  const key = `${teamId}:${walletId ?? "none"}`;
+  const [address, setAddress] = useState<string | null | undefined>(() =>
+    donationAddressCache.get(key),
+  );
+
+  useEffect(() => {
+    if (!walletId) return;
+    if (donationAddressCache.has(key)) {
+      setAddress(donationAddressCache.get(key));
+      return;
+    }
+    setAddress(undefined);
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/teams/${teamId}/overview`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Failed to load address");
+        const data = await res.json();
+        const addr: string | null = data.donationAddress ?? null;
+        donationAddressCache.set(key, addr);
+        setAddress(addr);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        setAddress(null);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [key, teamId, walletId]);
+
+  return address; // undefined = loading, null = unavailable
+}
+
+// ── Wallet panel ──────────────────────────────────────────────────────────────
+
+function WalletPanel({
+  team,
+  onAddWallet,
+}: {
+  team: Team;
+  onAddWallet: () => void;
+}) {
+  const addr = useDonationAddress(team.id, team.wallet?.id);
+
+  const copy = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success("Address copied");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
+
+  if (!team.wallet) {
+    return (
+      <OverviewCard title="Payout wallet">
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-8 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+            <Wallet className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">No wallet connected</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Add a wallet so this team has a payout address.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={onAddWallet}
+          >
+            Add wallet
+          </Button>
+        </div>
+      </OverviewCard>
     );
   }
 
   return (
-    <div className="p-3 sm:p-4 border-b space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className={
-              status.isVerified
-                ? "bg-green-500/10 text-green-600 border-green-500/30"
-                : "bg-amber-500/10 text-amber-600 border-amber-500/30"
-            }
-          >
-            {status.isVerified ? "Verified" : "Unverified"}
-          </Badge>
-          <span className="text-xs text-muted-foreground">
-            {status.verificationCount}/{status.requiredVerifications} admin
-            sign-offs
-          </span>
-        </div>
-        <Button
-          size="sm"
-          variant={status.verifiedByMe ? "outline" : "default"}
-          className="h-7 text-xs"
-          onClick={handleToggle}
-          disabled={acting}
+    <OverviewCard
+      title="Payout wallet"
+      action={
+        <Badge
+          variant="outline"
+          className="gap-1 border-green-500/30 bg-green-500/10 text-[10px] text-green-600"
         >
-          {acting ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : status.verifiedByMe ? (
-            "Remove my verification"
-          ) : (
-            "Verify team"
-          )}
-        </Button>
+          <Check className="h-2.5 w-2.5" /> Connected
+        </Badge>
+      }
+    >
+      {/* Wallet identity */}
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <Wallet className="h-4 w-4 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold">
+            {team.wallet.accountName}
+          </div>
+          <div className="truncate text-xs capitalize text-muted-foreground">
+            {team.wallet.chain}
+          </div>
+        </div>
       </div>
-      {!status.isVerified && (
-        <p className="text-[11px] text-muted-foreground">
-          This team can't post bounties until {status.requiredVerifications}{" "}
-          admins verify it.
-        </p>
+
+      {addr === undefined ? (
+        <div className="flex animate-pulse flex-col items-center gap-4">
+          <div className="h-[176px] w-[176px] rounded-xl bg-muted" />
+          <div className="h-12 w-full rounded-lg bg-muted" />
+        </div>
+      ) : addr === null ? (
+        <p className="text-sm text-muted-foreground">Address unavailable.</p>
+      ) : (
+        <div className="flex flex-col items-center gap-4">
+          <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+            <QRCodeSVG value={addr} size={176} level="M" />
+          </div>
+          <div className="w-full space-y-2">
+            <code className="block max-h-24 overflow-y-auto break-all rounded-lg border bg-background/60 p-3 text-center font-mono text-[11px] leading-relaxed select-all">
+              {addr}
+            </code>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 w-full gap-1.5 text-xs"
+              onClick={() => copy(addr)}
+            >
+              <Copy className="h-3.5 w-3.5" /> Copy address
+            </Button>
+          </div>
+        </div>
       )}
+    </OverviewCard>
+  );
+}
+
+// ── Overview tab body ─────────────────────────────────────────────────────────
+
+function OverviewTab({
+  team,
+  onEdit,
+  onAddWallet,
+}: {
+  team: Team;
+  onEdit: () => void;
+  onAddWallet: () => void;
+}) {
+  const adminCount = team.members.filter((m) =>
+    ["OWNER", "ADMIN"].includes(m.role),
+  ).length;
+
+  return (
+    <div className="space-y-4 p-4 sm:p-6">
+      {/* Stat tiles */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile icon={Users} label="Members" value={team.members.length} />
+        <StatTile icon={Shield} label="Admins" value={adminCount} />
+        <StatTile
+          icon={Wallet}
+          label="Network"
+          value={team.wallet ? team.wallet.chain : "No wallet"}
+        />
+        <StatTile
+          icon={Calendar}
+          label="Created"
+          value={
+            team.createdAt ? format(new Date(team.createdAt), "MMM yyyy") : "—"
+          }
+        />
+      </div>
+
+      {/* Two-column body */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="min-w-0 space-y-4 lg:col-span-3">
+          <AboutCard team={team} onEdit={onEdit} />
+          <LinksCard team={team} />
+        </div>
+        <div className="min-w-0 lg:col-span-2">
+          <WalletPanel team={team} onAddWallet={onAddWallet} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -534,7 +982,7 @@ function AddMembersModal({
                     <Avatar className="h-7 w-7 shrink-0">
                       <AvatarImage src={user.avatar} />
                       <AvatarFallback className="text-[10px]">
-                        {user.name[0]}
+                        {user.name?.[0] ?? "?"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
@@ -822,42 +1270,7 @@ function TeamDetailPanel({
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-
-  const [balance, setBalance] = useState<Balance | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-  const [balanceError, setBalanceError] = useState<string | null>(null);
-
-  const confirmedTotal = (b: Balance) =>
-    ((b.confirmed_ironwood_balance ?? b.confirmed_orchard_balance ?? 0) +
-      (b.confirmed_sapling_balance ?? 0) +
-      (b.confirmed_transparent_balance ?? 0)) /
-    1e8;
-
-  const fmt = (n: number) => n.toFixed(4);
-
-  const fetchBalance = useCallback(async () => {
-    if (!team.wallet) return;
-    setBalanceLoading(true);
-    setBalanceError(null);
-    try {
-      const data = await api<{ balance: any }>(`/${team.id}/wallet/balance`);
-      setBalance(data.balance ?? null);
-    } catch (err: any) {
-      setBalanceError(err.message);
-    } finally {
-      setBalanceLoading(false);
-    }
-  }, [api, team.id, team.wallet]);
-
-  useEffect(() => {
-    if (team.wallet) {
-      fetchBalance();
-    } else {
-      setBalance(null);
-      setBalanceError(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [team.id, team.wallet?.id]);
+  const [tab, setTab] = useState<"overview" | "members">("overview");
 
   const handleRemoveMember = async (userId: string) => {
     setDeletingMember(userId);
@@ -914,7 +1327,6 @@ function TeamDetailPanel({
     try {
       await api(`/${team.id}/wallet`, { method: "DELETE" });
       onUpdate({ ...team, wallet: null });
-      setBalance(null);
       toast.success("Wallet removed");
     } catch (err: any) {
       toast.error(err.message);
@@ -922,13 +1334,7 @@ function TeamDetailPanel({
   };
 
   const handleWalletCreated = (wallet: TeamWallet) => {
-    const updated = { ...team, wallet };
-    onUpdate(updated);
-    setTimeout(() => {
-      setBalance(null);
-      setBalanceError(null);
-      fetchBalance();
-    }, 1500);
+    onUpdate({ ...team, wallet });
   };
 
   return (
@@ -962,9 +1368,9 @@ function TeamDetailPanel({
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between p-4 sm:p-6 border-b">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl border border-primary/20 shrink-0">
+      <div className="px-4 pb-4 sm:px-6">
+        <div className="-mt-10 flex items-end justify-between gap-3 md:-mt-14">
+          <Avatar className="relative z-10 h-20 w-20 shrink-0 border-4 border-background shadow-sm md:h-28 md:w-28">
             {team.logo && (
               <AvatarImage
                 src={team.logo}
@@ -972,274 +1378,198 @@ function TeamDetailPanel({
                 className="object-cover"
               />
             )}
-            <AvatarFallback className="rounded-xl bg-primary/10 text-lg sm:text-xl font-bold text-primary">
-              {team.name[0]}
+            <AvatarFallback className="bg-muted text-xl font-semibold text-muted-foreground md:text-2xl">
+              {team.name
+                .split(" ")
+                .map((p) => p[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <h2 className="text-base sm:text-lg font-bold leading-tight">
-              {team.name}
-            </h2>
-            {team.description && (
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-1">
-                {team.description}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Created {format(new Date(team.createdAt), "MMM d, yyyy")}
-            </p>
+
+          {/* Verification + actions menu */}
+          <div className="flex items-center gap-2 pb-1">
+            <VerificationControl team={team} />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Team Actions</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                  <Edit2 className="h-4 w-4 mr-2" /> Edit Team
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setAddMembersOpen(true)}>
+                  <UserPlus className="h-4 w-4 mr-2" /> Add Members
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setWalletOpen(true)}>
+                  <Wallet className="h-4 w-4 mr-2" />
+                  {team.wallet ? "Replace Wallet" : "Add Wallet"}
+                </DropdownMenuItem>
+                {team.wallet && (
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={handleDeleteWallet}
+                  >
+                    <X className="h-4 w-4 mr-2" /> Remove Wallet
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" /> Delete Team
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Team Actions</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setEditOpen(true)}>
-              <Edit2 className="h-4 w-4 mr-2" /> Edit Team
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setAddMembersOpen(true)}>
-              <UserPlus className="h-4 w-4 mr-2" /> Add Members
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setWalletOpen(true)}>
-              <Wallet className="h-4 w-4 mr-2" />
-              {team.wallet ? "Replace Wallet" : "Add Wallet"}
-            </DropdownMenuItem>
-            {team.wallet && (
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={handleDeleteWallet}
-              >
-                <X className="h-4 w-4 mr-2" /> Remove Wallet
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive"
-              onClick={() => setDeleteConfirmOpen(true)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" /> Delete Team
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mt-3 space-y-1">
+          <h2 className="break-words text-xl font-extrabold tracking-tight md:text-3xl">
+            {team.name}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {team.members.length}{" "}
+            {team.members.length === 1 ? "member" : "members"}
+          </p>
+        </div>
       </div>
 
-      {/* Stats strip */}
-      <div className="grid grid-cols-3 divide-x border-b text-center">
-        {[
-          { label: "Members", value: team.members.length },
-          {
-            label: "Wallet",
-            value: team.wallet ? team.wallet.chain : "None",
-          },
-          {
-            label: "Admins",
-            value: team.members.filter((m) =>
-              ["OWNER", "ADMIN"].includes(m.role),
-            ).length,
-          },
-        ].map((s) => (
-          <div key={s.label} className="py-2.5 sm:py-3 px-2 sm:px-4">
-            <div className="text-base sm:text-lg font-bold truncate">
-              {s.value}
-            </div>
-            <div className="text-xs text-muted-foreground">{s.label}</div>
-          </div>
+      {/* Tabs */}
+      <div className="flex gap-6 px-4 sm:px-6 border-b">
+        {(
+          [
+            { id: "overview", label: "Overview" },
+            { id: "members", label: `Members (${team.members.length})` },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`-mb-px py-3 text-sm font-medium border-b-2 transition-colors ${
+              tab === t.id
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
         ))}
       </div>
-      <SocialLinksCard team={team} />
-      <VerificationCard team={team} />
 
-      {/* Wallet card */}
-      {team.wallet && (
-        <div className="p-3 sm:p-4 border-b space-y-2">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border">
-            <Wallet className="h-4 w-4 text-muted-foreground shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">
-                {team.wallet.accountName}
-              </div>
-              <div className="text-xs text-muted-foreground truncate">
-                {team.wallet.chain} · {team.wallet.serverUrl}
-              </div>
-            </div>
-            <Badge variant="outline" className="shrink-0 text-[10px]">
-              {team.wallet.chain}
-            </Badge>
-          </div>
-
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Balance</span>
-              {balanceLoading ? (
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-              ) : balanceError ? (
-                <span className="text-xs text-destructive">{balanceError}</span>
-              ) : balance !== null ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-sm font-mono font-semibold cursor-default underline decoration-dotted underline-offset-2">
-                        {fmt(confirmedTotal(balance))} ZEC
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="top"
-                      className="text-xs space-y-1.5 min-w-[180px]"
-                    >
-                      <p className="font-semibold text-foreground mb-1">
-                        Confirmed balances
-                      </p>
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">Ironwood</span>
-                        <span className="font-mono">
-                          {fmt(
-                            (balance.confirmed_ironwood_balance ??
-                              balance.confirmed_orchard_balance ??
-                              0) / 1e8,
-                          )}{" "}
-                          ZEC
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">Sapling</span>
-                        <span className="font-mono">
-                          {fmt(balance.confirmed_sapling_balance / 1e8)} ZEC
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Transparent
-                        </span>
-                        <span className="font-mono">
-                          {fmt(balance.confirmed_transparent_balance / 1e8)} ZEC
-                        </span>
-                      </div>
-                      <div className="border-t pt-1 flex justify-between gap-4 font-semibold">
-                        <span>Total</span>
-                        <span className="font-mono">
-                          {fmt(confirmedTotal(balance))} ZEC
-                        </span>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <span className="text-xs text-muted-foreground">—</span>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={fetchBalance}
-              disabled={balanceLoading}
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${balanceLoading ? "animate-spin" : ""}`}
-              />
-            </Button>
-          </div>
-        </div>
+      {tab === "overview" && (
+        <OverviewTab
+          team={team}
+          onEdit={() => setEditOpen(true)}
+          onAddWallet={() => setWalletOpen(true)}
+        />
       )}
 
       {/* Members list */}
-      <div className="">
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <h3 className="text-sm font-semibold">
-            Members ({team.members.length})
-          </h3>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs gap-1"
-            onClick={() => setAddMembersOpen(true)}
-          >
-            <UserPlus className="h-3 w-3" /> Add
-          </Button>
-        </div>
+      {tab === "members" && (
+        <div>
+          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <h3 className="text-sm font-semibold">
+              Members ({team.members.length})
+            </h3>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1"
+              onClick={() => setAddMembersOpen(true)}
+            >
+              <UserPlus className="h-3 w-3" /> Add
+            </Button>
+          </div>
 
-        <div className="divide-y">
-          {team.members.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No members yet
-            </div>
-          ) : (
-            team.members.map((member) => (
-              <div
-                key={member.id}
-                className="flex items-center gap-2 sm:gap-3 px-4 py-3 hover:bg-muted/30 transition-colors"
-              >
-                <Avatar className="h-8 w-8 shrink-0">
-                  <AvatarImage src={member.user.avatar} />
-                  <AvatarFallback className="text-xs">
-                    {member.user.name[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-medium truncate">
-                      {member.user.name}
-                    </span>
-                    <RoleBadge role={member.role} />
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {member.user.email}
-                  </div>
-                </div>
-
-                {member.role !== "OWNER" && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <div className="hidden sm:block">
-                      <Select
-                        value={member.role}
-                        onValueChange={(v) =>
-                          handleRoleChange(
-                            member.userId,
-                            v as TeamMember["role"],
-                          )
-                        }
-                        disabled={updatingRole === member.userId}
-                      >
-                        <SelectTrigger className="h-7 w-24 text-xs">
-                          {updatingRole === member.userId ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <SelectValue />
-                          )}
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ADMIN">Admin</SelectItem>
-                          <SelectItem value="MEMBER">Member</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleRemoveMember(member.userId)}
-                      disabled={deletingMember === member.userId}
-                    >
-                      {deletingMember === member.userId ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <UserMinus className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </div>
-                )}
+          <div className="divide-y">
+            {team.members.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No members yet
               </div>
-            ))
-          )}
+            ) : (
+              team.members.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center gap-2 sm:gap-3 px-4 py-3 hover:bg-muted/30 transition-colors"
+                >
+                  <Avatar className="h-8 w-8 shrink-0">
+                    <AvatarImage src={member.user.avatar} />
+                    <AvatarFallback className="text-xs">
+                      {member.user.name?.[0] ?? "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-medium truncate">
+                        {member.user.name}
+                      </span>
+                      <RoleBadge role={member.role} />
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {member.user.email}
+                    </div>
+                  </div>
+
+                  {member.role !== "OWNER" && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <div className="hidden sm:block">
+                        <Select
+                          value={member.role}
+                          onValueChange={(v) =>
+                            handleRoleChange(
+                              member.userId,
+                              v as TeamMember["role"],
+                            )
+                          }
+                          disabled={updatingRole === member.userId}
+                        >
+                          <SelectTrigger className="h-7 w-24 text-xs">
+                            {updatingRole === member.userId ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <SelectValue />
+                            )}
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ADMIN">Admin</SelectItem>
+                            <SelectItem value="MEMBER">Member</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleRemoveMember(member.userId)}
+                        disabled={deletingMember === member.userId}
+                      >
+                        {deletingMember === member.userId ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <UserMinus className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Modals */}
       <TeamFormModal
@@ -1453,7 +1783,7 @@ export default function AdminTeamsPage() {
                           />
                         )}
                         <AvatarFallback className="rounded-lg bg-muted text-sm font-bold">
-                          {team.name[0]}
+                          {team.name?.[0] ?? "?"}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">

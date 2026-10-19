@@ -58,7 +58,7 @@ export function mergeBounty(
   ) as Bounty;
   return {
     ...merged,
-    assigneeUser: mergeUser(current.assigneeUser, merged.assigneeUser, keepAddresses),
-    createdByUser: mergeUser(current.createdByUser, merged.createdByUser, keepAddresses),
+    assigneeUser: mergeUser(current.assigneeUser, merged.assigneeUser, keepAddresses) ?? undefined,
+    createdByUser: mergeUser(current.createdByUser, merged.createdByUser, keepAddresses) ?? undefined,
   };
 }

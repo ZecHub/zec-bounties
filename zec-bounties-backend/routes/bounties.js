@@ -1,6 +1,8 @@
 const express = require("express");
 const prisma = require("../prisma/client");
 const { escapeHtml, formatEmailText } = require("../helpers/email");
+const { getSuggestionSettings } = require("../utils/suggestionSettings");
+const { formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
   authenticate,
@@ -190,9 +192,6 @@ async function canViewPrivateBounty(bounty, user) {
 // Gold star = 15+ completed tasks.
 const GOLD_STAR_THRESHOLD = 15;
 
-// Hunters must have this many completed bounties before they can post.
-const MIN_COMPLETED_TO_POST = 5;
-
 const WEEKLY_BOUNTY_LIMIT_GOLD =
   process.env.NODE_ENV === "production"
     ? 2
@@ -232,8 +231,17 @@ async function isGoldStarOrAbove(userId) {
 }
 
 // Same contract as isGoldStarOrAbove: an explicit avatar:N admin override
-// wins over the live DONE count.
+// wins over the live DONE count when the platform is in threshold mode.
 async function hasCompletedEnoughToPost(userId) {
+  const { mode, threshold } = await getSuggestionSettings();
+
+  if (mode === "closed") {
+    return { allowed: false, completed: 0, required: null, mode };
+  }
+  if (mode === "open") {
+    return { allowed: true, completed: 0, required: null, mode };
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { badges: true },
@@ -242,15 +250,22 @@ async function hasCompletedEnoughToPost(userId) {
   const overrideTier = getAvatarOverrideTier(user?.badges);
   if (overrideTier !== null) {
     return {
-      allowed: overrideTier >= MIN_COMPLETED_TO_POST,
+      allowed: overrideTier >= threshold,
       completed: overrideTier,
+      required: threshold,
+      mode,
     };
   }
 
   const completed = await prisma.bounty.count({
     where: { assignee: userId, status: "DONE" },
   });
-  return { allowed: completed >= MIN_COMPLETED_TO_POST, completed };
+  return {
+    allowed: completed >= threshold,
+    completed,
+    required: threshold,
+    mode,
+  };
 }
 
 // Fixed calendar week, Monday 00:00 UTC through the following Monday 00:00 UTC.
@@ -340,23 +355,19 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
   try {
     if (!requireOnboarded(req, res)) return;
 
-    // Hunters are not allowed to create bounties.
+    // Hunter bounty suggestions are gated by the platform suggestion setting.
     if (req.user.role === "HUNTER") {
-      return res.status(403).json({
-        error: "Hunters are not allowed to create bounties",
-      });
-    }
-
-    // Hunters must have completed at least MIN_COMPLETED_TO_POST bounties.
-    if (req.user.role === "HUNTER") {
-      const { allowed, completed } = await hasCompletedEnoughToPost(
-        req.user.id,
-      );
-      if (!allowed) {
+      const elig = await hasCompletedEnoughToPost(req.user.id);
+      if (!elig.allowed) {
+        const msg =
+          elig.mode === "closed"
+            ? "Bounty suggestions are currently closed."
+            : `Complete at least ${elig.required} bounties before posting your own (${elig.completed}/${elig.required} done)`;
         return res.status(403).json({
-          error: `Complete at least ${MIN_COMPLETED_TO_POST} bounties before posting your own (${completed}/${MIN_COMPLETED_TO_POST} done)`,
-          completed,
-          required: MIN_COMPLETED_TO_POST,
+          error: msg,
+          completed: elig.completed,
+          required: elig.required,
+          mode: elig.mode,
         });
       }
     }
@@ -2808,15 +2819,14 @@ router.get("/mine/quota", authenticate, async (req, res) => {
     }
     const quota = await getWeeklyBountyQuota(req.user.id);
     if (req.user.role === "HUNTER") {
-      const { allowed, completed } = await hasCompletedEnoughToPost(
-        req.user.id,
-      );
+      const elig = await hasCompletedEnoughToPost(req.user.id);
       return res.json({
         ...quota,
         postEligibility: {
-          allowed,
-          completed,
-          required: MIN_COMPLETED_TO_POST,
+          allowed: elig.allowed,
+          completed: elig.completed,
+          required: elig.required,
+          mode: elig.mode,
         },
       });
     }

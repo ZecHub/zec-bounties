@@ -139,7 +139,8 @@ interface BountyContextType {
     postEligibility?: {
       allowed: boolean;
       completed: number;
-      required: number;
+      required: number | null;
+      mode?: "closed" | "open" | "threshold";
     } | null;
   } | null;
   fetchBountyQuota: () => Promise<void>;

@@ -87,11 +87,14 @@ export class Backend {
       localStorage.setItem("zecBountiesPushAttempted", String(Date.now()));
     }, user);
     await page.routeWebSocket("ws://localhost:9000/**", ws => this.sockets.set(page, ws));
+    await page.routeWebSocket("ws://localhost:9001/**", ws => this.sockets.set(page, ws));
     await page.route("**/*", async route => {
       const req = route.request();
       const url = new URL(req.url());
       if (url.origin === APP_URL) return route.continue();
-      if (url.origin !== "http://localhost:9000") return route.abort();
+      if (!["http://localhost:9000", "http://localhost:9001"].includes(url.origin)) return route.abort();
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
       const method = req.method();
       const pathname = url.pathname;
       const pageNumber = Number(url.searchParams.get("page")) || 1;

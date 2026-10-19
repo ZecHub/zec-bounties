@@ -108,6 +108,12 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
     "../utils/userIdentity": require("../../utils/userIdentity"),
     "../helpers/email": {}, "../helpers/validateBounty": {},
 "../utils/bountySuggestionReview": require("../../utils/bountySuggestionReview"),
+    "../utils/suggestionSettings": {
+      getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      setSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      invalidateSuggestionSettingsCache: () => {},
+      VALID_MODES: new Set(["closed", "open", "threshold"]),
+    },
     "../helpers/clearBountyChat": { clearBountyChat: forbidden, isTransitionToDone: () => false },
     "../utils/sendMail": forbidden, "../utils/notifyUser": forbidden,
     "../utils/discord/discordNotify": {}, "../utils/discord/discordAssignWebhook": {},

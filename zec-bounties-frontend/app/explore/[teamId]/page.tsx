@@ -15,6 +15,7 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Globe,
 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -46,12 +47,110 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-function linkLabel(url: string) {
+type SocialLink = {
+  url: string;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  hover: string;
+};
+
+const XIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    aria-hidden
+  >
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817-5.966 6.817H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+  </svg>
+);
+
+const DiscordIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    aria-hidden
+  >
+    <path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.292a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.1.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03ZM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z" />
+  </svg>
+);
+
+const GithubIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    aria-hidden
+  >
+    <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+  </svg>
+);
+
+const TelegramIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    aria-hidden
+  >
+    <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42Z" />
+  </svg>
+);
+
+function normalizeUrl(raw: string): string {
+  const v = raw.trim();
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+
+function describeLink(raw: string): SocialLink | null {
+  let u: URL;
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    u = new URL(normalizeUrl(raw));
   } catch {
-    return url;
+    return null;
   }
+  const host = u.hostname.replace(/^www\./, "").toLowerCase();
+  const first = u.pathname.split("/").filter(Boolean)[0];
+
+  if (host === "x.com" || host === "twitter.com") {
+    return {
+      url: u.toString(),
+      label: first ? `@${first}` : "X",
+      Icon: XIcon,
+      hover: "hover:border-foreground/40 hover:text-foreground",
+    };
+  }
+  if (host === "discord.gg" || host.endsWith("discord.com")) {
+    return {
+      url: u.toString(),
+      label: "Discord",
+      Icon: DiscordIcon,
+      hover: "hover:border-[#5865F2]/50 hover:text-[#5865F2]",
+    };
+  }
+  if (host === "github.com") {
+    return {
+      url: u.toString(),
+      label: first ? `GitHub · ${first}` : "GitHub",
+      Icon: GithubIcon,
+      hover: "hover:border-foreground/40 hover:text-foreground",
+    };
+  }
+  if (host === "t.me" || host === "telegram.me") {
+    return {
+      url: u.toString(),
+      label: "Telegram",
+      Icon: TelegramIcon,
+      hover: "hover:border-[#229ED9]/50 hover:text-[#229ED9]",
+    };
+  }
+  return {
+    url: u.toString(),
+    label: host,
+    Icon: Globe,
+    hover: "hover:border-primary/40 hover:text-primary",
+  };
 }
 
 function DonationCard({
@@ -168,13 +267,15 @@ function TeamOverviewContent() {
   const isFavorited = team ? favoriteTeamIds.has(team.id) : false;
   const createdAt = team?.createdAt ? new Date(team.createdAt) : null;
   // Dedupe: the same URL can appear in more than one field.
-  const links = team
+  const links: SocialLink[] = team
     ? Array.from(
-        new Set(
+        new Map(
           [team.twitterUrl, team.discordUrl, ...team.additionalLinks]
-            .map((l) => l?.trim())
-            .filter((l): l is string => Boolean(l)),
-        ),
+            .filter((l): l is string => Boolean(l?.trim()))
+            .map(describeLink)
+            .filter((l): l is SocialLink => l !== null)
+            .map((l) => [l.url.replace(/\/$/, ""), l] as const),
+        ).values(),
       )
     : [];
 
@@ -299,17 +400,17 @@ function TeamOverviewContent() {
               </p>
 
               {links.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {links.map((url, i) => (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {links.map(({ url, label, Icon, hover }) => (
                     <a
-                      key={`${i}-${url}`}
+                      key={url}
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border px-3 text-xs text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                      className={`inline-flex h-9 max-w-full items-center gap-2 rounded-full border bg-muted/30 px-3.5 text-sm font-medium text-muted-foreground transition-colors ${hover}`}
                     >
-                      <span className="truncate">{linkLabel(url)}</span>
-                      <ExternalLink className="h-3 w-3 shrink-0" />
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{label}</span>
                     </a>
                   ))}
                 </div>

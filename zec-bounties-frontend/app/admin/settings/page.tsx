@@ -335,6 +335,7 @@ type Section =
   | "sync"
   | "team-hunter"
   | "task-access"
+  | "suggestion-settings"
   | "danger";
 
 const NAV: {
@@ -359,6 +360,13 @@ const NAV: {
     id: "task-access",
     label: "Task access",
     icon: Ban,
+    adminOnly: true,
+    group: "teams",
+  },
+  {
+    id: "suggestion-settings",
+    label: "Suggestion settings",
+    icon: Shield,
     adminOnly: true,
     group: "teams",
   },
@@ -1117,6 +1125,142 @@ function RoleConversionPanel() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+
+function SuggestionSettingsPanel() {
+  const { currentUser } = useBounty();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<"closed" | "open" | "threshold">("threshold");
+  const [threshold, setThreshold] = useState(5);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${backendUrl}/api/admin/suggestion-settings`,
+          { headers: { Authorization: `Bearer ${localStorage.getItem("authToken") || ""}` } },
+        );
+        if (!res.ok) throw new Error("Failed to load");
+        const data = await res.json();
+        if (!cancelled) {
+          setMode(data.mode);
+          setThreshold(data.threshold ?? 5);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({
+            title: "Error",
+            description: "Could not load suggestion settings.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
+
+  if (currentUser?.role !== "ADMIN") {
+    return (
+      <EmptyState
+        icon={Shield}
+        title="Admin access required"
+        hint="You don't have permission to manage suggestion settings."
+      />
+    );
+  }
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/admin/suggestion-settings`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("authToken") || ""}`,
+          },
+          body: JSON.stringify({ mode, threshold }),
+        },
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Save failed");
+      }
+      toast({ title: "Saved", description: "Suggestion settings updated." });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Save failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <div className="space-y-3">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="radio"
+            name="suggestion-mode"
+            checked={mode === "closed"}
+            onChange={() => setMode("closed")}
+          />
+          <span>Closed — no hunter suggestions</span>
+        </label>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="radio"
+            name="suggestion-mode"
+            checked={mode === "open"}
+            onChange={() => setMode("open")}
+          />
+          <span>Open — no completion restrictions</span>
+        </label>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="radio"
+            name="suggestion-mode"
+            checked={mode === "threshold"}
+            onChange={() => setMode("threshold")}
+          />
+          <span>Open if completed at least</span>
+          <Input
+            type="number"
+            min={0}
+            max={1000}
+            value={threshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+            disabled={mode !== "threshold"}
+            className="w-20 h-8"
+          />
+          <span>bounties</span>
+        </label>
+      </div>
+      <Button onClick={save} disabled={saving}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+    </div>
   );
 }
 
@@ -2270,6 +2414,19 @@ export default function SettingsPage() {
     );
   }
 
+  function renderSuggestionSettings() {
+    return (
+      <div>
+        <PageHeader
+          icon={Shield}
+          title="Suggestion settings"
+          description="Control who can suggest bounties. Weekly limits and per-user blocks still apply."
+        />
+        <SuggestionSettingsPanel />
+      </div>
+    );
+  }
+
   function renderDanger() {
     const deletable = allWallets.filter((w) => !w.isTeam);
     return (
@@ -2337,6 +2494,7 @@ export default function SettingsPage() {
     sync: renderSync,
     "team-hunter": renderTeamHunter,
     "task-access": renderTaskAccess,
+    "suggestion-settings": renderSuggestionSettings,
     danger: renderDanger,
   };
 

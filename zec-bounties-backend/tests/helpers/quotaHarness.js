@@ -55,6 +55,12 @@ function loadRoutes(prisma) {
     "../utils/constants": { REQUIRED_TEAM_VERIFICATIONS: 3 },
     "../helpers/validateBounty": require("../../helpers/validateBounty"),
 "../utils/bountySuggestionReview": require("../../utils/bountySuggestionReview"),
+    "../utils/suggestionSettings": {
+      getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      setSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      invalidateSuggestionSettingsCache: () => {},
+      VALID_MODES: new Set(["closed", "open", "threshold"]),
+    },
     "../utils/userSelects": require("../../utils/userSelects"),
     "../utils/privacy": require("../../utils/privacy"),
     "../utils/userIdentity": require("../../utils/userIdentity"),

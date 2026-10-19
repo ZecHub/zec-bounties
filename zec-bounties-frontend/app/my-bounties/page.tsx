@@ -83,6 +83,7 @@ type ViewMode = "bounties" | "earnings";
 
 export default function MyBountiesPage() {
   const taskCreationBlocked = useTaskCreationBlocked();
+  const { bountyQuota } = useBounty();
   const { myBounties, myBountiesLoading, fetchMyBounties, currentUser } =
     useBounty();
   const [selectedBountyId, setSelectedBountyId] = useState<string | null>(null);
@@ -229,7 +230,11 @@ export default function MyBountiesPage() {
             <Button
               title={
                 taskCreationBlocked
-                  ? "An admin has disabled task creation for your account"
+                  ? bountyQuota?.postEligibility?.mode === "closed"
+                    ? "Bounty suggestions are currently closed"
+                    : bountyQuota?.postEligibility?.allowed === false
+                      ? `Complete ${bountyQuota.postEligibility.required} bounties to post your own`
+                      : "An admin has disabled task creation for your account"
                   : undefined
               }
               className={`hidden imd:flex gap-2 rounded-full shadow-lg shadow-primary/20 shrink-0 ${

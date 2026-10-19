@@ -41,9 +41,9 @@ function findTeamWallet(ownerId, accountName) {
 /**
  * POST /api/zcash/import-wallet
  * Import a wallet using seed phrase (seed phrase is never stored)
- * Protected route - requires authentication
+ * Protected route - requires authentication and admin role
  */
-router.post("/import-wallet", authenticate, async (req, res) => {
+router.post("/import-wallet", authenticate, isAdmin, async (req, res) => {
   try {
     const { accountName, seedPhrase, chain, serverUrl, birthdayHeight } =
       req.body;

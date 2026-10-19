@@ -41,6 +41,7 @@ app.use("/api/users", require("./routes/users"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/leaderboard", require("./routes/leaderboard"));
 app.use("/api/admin", require("./routes/versions"));
+app.use("/api/admin", require("./routes/adminSettings"));
 
 // WebSocket server
 // SECURITY FIX (S2): reject the upgrade before a socket is ever handed to

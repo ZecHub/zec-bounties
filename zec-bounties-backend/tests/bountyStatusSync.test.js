@@ -103,6 +103,7 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     "../helpers/email": {},
     "../middleware/auth": { authenticate: noop, isAdmin: noop, optionalAuthenticate: noop },
     "../middleware/websocket": { sendRealtimeUpdate: (type, payload) => trace.push({ type, payload }) },
+    "../utils/suggestionSettings": { getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }) },
     "../utils/cache": {
       delCache: async key => trace.push({ invalidated: key }),
       deleteCacheByPattern: async key => trace.push({ invalidated: key }),

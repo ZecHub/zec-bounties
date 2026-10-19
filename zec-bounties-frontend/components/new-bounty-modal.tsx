@@ -116,9 +116,14 @@ export function NewBountyModal({
     }
 
     if (notEligible && eligibility) {
-      toast.error("Not eligible to post yet", {
-        description: `Complete ${eligibility.required} bounties first (${eligibility.completed}/${eligibility.required} done).`,
-      });
+      const desc =
+        eligibility.mode === "closed"
+          ? "Bounty suggestions are currently closed."
+          : `Complete ${eligibility.required} bounties first (${eligibility.completed}/${eligibility.required} done).`;
+      toast.error(
+        eligibility.mode === "closed" ? "Suggestions closed" : "Not eligible to post yet",
+        { description: desc },
+      );
       return false;
     }
 
@@ -274,7 +279,9 @@ export function NewBountyModal({
               >
                 <div className="flex items-center justify-between gap-2 font-medium">
                   <span>
-                    Complete {eligibility.required} bounties to post your own
+                    {eligibility.mode === "closed"
+                      ? "Bounty suggestions are closed"
+                      : `Complete ${eligibility.required} bounties to post your own`}
                   </span>
                   <span className="tabular-nums">
                     {eligibility.completed}/{eligibility.required}
@@ -286,7 +293,9 @@ export function NewBountyModal({
                     style={{
                       width: `${Math.min(
                         100,
-                        (eligibility.completed / eligibility.required) * 100,
+                        eligibility.required
+                          ? (eligibility.completed / eligibility.required) * 100
+                          : 0,
                       )}%`,
                     }}
                   />

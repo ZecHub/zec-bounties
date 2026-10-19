@@ -95,6 +95,7 @@ const STATUS_ORDER: BountyStatus[] = [
 
 function HomeContent() {
   const taskCreationBlocked = useTaskCreationBlocked();
+  const { bountyQuota } = useBounty();
   const {
     bounties,
     currentUser,
@@ -345,7 +346,11 @@ function HomeContent() {
             <Button
               title={
                 taskCreationBlocked
-                  ? "An admin has disabled task creation for your account"
+                  ? bountyQuota?.postEligibility?.mode === "closed"
+                    ? "Bounty suggestions are currently closed"
+                    : bountyQuota?.postEligibility?.allowed === false
+                      ? `Complete ${bountyQuota.postEligibility.required} bounties to post your own`
+                      : "An admin has disabled task creation for your account"
                   : undefined
               }
               className={`w-full sm:w-auto rounded-full shadow-lg shadow-primary/20 ${
