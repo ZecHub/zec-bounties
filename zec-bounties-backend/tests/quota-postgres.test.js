@@ -69,7 +69,10 @@ test("concurrent creation respects weekly quotas in PostgreSQL", {
         // Rejected/retried transactions must not broadcast or invalidate.
         assert.equal(routes.reduce((n, r) => n + r.effects.broadcasts.length, 0), expectedSuccesses);
         assert.equal(routes.reduce((n, r) => n + r.effects.invalidations, 0), expectedSuccesses);
-        assert.equal(routes.reduce((n, r) => n + r.effects.discord.length, 0), expectedSuccesses);
+        // Only the team route creates an approved bounty here, and an
+        // unapproved one is not announced.
+        const announced = responses.filter((r, i) => r.statusCode === 201 && endpoints[i] === "teams").length;
+        assert.equal(routes.reduce((n, r) => n + r.effects.discord.length, 0), announced);
       });
     }
     await t.test("failed nested writes roll back without consuming quota", async () => {
