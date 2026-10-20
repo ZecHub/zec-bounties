@@ -27,7 +27,7 @@ model User {
   z_address            String?
   UA_address           String?
   avatar               String?
-  githubId             String?
+  githubId             String?  @unique
 
   discordUserId        String?   @unique
   discordUsername      String?
@@ -415,6 +415,7 @@ enum TxStatus {
   FAILED     // wallet reported an error before sending — confirmed NOT sent
   UNKNOWN    // send attempted, outcome unclear (timeout) — needs a human
 }
+
 model PlatformSetting {
   key       String   @id
   value     String

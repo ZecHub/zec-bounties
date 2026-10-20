@@ -19,6 +19,7 @@
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.11.1",
     "cargo-cp-artifact": "^0.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
@@ -37,6 +38,7 @@
     "@types/node": "^25.0.9",
     "axios": "^1.19.0",
     "nodemon": "^3.1.10",
-    "prisma": "^6.16.0"
+    "prisma": "^6.16.0",
+    "supertest": "^7.3.1"
   }
 }

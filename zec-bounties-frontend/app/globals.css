@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -536,7 +535,53 @@
 }
 
 @keyframes nym-bar {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(250%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
 }
-.nym-bar { animation: nym-bar 1.4s ease-in-out infinite; }
+.nym-bar {
+  animation: nym-bar 1.4s ease-in-out infinite;
+}
+
+@theme {
+  --animate-filter-slide: filter-slide 180ms ease-out;
+
+  @keyframes filter-slide {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@theme {
+  --animate-filter-slide: filter-slide 180ms ease-out;
+  --animate-sheet-up: sheet-up 220ms ease-out;
+
+  @keyframes filter-slide {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+}

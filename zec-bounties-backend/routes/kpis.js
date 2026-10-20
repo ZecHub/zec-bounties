@@ -398,7 +398,6 @@ router.get("/zec-usd-monthly", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-
 // GET /api/kpis/average-earnings-over-time (aggregates only — any logged-in user)
 router.get(
   "/average-earnings-over-time",
