@@ -74,6 +74,7 @@ import { GlobalSettingsModal } from "@/components/settings/global-settings-modal
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { AuthorizePaymentPanel } from "@/components/payments/authorize-payment-panel";
+import { NymSendingBanner } from "@/components/nym-sending-indicator";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
 import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
@@ -1123,6 +1124,10 @@ export default function AdminDashboard() {
                 <p className="text-sm text-muted-foreground">
                   Platform-wide overview and management
                 </p>
+              </div>
+
+              <div className="flex-1 flex justify-center px-4">
+                <NymSendingBanner />
               </div>
 
               <div className="flex items-center gap-2">

@@ -45,6 +45,14 @@ function findTeamWallet(ownerId, accountName) {
  */
 router.post("/import-wallet", authenticate, async (req, res) => {
   try {
+    // Only ADMIN and TEAM roles are allowed.
+    if (!["ADMIN", "TEAM"].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: Only ADMIN and TEAM roles can import wallets.",
+      });
+    }
+
     const { accountName, seedPhrase, chain, serverUrl, birthdayHeight } =
       req.body;
     const userId = req.user.id;

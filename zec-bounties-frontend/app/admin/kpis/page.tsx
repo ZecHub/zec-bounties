@@ -316,6 +316,56 @@ export default function KpisDashboard() {
     }
   };
 
+const [useUsd, setUseUsd] = useState(false);
+const [zecPrices, setZecPrices] = useState<
+  { month: string; avgUsd: number; closeUsd: number; provisional: boolean }[]
+>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/kpis/zec-usd-monthly`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          },
+        });
+        if (res.ok) setZecPrices(await res.json());
+      } catch {
+        setZecPrices([]);
+      }
+    };
+    load();
+  }, []);
+
+  function normMonth(value: string) {
+    const [y, m] = String(value).split("-");
+    if (!y || !m) return String(value);
+    return `${y}-${String(parseInt(m, 10)).padStart(2, "0")}`;
+  }
+
+  const priceByMonth = useMemo(
+    () => new Map(zecPrices.map((row) => [row.month, row])),
+    [zecPrices],
+  );
+
+  const avgEarningsChartData = useMemo(
+    () =>
+      averageEarningsOverTime.map((row: any) => {
+        const key = normMonth(row.month);
+        const price = priceByMonth.get(key);
+        const rate = price?.avgUsd ?? null;
+        return {
+          ...row,
+          month: key,
+          averageUsd: rate != null ? row.average * rate : null,
+          medianUsd: rate != null ? row.median * rate : null,
+          usdRate: rate,
+          provisional: price?.provisional ?? false,
+        };
+      }),
+    [averageEarningsOverTime, priceByMonth],
+  );
+
   // Reset showAllUsers
   useEffect(() => {
     if (viewMode === "public" && showAllUsers) {
@@ -1132,6 +1182,17 @@ export default function KpisDashboard() {
               <CardHeader>
                 <div className="flex flex-col imd:flex-row imd:items-center justify-between gap-4">
                   <CardTitle>Analytics</CardTitle>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {selectedChart === "avgEarnings" && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={useUsd}
+                          onChange={(e) => setUseUsd(e.target.checked)}
+                        />
+                        Compute with USD
+                      </label>
+                    )}
                   <select
                     value={selectedChart}
                     onChange={(e) =>
@@ -1151,6 +1212,7 @@ export default function KpisDashboard() {
                     </option>
                     <option value="starBadges">Star Badges Over Time</option>
                   </select>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="h-[340px]">
@@ -1338,7 +1400,7 @@ export default function KpisDashboard() {
                 {/* NEW: Average + Median Earnings Over Time */}
                 {selectedChart === "avgEarnings" && (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={averageEarningsOverTime}>
+                    <LineChart data={avgEarningsChartData}>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         stroke="var(--border)"
@@ -1347,10 +1409,10 @@ export default function KpisDashboard() {
                         dataKey="month"
                         stroke="var(--muted-foreground)"
                         tickFormatter={(value) => {
-                          const [year, month] = value.split("-");
+                          const [year, month] = String(value).split("-");
                           const date = new Date(
-                            parseInt(year),
-                            parseInt(month) - 1,
+                            parseInt(year, 10),
+                            parseInt(month, 10) - 1,
                           );
                           return date.toLocaleString("default", {
                             month: "short",
@@ -1358,7 +1420,14 @@ export default function KpisDashboard() {
                           });
                         }}
                       />
-                      <YAxis stroke="var(--muted-foreground)" />
+                      <YAxis
+                        stroke="var(--muted-foreground)"
+                        tickFormatter={(v) =>
+                          useUsd
+                            ? `$${Number(v).toLocaleString()}`
+                            : String(v)
+                        }
+                      />
                       <Tooltip
                         cursor={{ fill: "var(--muted)", opacity: 0.4 }}
                         contentStyle={{
@@ -1367,23 +1436,36 @@ export default function KpisDashboard() {
                           borderRadius: "6px",
                           color: "var(--popover-foreground)",
                         }}
+                        formatter={(value: any, name: string) => {
+                          if (useUsd && value != null) {
+                            return [
+                              `$${Number(value).toLocaleString(undefined, {
+                                maximumFractionDigits: 2,
+                              })}`,
+                              name,
+                            ];
+                          }
+                          return [value, name];
+                        }}
                       />
                       <Legend />
                       <Line
                         type="monotone"
-                        dataKey="average"
-                        name="Average ZEC"
+                        dataKey={useUsd ? "averageUsd" : "average"}
+                        name={useUsd ? "Average USD" : "Average ZEC"}
                         stroke="var(--chart-5)"
                         strokeWidth={2.5}
                         dot={{ r: 3 }}
+                        connectNulls={false}
                       />
                       <Line
                         type="monotone"
-                        dataKey="median"
-                        name="Median ZEC"
+                        dataKey={useUsd ? "medianUsd" : "median"}
+                        name={useUsd ? "Median USD" : "Median ZEC"}
                         stroke="var(--chart-2)"
                         strokeWidth={2.5}
                         dot={{ r: 3 }}
+                        connectNulls={false}
                       />
                     </LineChart>
                   </ResponsiveContainer>

@@ -61,6 +61,12 @@ function loadSubmissionReviewRoute(prisma) {
     "../utils/bountyHelpers": helpers,
     "../utils/userIdentity": require("../../utils/userIdentity"),
     "../utils/bountySuggestionReview": require("../../utils/bountySuggestionReview"),
+    "../utils/suggestionSettings": {
+      getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      setSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      invalidateSuggestionSettingsCache: () => {},
+      VALID_MODES: new Set(["closed", "open", "threshold"]),
+    },
     "../utils/bountyActivity": { logActivity: noOp, publishActivity: noOp },
   });
   return {

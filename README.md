@@ -28,7 +28,7 @@ User docs live at https://bounties.zechub.wiki/docs, mirrored in this repo:
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start. In short: open one focused PR against `main`. To be paid, create a bounty on the platform (before you start for large work, or after the PR is up) and link the PR as the deliverable.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start. In short: open one focused PR against `main`. To be paid, the work needs an approved bounty. Hunters can suggest one on the platform if their account is allowed to (see [Bounty suggestions](docs/bounty-suggestions.md)); admins and team users can create bounties directly. Link the PR as the deliverable. If you cannot suggest yet, open the PR and note that you'd like it considered for a contributor reward, or apply to open bounties on the board.
 
 The backend's environment variables are listed by name in `zec-bounties-backend/.env.example` and summarised in [Environment Variables](#environment-variables) below. Never commit real values.
 

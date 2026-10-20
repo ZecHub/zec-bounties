@@ -70,6 +70,12 @@ function loadSubmissionRoute(prisma) {
     "../utils/constants": {},
     "../helpers/validateBounty": {},
     "../utils/bountySuggestionReview": require("../../utils/bountySuggestionReview"),
+    "../utils/suggestionSettings": {
+      getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      setSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+      invalidateSuggestionSettingsCache: () => {},
+      VALID_MODES: new Set(["closed", "open", "threshold"]),
+    },
     "../utils/userSelects": require("../../utils/userSelects"),
     "../utils/privacy": require("../../utils/privacy"),
     "../utils/bountyHelpers": helpers,

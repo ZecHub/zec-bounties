@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AlertTriangle, CheckCircle2, Coins, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { setNymSending } from "@/components/nym-sending-indicator";
 
 export function AuthorizePaymentPanel() {
   const {
@@ -118,6 +119,7 @@ export function AuthorizePaymentPanel() {
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
     setIsProcessing(true);
+    setNymSending(true);
     const ids = Array.from(selectedIds);
     try {
       const result = await authorizeDuePayment(ids, keyForSelection(ids));
@@ -142,6 +144,7 @@ export function AuthorizePaymentPanel() {
       toast.error(title || "Payment failed", { description, duration: 8000 });
     } finally {
       setIsProcessing(false);
+      setNymSending(false);
     }
   };
 
@@ -334,9 +337,10 @@ export function AuthorizePaymentPanel() {
         onClick={() => setShowConfirm(true)}
         disabled={selectedIds.size === 0 || isProcessing || !defaultWallet}
         className="w-full"
+        aria-busy={isProcessing}
       >
         {isProcessing
-          ? "Processing..."
+          ? "Sending…"
           : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
       </Button>
 

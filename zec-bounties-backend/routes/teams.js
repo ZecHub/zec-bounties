@@ -3389,7 +3389,6 @@ async function releaseTeamClaim(batchKey, bountyIds, errorDetail, raw) {
  * There is intentionally NO path construction based on teamId/accountName.
  */
 async function buildTeamParams(teamId, wallet) {
-  console.log(teamId, "lol", wallet);
   const params = await prisma.zcashParams.findFirst({
     where: {
       teamId,

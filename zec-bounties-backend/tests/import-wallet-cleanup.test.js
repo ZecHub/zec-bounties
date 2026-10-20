@@ -6,7 +6,7 @@ const vm = require("node:vm");
 
 // Loads the real routes/zcash.js with its dependencies stubbed. The wallet
 // table is an in-memory array; no CLI is spawned and no directory is touched.
-function createHarness({ seedError } = {}) {
+function createHarness({ seedError, role = "ADMIN" } = {}) {
   const rows = [];
   const effects = { seeds: [], removedDirs: [], invalidated: [] };
   let nextId = 1;
@@ -94,6 +94,7 @@ function createHarness({ seedError } = {}) {
     effects,
     routes,
     authenticate,
+    role,
     async importWallet(body) {
       const res = {
         statusCode: 200,
@@ -106,7 +107,10 @@ function createHarness({ seedError } = {}) {
           return this;
         },
       };
-      await routes["post /import-wallet"].at(-1)({ user: { id: "fixture-user" }, body }, res);
+      await routes["post /import-wallet"].at(-1)(
+        { user: { id: "fixture-user", role: this.role }, body },
+        res,
+      );
       return res;
     },
   };
@@ -114,48 +118,59 @@ function createHarness({ seedError } = {}) {
 
 const seedPhrase = Array.from({ length: 24 }, (_, i) => `word${i}`).join(" ");
 
-test("a failed seed restore removes the wallet row and directory", async () => {
-  const h = createHarness({ seedError: "Zingo CLI error: invalid seed" });
-  const res = await h.importWallet({ accountName: "Savings", seedPhrase });
-  assert.equal(res.statusCode, 500);
-  assert.equal(res.body.message, "Failed to restore wallet from seed phrase");
-  assert.deepEqual(h.rows, []);
-  assert.deepEqual(h.effects.removedDirs, ["wallets/wallet-1"]);
-  assert.deepEqual(
-    h.effects.invalidated.map(({ dataDir }) => dataDir),
-    ["wallets/wallet-1"],
-  );
-});
-
-test("the same account name can be imported again after a failed restore", async () => {
-  const h = createHarness({ seedError: "Zingo CLI error: invalid seed" });
-  await h.importWallet({ accountName: "Savings", seedPhrase });
-  const retry = await h.importWallet({ accountName: "Savings", seedPhrase });
-  assert.equal(retry.statusCode, 500);
-  assert.equal(h.effects.seeds.length, 2);
-  assert.deepEqual(h.rows, []);
-});
-
-test("a successful import keeps the wallet, makes it the default and stays behind authenticate", async () => {
-  const h = createHarness();
-  const res = await h.importWallet({ accountName: "Savings", seedPhrase });
-  assert.equal(res.statusCode, 201);
-  assert.equal(h.rows.length, 1);
-  assert.equal(h.rows[0].isDefault, true);
-  assert.deepEqual(h.effects.removedDirs, []);
-  assert.deepEqual(h.effects.invalidated, []);
-  assert.equal(h.routes["post /import-wallet"][0], h.authenticate);
-
-  const again = await h.importWallet({ accountName: "Savings", seedPhrase });
-  assert.equal(again.statusCode, 409);
-});
-
-test("a seed phrase that is not a string answers 400 and creates nothing", async () => {
-  for (const bad of [123456, ["a", "b"], { words: 24 }]) {
-    const h = createHarness();
-    const res = await h.importWallet({ accountName: "Savings", seedPhrase: bad });
-    assert.equal(res.statusCode, 400);
+for (const role of ["ADMIN", "TEAM"]) {
+  test(`a failed seed restore removes the wallet row and directory (${role})`, async () => {
+    const h = createHarness({ seedError: "Zingo CLI error: invalid seed", role });
+    const res = await h.importWallet({ accountName: "Savings", seedPhrase });
+    assert.equal(res.statusCode, 500);
+    assert.equal(res.body.message, "Failed to restore wallet from seed phrase");
     assert.deepEqual(h.rows, []);
-    assert.deepEqual(h.effects.seeds, []);
-  }
+    assert.deepEqual(h.effects.removedDirs, ["wallets/wallet-1"]);
+    assert.deepEqual(
+      h.effects.invalidated.map(({ dataDir }) => dataDir),
+      ["wallets/wallet-1"],
+    );
+  });
+
+  test(`the same account name can be imported again after a failed restore (${role})`, async () => {
+    const h = createHarness({ seedError: "Zingo CLI error: invalid seed", role });
+    await h.importWallet({ accountName: "Savings", seedPhrase });
+    const retry = await h.importWallet({ accountName: "Savings", seedPhrase });
+    assert.equal(retry.statusCode, 500);
+    assert.equal(h.effects.seeds.length, 2);
+    assert.deepEqual(h.rows, []);
+  });
+
+  test(`a successful import keeps the wallet, makes it the default and stays behind authenticate (${role})`, async () => {
+    const h = createHarness({ role });
+    const res = await h.importWallet({ accountName: "Savings", seedPhrase });
+    assert.equal(res.statusCode, 201);
+    assert.equal(h.rows.length, 1);
+    assert.equal(h.rows[0].isDefault, true);
+    assert.deepEqual(h.effects.removedDirs, []);
+    assert.deepEqual(h.effects.invalidated, []);
+    assert.equal(h.routes["post /import-wallet"][0], h.authenticate);
+
+    const again = await h.importWallet({ accountName: "Savings", seedPhrase });
+    assert.equal(again.statusCode, 409);
+  });
+
+  test(`a seed phrase that is not a string answers 400 and creates nothing (${role})`, async () => {
+    for (const bad of [123456, ["a", "b"], { words: 24 }]) {
+      const h = createHarness({ role });
+      const res = await h.importWallet({ accountName: "Savings", seedPhrase: bad });
+      assert.equal(res.statusCode, 400);
+      assert.deepEqual(h.rows, []);
+      assert.deepEqual(h.effects.seeds, []);
+    }
+  });
+}
+
+test("non-ADMIN/TEAM role is forbidden", async () => {
+  const h = createHarness({ role: "HUNTER" });
+  const res = await h.importWallet({ accountName: "Savings", seedPhrase });
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.message, "Forbidden: Only ADMIN and TEAM roles can import wallets.");
+  assert.deepEqual(h.rows, []);
+  assert.deepEqual(h.effects.seeds, []);
 });

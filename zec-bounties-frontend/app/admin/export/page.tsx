@@ -64,12 +64,14 @@ interface ExportRow {
   title: string;
   bountyAmount: number;
   paidAt: string;
+  chain: "MAIN" | "TEST";
   paymentTxId?: string | null;
   assigneeUser?: {
     id: string;
     name?: string;
     email?: string;
     z_address?: string;
+    UA_address?: string | null;
     ofacVerified: boolean;
   };
   assignees?: Array<{
@@ -78,15 +80,26 @@ interface ExportRow {
       name?: string;
       email?: string;
       z_address?: string;
+      UA_address?: string | null;
       ofacVerified: boolean;
     };
   }>;
+}
+
+// Match the board's network-specific profile fields; never substitute an
+// address from the other network when the requested one is missing.
+function getPayoutAddress(
+  chain: "MAIN" | "TEST",
+  recipient?: { UA_address?: string | null; z_address?: string | null } | null,
+) {
+  return chain === "MAIN" ? recipient?.UA_address : recipient?.z_address;
 }
 
 // ─── Bounty detail panel (shown inside the modal) ─────────────────────────────
 function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
   const primaryAssignee =
     bounty.assigneeUser ?? bounty.assignees?.[0]?.user ?? null;
+  const payoutAddress = getPayoutAddress(bounty.chain, primaryAssignee);
   const deadlineDate = bounty.timeToComplete
     ? new Date(bounty.timeToComplete)
     : null;
@@ -255,13 +268,13 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
                       })}
                     </p>
                   </div>
-                  {primaryAssignee?.z_address && (
+                  {payoutAddress && (
                     <div>
                       <p className="text-xs text-muted-foreground mb-0.5">
                         Shielded address
                       </p>
                       <p className="font-mono text-xs break-all">
-                        {primaryAssignee.z_address}
+                        {payoutAddress}
                       </p>
                     </div>
                   )}
@@ -428,7 +441,7 @@ export default function ExportPage() {
         row.title,
         `${baseUrl}/${row.id}`,
         row.bountyAmount.toString(),
-        recipient?.z_address ?? "",
+        getPayoutAddress(row.chain, recipient) ?? "",
         row.paymentTxId ?? "",
       ]
         .map(escapeCsv)
@@ -571,6 +584,7 @@ export default function ExportPage() {
                 )}
                 {rows.map((row) => {
                   const recipient = getPrimaryRecipient(row);
+                  const payoutAddress = getPayoutAddress(row.chain, recipient);
                   const isToggling = togglingId === recipient?.id;
                   return (
                     <TableRow key={row.id}>
@@ -613,8 +627,8 @@ export default function ExportPage() {
                         {row.bountyAmount} ZEC
                       </TableCell>
                       <TableCell className="text-sm font-mono text-muted-foreground">
-                        {recipient?.z_address
-                          ? `${recipient.z_address.slice(0, 14)}…`
+                        {payoutAddress
+                          ? `${payoutAddress.slice(0, 14)}…`
                           : "—"}
                       </TableCell>
                       <TableCell>

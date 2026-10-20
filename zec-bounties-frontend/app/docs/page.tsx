@@ -41,6 +41,11 @@ const LINKS = [
     desc: "Propose bounties, review work, pay out",
   },
   {
+    href: "/docs/bounty-suggestions",
+    title: "Bounty suggestions",
+    desc: "Who can suggest, and how teams review them",
+  },
+  {
     href: "/docs/bounty-amounts",
     title: "Bounty amounts",
     desc: "How to suggest a ZEC reward using implicit USD intervals",

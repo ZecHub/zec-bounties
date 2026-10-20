@@ -31,8 +31,16 @@ function bounty(index: number) {
   };
 }
 
-async function openBoard(page: Page, count: number) {
-  const rows = Array.from({ length: count }, (_, i) => bounty(i + 1));
+async function openBoard(
+  page: Page,
+  count: number,
+  options: {
+    rows?: ReturnType<typeof bounty>[];
+    teams?: Array<{ id: string; name: string }>;
+    path?: string;
+  } = {},
+) {
+  const rows = options.rows ?? Array.from({ length: count }, (_, i) => bounty(i + 1));
   const requestedPages: number[] = [];
   let socket: WebSocketRoute | undefined;
 
@@ -43,14 +51,13 @@ async function openBoard(page: Page, count: number) {
     localStorage.setItem("zecBountiesPushAttempted", String(Date.now()));
   }, user);
 
-  await page.routeWebSocket("ws://localhost:9000/**", (ws) => {
-    socket = ws;
-  });
+  await page.routeWebSocket("ws://localhost:9000/**", (ws) => { socket = ws; });
+  await page.routeWebSocket("ws://localhost:9001/**", (ws) => { socket = ws; });
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin === "http://127.0.0.1:3127") return route.continue();
-    // All backend traffic is local test data; never contact the live service.
-    if (url.origin !== "http://localhost:9000") return route.abort();
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204 });
+    if (!["http://localhost:9000", "http://localhost:9001"].includes(url.origin)) return route.abort();
     if (route.request().method() !== "GET") return route.abort();
 
     let json: unknown = [];
@@ -58,6 +65,25 @@ async function openBoard(page: Page, count: number) {
     if (url.pathname === "/auth/me") json = { user };
     if (url.pathname === "/api/bounties/categories") {
       json = [{ id: "Web Development", name: "Web Development" }];
+    }
+    if (url.pathname === "/api/teams/public") {
+      json = options.teams ?? [];
+    }
+    if (url.pathname === "/api/notifications") {
+      json = { notifications: [], unreadCount: 0 };
+    }
+    // Team filter switches the board to /api/teams/:id/bounties.
+    // Return the matching rows so client-side filters still have data.
+    const teamBountiesMatch = url.pathname.match(/^\/api\/teams\/([^/]+)\/bounties$/);
+    if (teamBountiesMatch) {
+      const teamId = teamBountiesMatch[1];
+      const teamRows = rows.filter((row) => row.teamId === teamId);
+      json = {
+        data: teamRows,
+        total: teamRows.length,
+        page: 1,
+        limit: 50,
+      };
     }
     if (url.pathname === "/api/bounties") {
       const pageNumber = Number(url.searchParams.get("page"));
@@ -73,7 +99,7 @@ async function openBoard(page: Page, count: number) {
     await route.fulfill({ json });
   });
 
-  await page.goto("/home");
+  await page.goto(options.path ?? "/home");
   await expect(page.getByRole("heading", { name: "All Bounties" })).toBeVisible();
   await expect.poll(() => Boolean(socket)).toBe(true);
 
@@ -100,38 +126,138 @@ async function scrollForMore(page: Page) {
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
 }
 
-for (const total of [20, 25]) {
-  test(`refresh after loading 20 still allows all ${total} bounties`, async ({ page }, testInfo) => {
-    const fixture = await openBoard(page, total);
-    await expect(cards(page)).toHaveCount(10);
-    await scrollForMore(page);
-    await expect(cards(page)).toHaveCount(20);
-    await page.evaluate(() => window.scrollTo(0, 0));
-
-    // Visibility changes still reset the authorized list. Assignment events
-    // now patch one bounty and intentionally preserve already loaded pages.
-    fixture.send("team_bounties_privacy_changed", { teamId: "fixture-team" });
-    await expect(cards(page)).toHaveCount(10);
-    await expect(loadMore(page)).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath("after-refresh.png") });
-
-    await scrollForMore(page);
-    await expect(cards(page)).toHaveCount(20);
-    if (total > 20) {
-      await scrollForMore(page);
-      await expect(cards(page)).toHaveCount(total);
-    }
-    await expect(loadMore(page)).toHaveCount(0);
-    expect(fixture.requestedPages).toEqual(
-      total === 20 ? [2, 1, 2] : [2, 1, 2, 3],
-    );
-    expect(new Set(await cards(page).allTextContents()).size).toBe(total);
-    await page.screenshot({
-      path: testInfo.outputPath("all-bounties.png"),
-      fullPage: true,
-    });
+test("combines shareable bounty filters and keeps them when reopened on mobile", async ({ page }) => {
+  const rows = Array.from({ length: 10 }, (_, index) => {
+    const row = bounty(index + 1);
+    return {
+      ...row,
+      title: `Pagination bounty ${String(index + 1).padStart(2, "0")}`,
+      bountyAmount: index === 0 ? 0.25 : index === 1 ? 4 : 0.25,
+      dateCreated: new Date(Date.UTC(2026, 8, index + 1, 12)).toISOString(),
+      timeToComplete: new Date(
+        Date.UTC(2026, 9, index === 0 ? 7 : 20),
+      ).toISOString(),
+      status:
+        index === 2
+          ? "IN_PROGRESS"
+          : index === 3
+            ? "IN_REVIEW"
+            : "TO_DO",
+      teamId: index === 4 ? "team-b" : "team-a",
+      team: {
+        id: index === 4 ? "team-b" : "team-a",
+        name: index === 4 ? "Beta Team" : "Alpha Team",
+      },
+      targetRepo: index === 0 || index === 9 ? "namada" : null,
+      description:
+        index === 0 || index === 9 ? "A shielded wallet task" : "Other work",
+    };
   });
-}
+  const fixture = await openBoard(page, rows.length, {
+    rows,
+    teams: [
+      { id: "team-a", name: "Alpha Team" },
+      { id: "team-b", name: "Beta Team" },
+    ],
+  });
+
+  const status = page.getByRole("combobox", { name: "Status" });
+  await status.selectOption("assigned");
+  await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByText("Pagination bounty 03", { exact: true })).toBeVisible();
+  await status.selectOption("in_review");
+  await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByText("Pagination bounty 04", { exact: true })).toBeVisible();
+  await status.selectOption("open");
+
+  await page.getByRole("combobox", { name: "Team" }).selectOption("team-a");
+  await page.getByRole("button", { name: /^Web Development/ }).click();
+  await page.getByRole("spinbutton", { name: "Minimum reward" }).fill("0.2");
+  await page.getByRole("spinbutton", { name: "Maximum reward" }).fill("0.5");
+  await page.getByLabel("Deadline on or before").fill("2026-10-07");
+  await page.getByRole("combobox", { name: "Status" }).selectOption("open");
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.getByPlaceholder("Search bounties...").last().fill("wallet alpha");
+  await page.getByRole("tab", { name: /Namada/ }).click();
+
+  await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByText("Pagination bounty 01", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/team=team-a/);
+  await expect(page).toHaveURL(/min=0.2/);
+  await expect(page).toHaveURL(/max=0.5/);
+  await expect(page).toHaveURL(/due=2026-10-07/);
+  await expect(page).toHaveURL(/status=open/);
+  await expect(page).toHaveURL(/q=wallet\+alpha/);
+  await expect(page).toHaveURL(/repo=namada/);
+  await expect(page).toHaveURL(/category=Web\+Development/);
+  expect(fixture.requestedPages).toEqual([]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("combobox", { name: "Sort bounties" })).toBeVisible();
+  const sharedUrl = page.url();
+  await page.goto(sharedUrl);
+  await expect(cards(page)).toHaveCount(1);
+  await expect(page.getByRole("combobox", { name: "Team" })).toHaveValue("team-a");
+  await expect(page.getByRole("combobox", { name: "Status" })).toHaveValue("open");
+  await expect(page.getByRole("spinbutton", { name: "Minimum reward" })).toHaveValue("0.2");
+
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(cards(page)).toHaveCount(10);
+  await expect(page).toHaveURL("http://127.0.0.1:3127/home");
+});
+
+test("sorts the full bounty set by reward and deadline", async ({ page }) => {
+  const rows = Array.from({ length: 12 }, (_, index) => ({
+    ...bounty(index + 1),
+    title: `Pagination bounty ${String(index + 1).padStart(2, "0")}`,
+    bountyAmount: 12 - index,
+    dateCreated: new Date(Date.UTC(2026, 8, index + 1, 12)).toISOString(),
+    timeToComplete: new Date(Date.UTC(2026, 9, 20 - index)).toISOString(),
+  }));
+  await openBoard(page, rows.length, { rows });
+
+  await page.getByRole("combobox", { name: "Sort bounties" }).selectOption("highest_reward");
+  await expect(cards(page).first()).toHaveText("Pagination bounty 01");
+  await expect(page).toHaveURL(/sort=highest_reward/);
+
+  await page.getByRole("combobox", { name: "Sort bounties" }).selectOption("soonest_deadline");
+  await expect(cards(page).first()).toHaveText("Pagination bounty 12");
+  await expect(page).toHaveURL(/sort=soonest_deadline/);
+});
+
+test("loads more results, then all results, after a list refresh", async ({ page }, testInfo) => {
+  const total = 25;
+  const fixture = await openBoard(page, total);
+  await expect(cards(page)).toHaveCount(10);
+  await expect(loadMore(page)).toBeVisible();
+
+  await scrollForMore(page);
+  await expect(cards(page)).toHaveCount(20);
+  await page.evaluate(() => window.scrollTo(0, 0));
+
+  // Visibility changes still reset the authorized list. Assignment events
+  // now patch one bounty and intentionally preserve already loaded pages.
+  fixture.send("team_bounties_privacy_changed", { teamId: "fixture-team" });
+  await expect(cards(page)).toHaveCount(10);
+  await expect(loadMore(page)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("after-refresh.png") });
+
+  await scrollForMore(page);
+  await expect(cards(page)).toHaveCount(20);
+  if (total > 20) {
+    await scrollForMore(page);
+    await expect(cards(page)).toHaveCount(total);
+  }
+  await expect(loadMore(page)).toHaveCount(0);
+  expect(fixture.requestedPages).toEqual(
+    total === 20 ? [2, 1, 2] : [2, 1, 2, 3],
+  );
+  expect(new Set(await cards(page).allTextContents()).size).toBe(total);
+  await page.screenshot({
+    path: testInfo.outputPath("all-bounties.png"),
+    fullPage: true,
+  });
+});
 
 for (const total of [0, 5, 10]) {
   test(`${total} results stop without requesting another page`, async ({ page }) => {

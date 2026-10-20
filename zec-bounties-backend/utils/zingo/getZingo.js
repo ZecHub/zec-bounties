@@ -13,6 +13,25 @@ function zingoKey({ chain, serverUrl, dataDir }) {
  */
 const pool = new Map();
 
+// Per-key lock so only one forSend can be active for a given wallet.
+// A second payout waits for the first to finish instead of destroying
+// the process the first is still using.
+const sendLocks = new Map();
+
+function withSendLock(key, fn) {
+  const prev = sendLocks.get(key) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  // Keep the chain alive even if fn rejects, so later callers are not stuck.
+  sendLocks.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return run;
+}
+
 // `forSend`: a send needs an output window nobody else can write into.
 // Always hand it a fresh process. A prior read may have timed out and
 // left output pending (ZingoProcess#tainted), or may still be printing;
@@ -65,4 +84,6 @@ function invalidateZingo(params) {
 module.exports = {
   getZingo,
   invalidateZingo,
+  withSendLock,
+  zingoKey,
 };

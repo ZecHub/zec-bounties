@@ -351,7 +351,9 @@ router.get(
           monthlyData.set(monthKey, new Set());
         }
 
-        monthlyData.get(monthKey).add(bounty.assignee);
+        if (bounty.assignee != null) {
+          monthlyData.get(monthKey).add(bounty.assignee);
+        }
       });
 
       const result = [];
@@ -377,6 +379,25 @@ router.get(
     }
   },
 );
+
+router.get("/zec-usd-monthly", authenticate, isAdmin, async (req, res) => {
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT
+        to_char(month, 'YYYY-MM') AS month,
+        avg_usd::float8           AS "avgUsd",
+        close_usd::float8         AS "closeUsd",
+        provisional
+      FROM zec_usd_monthly
+      ORDER BY month
+    `;
+    res.json(rows);
+  } catch (error) {
+    console.error("Failed to load zec_usd_monthly:", error);
+    res.status(500).json({ error: "Failed to load USD prices" });
+  }
+});
+
 
 // GET /api/kpis/average-earnings-over-time (aggregates only — any logged-in user)
 router.get(

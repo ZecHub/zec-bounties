@@ -139,7 +139,8 @@ interface BountyContextType {
     postEligibility?: {
       allowed: boolean;
       completed: number;
-      required: number;
+      required: number | null;
+      mode?: "closed" | "open" | "threshold";
     } | null;
   } | null;
   fetchBountyQuota: () => Promise<void>;
@@ -186,7 +187,7 @@ interface BountyContextType {
     opts?: { chain?: "MAIN" | "TEST" | "ALL"; teamId?: string; user?: string },
   ) => Promise<void>;
   loadMoreBounties: () => Promise<void>;
-  loadAllBounties: () => Promise<void>;
+  loadAllBounties: () => Promise<boolean>;
   hasMoreBounties: boolean;
   bountiesPage: number;
   myBounties: Bounty[];
@@ -3005,7 +3006,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   /** Fetches every page (limit 50, backend cap) and replaces the list. */
   const loadAllBounties = async () => {
-    if (bountiesLoading) return;
+    if (bountiesLoading) return false;
     const requestId = ++fetchBountiesReqId.current;
     const updatesAtStart = new Map(bountyUpdates.current);
     setBountiesLoading(true);
@@ -3013,6 +3014,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const resolvedChain = currentUser?.role === "ADMIN" ? "ALL" : "MAIN";
       const limit = 50;
       const collected: Bounty[] = [];
+      const seen = new Set<string>();
       let page = 1;
 
       while (true) {
@@ -3028,13 +3030,16 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) throw new Error("Failed to fetch bounties");
 
         const data = await res.json();
-        if (requestId !== fetchBountiesReqId.current) return;
+        if (requestId !== fetchBountiesReqId.current) return false;
         const incoming: Bounty[] = Array.isArray(data)
           ? data
           : (data.data ?? []);
         const total: number = data.total ?? incoming.length;
-        const seen = new Set(collected.map((b) => b.id));
-        collected.push(...incoming.filter((b) => !seen.has(b.id)));
+        for (const bounty of incoming) {
+          if (seen.has(bounty.id)) continue;
+          seen.add(bounty.id);
+          collected.push(bounty);
+        }
 
         if (
           incoming.length === 0 ||
@@ -3049,8 +3054,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setBounties(reconcileFetchedBounties(collected, updatesAtStart));
       setBountiesPage(page + 1);
       setHasMoreBounties(false);
+      return true;
     } catch (error) {
       console.error("Failed to fetch all bounties:", error);
+      return false;
     } finally {
       if (requestId === fetchBountiesReqId.current) setBountiesLoading(false);
     }

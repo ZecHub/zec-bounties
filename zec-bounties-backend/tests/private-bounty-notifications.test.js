@@ -49,6 +49,7 @@ function loadRoutes(team) {
     "../middleware/websocket": withDefaults({
       sendRealtimeUpdate: (...args) => effects.realtime.push(args),
     }),
+    "../utils/suggestionSettings": { getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }) },
     "../utils/cache": withDefaults({
       getCache: async () => [
         { id: "creator", email: "creator@example.com", emailNotifications: true, pushNotifications: true },

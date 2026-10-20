@@ -93,6 +93,7 @@ function loadRoutes(prisma) {
     "../helpers/email": {}, "../middleware/auth": { authenticate: noOp, isAdmin: noOp, optionalAuthenticate: noOp, signSessionToken: noOp },
     "../middleware/websocket": { sendRealtimeUpdate: (...args) => broadcasts.push(json(args)) },
     "../utils/cache": cache, "../utils/sendMail": noOp, "../utils/notifyUser": noOp,
+    "../utils/suggestionSettings": { getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }) },
     "../utils/discord/discordNotify": { notifyNewBounty: noOp },
     "../utils/discord/discordAssignWebhook": { notifyAssignment: noOp },
     "../utils/constants": {}, "../helpers/validateBounty": {},
