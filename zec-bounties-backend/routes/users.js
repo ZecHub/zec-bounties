@@ -3,6 +3,7 @@ const prisma = require("../prisma/client");
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { delCache, bumpVersion } = require("../utils/cache");
 const { userIdentityWhere } = require("../utils/userIdentity");
+const { rawAddressFields } = require("../helpers/publicProfileAddress");
 const {
   assignedDoneWhere,
   recentCompletedWhere,
@@ -475,12 +476,11 @@ router.get("/:idOrNickname/public", async (req, res) => {
       profile.hasUnifiedAddress = hasUA(user.UA_address);
       profile.hasShieldedAddress = !!user.z_address;
 
-      // Only for client-side icon decode — never render this string in the UI
-      if (user.UA_address) {
-        profile.UA_address = user.UA_address;
-      } else if (user.z_address) {
-        profile.z_address = user.z_address;
-      }
+      // The raw address string links a pseudonymous profile to an on-chain ZEC
+      // receiver, so only the owner or an admin gets it. Everyone else keeps the
+      // coarse addressType / hasUnifiedAddress / hasShieldedAddress flags above;
+      // showAddressType advertises the KIND of address, not the address itself.
+      Object.assign(profile, rawAddressFields(user, { isOwner, isAdmin }));
 
       // Start empty; frontend fills from WASM (or falls back below)
       profile.receivers = {

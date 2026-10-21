@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { createPortal } from "react-dom";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/navbar";
 import { BountyCard } from "@/components/bounty-card";
@@ -31,6 +30,13 @@ import { Input } from "@/components/ui/input";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { RepoFilter } from "@/components/repo-filter";
+import {
+  FilterPanel,
+  FilterSection,
+  FilterChip,
+  FilterSelect,
+  filterFieldClass,
+} from "@/components/filter-panel";
 import { bountyRepo } from "@/lib/repos";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
@@ -128,163 +134,6 @@ const DEADLINE_PRESETS = [
   { label: "This month", days: 30 },
 ];
 
-// Custom select. The option list floats over the page (rendered in a portal
-// with fixed positioning), so it never pushes content or gets clipped by the
-// scrollable filter panel. It flips upward when there's no room below.
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  options: FilterOption[];
-  onChange: (value: string) => void;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{
-    left: number;
-    width: number;
-    top?: number;
-    bottom?: number;
-    maxHeight: number;
-  } | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const listRef = useRef<HTMLUListElement | null>(null);
-  const selected = options.find((o) => o.value === value) ?? options[0];
-
-  const updatePos = useCallback(() => {
-    const el = triggerRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const gap = 6;
-    const below = window.innerHeight - r.bottom - gap - 8;
-    const above = r.top - gap - 8;
-    const openUp = below < 160 && above > below;
-    setPos({
-      left: r.left,
-      width: r.width,
-      maxHeight: Math.min(240, Math.max(120, openUp ? above : below)),
-      ...(openUp
-        ? { bottom: window.innerHeight - r.top + gap }
-        : { top: r.bottom + gap }),
-    });
-  }, []);
-
-  // Position the list, and keep it attached on scroll/resize
-  useEffect(() => {
-    if (!open) {
-      setPos(null);
-      return;
-    }
-    updatePos();
-    window.addEventListener("resize", updatePos);
-    window.addEventListener("scroll", updatePos, true);
-    return () => {
-      window.removeEventListener("resize", updatePos);
-      window.removeEventListener("scroll", updatePos, true);
-    };
-  }, [open, updatePos]);
-
-  // Close when clicking/tapping anywhere outside the trigger and the list
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      const t = e.target as Node;
-      if (triggerRef.current?.contains(t) || listRef.current?.contains(t))
-        return;
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("touchstart", onDown);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("touchstart", onDown);
-    };
-  }, [open]);
-
-  return (
-    <div
-      className={`flex min-w-0 flex-col gap-1.5 ${className}`}
-      onKeyDown={(e) => {
-        // Escape closes this list first, not the whole filter panel
-        if (e.key === "Escape" && open) {
-          e.stopPropagation();
-          setOpen(false);
-          triggerRef.current?.focus();
-        }
-      }}
-    >
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={label}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`${fieldClass} flex items-center justify-between gap-2 text-left transition ${
-          open ? "border-primary ring-2 ring-primary/20" : ""
-        }`}
-      >
-        <span className="truncate">{selected?.label}</span>
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-            open ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-      {open &&
-        pos &&
-        createPortal(
-          <ul
-            ref={listRef}
-            role="listbox"
-            aria-label={label}
-            data-filter-portal
-            style={{
-              left: pos.left,
-              width: pos.width,
-              top: pos.top,
-              bottom: pos.bottom,
-              maxHeight: pos.maxHeight,
-            }}
-            className="fixed z-[60] space-y-0.5 overflow-y-auto overscroll-contain rounded-md border bg-background p-1 shadow-lg"
-          >
-            {options.map((o) => {
-              const isSelected = o.value === value;
-              return (
-                <li key={o.value || "__all"} role="presentation">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    onClick={() => {
-                      onChange(o.value);
-                      setOpen(false);
-                    }}
-                    className={`flex w-full items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-sm transition ${
-                      isSelected
-                        ? "bg-primary/10 font-medium text-primary"
-                        : "text-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <span className="truncate">{o.label}</span>
-                    {isSelected && <Check className="h-4 w-4 shrink-0" />}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
 function HomeContent() {
   const taskCreationBlocked = useTaskCreationBlocked();
   const { bountyQuota } = useBounty();
@@ -331,8 +180,6 @@ function HomeContent() {
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const filterRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   // 300ms Debounce for Search input
@@ -646,37 +493,6 @@ function HomeContent() {
       `${pathname}${query ? `?${query}` : ""}`,
     );
   };
-
-  // Close on Escape or when clicking/tapping outside the button + dropdown
-  useEffect(() => {
-    if (!isFilterOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsFilterOpen(false);
-    };
-    const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as Element;
-      if (
-        !filterRef.current?.contains(target) &&
-        !target.closest?.("[data-filter-portal]")
-      ) {
-        setIsFilterOpen(false);
-      }
-    };
-    // Below imd the filters are a bottom sheet, so lock background scroll
-    const isMobile = !window.matchMedia("(min-width: 725px)").matches;
-    const prevOverflow = document.body.style.overflow;
-    if (isMobile) document.body.style.overflow = "hidden";
-
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("touchstart", onPointerDown);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [isFilterOpen]);
 
   useEffect(() => {
     if (activeTeamId) return;
@@ -1131,10 +947,7 @@ function HomeContent() {
                   </span>
                 </div>
             <div className="space-y-6 min-w-0 flex-1">
-              <div
-                ref={filterRef}
-                className="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b"
-              >
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3 sm:pb-4 border-b">
                 <h2 className="truncate text-base sm:text-xl font-bold">
                   {activeTeamId
                     ? `${communities.find((c) => c.id === activeTeamId)?.name ?? "Team"} Bounties`
@@ -1144,26 +957,191 @@ function HomeContent() {
                 </h2>
 
                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                  <Button
-                    variant={
-                      activeFilterCount > 0 || isFilterOpen
-                        ? "secondary"
-                        : "outline"
+                  <FilterPanel
+                    activeCount={activeFilterCount}
+                    onClear={clearFilters}
+                    applyLabel={`Show ${filteredBounties.length} bounties`}
+                    loading={
+                      bountiesLoading &&
+                      hasMoreBounties &&
+                      requiresCompleteResults
                     }
-                    size="sm"
-                    className="h-8 gap-1.5 rounded-full px-3"
-                    onClick={() => setIsFilterOpen((o) => !o)}
-                    aria-haspopup="dialog"
-                    aria-expanded={isFilterOpen}
                   >
-                    <SlidersHorizontal className="h-4 w-4" />
-                    <span className="hidden sam:inline">Filters</span>
-                    {activeFilterCount > 0 && (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-                        {activeFilterCount}
-                      </span>
-                    )}
-                  </Button>
+                    <FilterSection label="Category">
+                      <div className="flex flex-wrap gap-2">
+                        {displayCategories.map((cat) => (
+                          <FilterChip
+                            key={cat}
+                            active={activeCategory === cat}
+                            onClick={() => updateFilter("category", cat)}
+                            count={getCategoryCount(cat)}
+                          >
+                            {cat}
+                          </FilterChip>
+                        ))}
+                      </div>
+                    </FilterSection>
+
+                    <FilterSection label="Repository">
+                      <RepoFilter
+                        value={activeRepo}
+                        onChange={(repo) => updateFilter("repo", repo)}
+                        counts={repoCounts}
+                      />
+                    </FilterSection>
+
+                    <div className="grid grid-cols-1 gap-3 sam:grid-cols-2">
+                      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                        Min reward
+                        <div className="relative">
+                          <input
+                            aria-label="Minimum reward"
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="any"
+                            placeholder="0"
+                            value={filters.minReward ?? ""}
+                            onChange={(e) =>
+                              updateFilter(
+                                "minReward",
+                                e.target.value === ""
+                                  ? null
+                                  : Number(e.target.value),
+                              )
+                            }
+                            className={`${filterFieldClass} pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                          />
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                            ZEC
+                          </span>
+                        </div>
+                      </label>
+                      <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                        Max reward
+                        <div className="relative">
+                          <input
+                            aria-label="Maximum reward"
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="any"
+                            placeholder="Any"
+                            value={filters.maxReward ?? ""}
+                            onChange={(e) =>
+                              updateFilter(
+                                "maxReward",
+                                e.target.value === ""
+                                  ? null
+                                  : Number(e.target.value),
+                              )
+                            }
+                            className={`${filterFieldClass} pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                          />
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                            ZEC
+                          </span>
+                        </div>
+                      </label>
+
+                      <div className="flex min-w-0 flex-col gap-1.5 sam:col-span-2">
+                        <label
+                          htmlFor="filter-deadline"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
+                          Deadline (on or before)
+                        </label>
+                        <input
+                          id="filter-deadline"
+                          type="date"
+                          value={filters.deadline}
+                          onChange={(e) =>
+                            updateFilter("deadline", e.target.value)
+                          }
+                          className={`${filterFieldClass} dark:[color-scheme:dark]`}
+                        />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {DEADLINE_PRESETS.map((preset) => {
+                            const presetValue = dateInDays(preset.days);
+                            const active = filters.deadline === presetValue;
+                            return (
+                              <button
+                                key={preset.label}
+                                type="button"
+                                onClick={() =>
+                                  updateFilter(
+                                    "deadline",
+                                    active ? "" : presetValue,
+                                  )
+                                }
+                                className={`h-7 rounded-full border px-3 text-xs transition ${
+                                  active
+                                    ? "border-primary bg-primary/10 font-semibold text-primary"
+                                    : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            );
+                          })}
+                          {filters.deadline !== "" && (
+                            <button
+                              type="button"
+                              onClick={() => updateFilter("deadline", "")}
+                              className="h-7 rounded-full px-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                            >
+                              Clear date
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <FilterSelect
+                        label="Status"
+                        value={filters.status}
+                        options={[
+                          { value: "", label: "All statuses" },
+                          { value: "open", label: "Open" },
+                          { value: "assigned", label: "Assigned" },
+                          { value: "in_review", label: "In review" },
+                        ]}
+                        onChange={(v) =>
+                          updateFilter(
+                            "status",
+                            v as BountyBoardFilters["status"],
+                          )
+                        }
+                      />
+                      <FilterSelect
+                        label="Sort by"
+                        value={filters.sort}
+                        options={[
+                          { value: "newest", label: "Newest" },
+                          { value: "highest_reward", label: "Highest reward" },
+                          {
+                            value: "soonest_deadline",
+                            label: "Soonest deadline",
+                          },
+                        ]}
+                        onChange={(v) =>
+                          updateFilter("sort", v as BountyBoardFilters["sort"])
+                        }
+                      />
+                      <FilterSelect
+                        className="sam:col-span-2"
+                        label="Team"
+                        value={filters.teamId}
+                        options={[
+                          { value: "", label: "All teams" },
+                          ...filterTeams.map((team) => ({
+                            value: team.id,
+                            label: team.name,
+                          })),
+                        ]}
+                        onChange={(v) => updateFilter("teamId", v)}
+                      />
+                    </div>
+                  </FilterPanel>
                   <div className="mx-1 hidden h-5 w-px bg-border sam:block" />
                   <Button
                     variant={viewMode === "grid" ? "secondary" : "ghost"}
@@ -1213,277 +1191,6 @@ function HomeContent() {
                     </div>
                   )}
                 </div>
-
-                {isFilterOpen && (
-                  <>
-                    {/* Mobile-only backdrop */}
-                    <button
-                      type="button"
-                      aria-label="Close filters"
-                      tabIndex={-1}
-                      className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm imd:hidden"
-                      onClick={() => setIsFilterOpen(false)}
-                    />
-                    <div
-                      role="dialog"
-                      aria-label="Filter bounties"
-                      className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] animate-sheet-up flex-col rounded-t-2xl border-t bg-background shadow-2xl motion-reduce:animate-none imd:absolute imd:inset-x-auto imd:bottom-auto imd:right-0 imd:top-full imd:z-40 imd:mt-2 imd:max-h-[70dvh] imd:w-[28rem] imd:origin-top imd:animate-filter-slide imd:rounded-xl imd:border imd:shadow-xl"
-                    >
-                      {/* Header */}
-                      <div className="flex items-center justify-between gap-2 border-b px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-sm font-semibold">Filters</h2>
-                          {activeFilterCount > 0 && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              {activeFilterCount} active
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 rounded-full px-3 text-xs"
-                            onClick={clearFilters}
-                            disabled={activeFilterCount === 0 && !searchQuery}
-                          >
-                            Clear all
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => setIsFilterOpen(false)}
-                            aria-label="Close filters"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Body */}
-                      <div className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-3">
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Category
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {displayCategories.map((cat) => (
-                              <button
-                                key={cat}
-                                type="button"
-                                onClick={() => updateFilter("category", cat)}
-                                className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 h-8 text-sm transition ${
-                                  activeCategory === cat
-                                    ? "border-primary bg-primary/10 font-semibold text-primary"
-                                    : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
-                                }`}
-                              >
-                                {cat}
-                                <Badge
-                                  variant="secondary"
-                                  className="text-[10px] h-4 px-1.5 leading-none"
-                                >
-                                  {getCategoryCount(cat)}
-                                </Badge>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            Repository
-                          </p>
-                          <RepoFilter
-                            value={activeRepo}
-                            onChange={(repo) => updateFilter("repo", repo)}
-                            counts={repoCounts}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-3 sam:grid-cols-2">
-                          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                            Min reward
-                            <div className="relative">
-                              <input
-                                aria-label="Minimum reward"
-                                type="number"
-                                inputMode="decimal"
-                                min="0"
-                                step="any"
-                                placeholder="0"
-                                value={filters.minReward ?? ""}
-                                onChange={(e) =>
-                                  updateFilter(
-                                    "minReward",
-                                    e.target.value === ""
-                                      ? null
-                                      : Number(e.target.value),
-                                  )
-                                }
-                                className={`${fieldClass} pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                              />
-                              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-                                ZEC
-                              </span>
-                            </div>
-                          </label>
-                          <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-                            Max reward
-                            <div className="relative">
-                              <input
-                                aria-label="Maximum reward"
-                                type="number"
-                                inputMode="decimal"
-                                min="0"
-                                step="any"
-                                placeholder="Any"
-                                value={filters.maxReward ?? ""}
-                                onChange={(e) =>
-                                  updateFilter(
-                                    "maxReward",
-                                    e.target.value === ""
-                                      ? null
-                                      : Number(e.target.value),
-                                  )
-                                }
-                                className={`${fieldClass} pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                              />
-                              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-                                ZEC
-                              </span>
-                            </div>
-                          </label>
-
-                          <div className="flex min-w-0 flex-col gap-1.5 sam:col-span-2">
-                            <label
-                              htmlFor="filter-deadline"
-                              className="text-xs font-medium text-muted-foreground"
-                            >
-                              Deadline (on or before)
-                            </label>
-                            <input
-                              id="filter-deadline"
-                              type="date"
-                              value={filters.deadline}
-                              onChange={(e) =>
-                                updateFilter("deadline", e.target.value)
-                              }
-                              className={`${fieldClass} dark:[color-scheme:dark]`}
-                            />
-                            <div className="flex flex-wrap gap-1.5">
-                              {DEADLINE_PRESETS.map((preset) => {
-                                const presetValue = dateInDays(preset.days);
-                                const active = filters.deadline === presetValue;
-                                return (
-                                  <button
-                                    key={preset.label}
-                                    type="button"
-                                    onClick={() =>
-                                      updateFilter(
-                                        "deadline",
-                                        active ? "" : presetValue,
-                                      )
-                                    }
-                                    className={`h-7 rounded-full border px-3 text-xs transition ${
-                                      active
-                                        ? "border-primary bg-primary/10 font-semibold text-primary"
-                                        : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
-                                    }`}
-                                  >
-                                    {preset.label}
-                                  </button>
-                                );
-                              })}
-                              {filters.deadline !== "" && (
-                                <button
-                                  type="button"
-                                  onClick={() => updateFilter("deadline", "")}
-                                  className="h-7 rounded-full px-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                                >
-                                  Clear date
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          <FilterSelect
-                            label="Status"
-                            value={filters.status}
-                            options={[
-                              { value: "", label: "All statuses" },
-                              { value: "open", label: "Open" },
-                              { value: "assigned", label: "Assigned" },
-                              { value: "in_review", label: "In review" },
-                            ]}
-                            onChange={(v) =>
-                              updateFilter(
-                                "status",
-                                v as BountyBoardFilters["status"],
-                              )
-                            }
-                          />
-                          <FilterSelect
-                            label="Sort by"
-                            value={filters.sort}
-                            options={[
-                              { value: "newest", label: "Newest" },
-                              {
-                                value: "highest_reward",
-                                label: "Highest reward",
-                              },
-                              {
-                                value: "soonest_deadline",
-                                label: "Soonest deadline",
-                              },
-                            ]}
-                            onChange={(v) =>
-                              updateFilter(
-                                "sort",
-                                v as BountyBoardFilters["sort"],
-                              )
-                            }
-                          />
-                          <FilterSelect
-                            className="sam:col-span-2"
-                            label="Team"
-                            value={filters.teamId}
-                            options={[
-                              { value: "", label: "All teams" },
-                              ...filterTeams.map((team) => ({
-                                value: team.id,
-                                label: team.name,
-                              })),
-                            ]}
-                            onChange={(v) => updateFilter("teamId", v)}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Mobile-only footer */}
-                      <div className="border-t px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] imd:hidden">
-                        <Button
-                          type="button"
-                          className="w-full rounded-full"
-                          onClick={() => setIsFilterOpen(false)}
-                        >
-                          {bountiesLoading &&
-                          hasMoreBounties &&
-                          requiresCompleteResults ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
-                              Loading…
-                            </>
-                          ) : (
-                            `Show ${filteredBounties.length} bounties`
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
 
               {requiresCompleteResults && (

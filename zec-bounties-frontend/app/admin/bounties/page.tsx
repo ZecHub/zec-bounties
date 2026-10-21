@@ -41,6 +41,11 @@ import { WalletGuard } from "@/components/settings/wallet-guard";
 import { backendUrl } from "@/lib/configENV";
 import { profileHref } from "@/lib/profileHref";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  FilterPanel,
+  FilterSection,
+  FilterChip,
+} from "@/components/filter-panel";
 
 const STATUS_DOT: Record<BountyStatus, string> = {
   TO_DO: "bg-slate-400",
@@ -106,7 +111,9 @@ export default function MarketplacePage() {
   const searchParams = useSearchParams();
 
   const [activeCategory, setActiveCategory] = useState("All");
-  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">("all");
+  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">(
+    "all",
+  );
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const serverUser = parseUserSearchQuery(searchQuery).user;
@@ -202,7 +209,8 @@ export default function MarketplacePage() {
       defragLoadStarted.current = false;
       return;
     }
-    if (!hasMoreBounties || bountiesLoading || defragLoadStarted.current) return;
+    if (!hasMoreBounties || bountiesLoading || defragLoadStarted.current)
+      return;
     defragLoadStarted.current = true;
     loadAllBounties();
   }, [viewMode, hasMoreBounties, bountiesLoading, loadAllBounties]);
@@ -286,6 +294,14 @@ export default function MarketplacePage() {
       ? categorySearchFilteredBounties.length
       : categorySearchFilteredBounties.filter((b) => b.status === status)
           .length;
+
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) + (activeRepo !== "all" ? 1 : 0);
+
+  const resetFilters = () => {
+    setStatusFilter("all");
+    setActiveRepo("all");
+  };
 
   const filteredBounties = useMemo(() => {
     let filtered = bounties;
@@ -477,7 +493,6 @@ export default function MarketplacePage() {
           </aside>
 
           <div className="lg:col-span-3 space-y-6">
-            <RepoFilter value={activeRepo} onChange={setActiveRepo} counts={repoCounts} />
             <div className="flex items-center justify-between pb-4 border-b">
               <h2 className="text-xl font-bold">
                 {activeCategory === "All"
@@ -485,6 +500,41 @@ export default function MarketplacePage() {
                   : `${activeCategory} Bounties`}
               </h2>
               <div className="flex items-center gap-2">
+                <FilterPanel
+                  activeCount={activeFilterCount}
+                  onClear={resetFilters}
+                  applyLabel={`Show ${filteredBounties.length} bounties`}
+                  loading={bountiesLoading}
+                >
+                  <FilterSection label="Status">
+                    <div className="flex flex-wrap gap-2">
+                      {MARKETPLACE_STATUS_FILTERS.map((f) => (
+                        <FilterChip
+                          key={f.status}
+                          active={statusFilter === f.status}
+                          onClick={() => setStatusFilter(f.status)}
+                          dotClassName={
+                            f.status !== "all"
+                              ? STATUS_DOT[f.status]
+                              : undefined
+                          }
+                          count={statusCountFor(f.status)}
+                        >
+                          {f.label}
+                        </FilterChip>
+                      ))}
+                    </div>
+                  </FilterSection>
+
+                  <FilterSection label="Repository">
+                    <RepoFilter
+                      value={activeRepo}
+                      onChange={setActiveRepo}
+                      counts={repoCounts}
+                    />
+                  </FilterSection>
+                </FilterPanel>
+                <div className="mx-1 hidden h-5 w-px bg-border sam:block" />
                 <Button
                   variant={viewMode === "grid" ? "secondary" : "ghost"}
                   size="icon"
@@ -548,46 +598,19 @@ export default function MarketplacePage() {
                         <span className="font-medium">
                           {user.nickname || user.name || "User"}
                         </span>
-                        {user.nickname && user.name && user.name !== user.nickname && (
-                          <span className="text-xs text-muted-foreground">
-                            {user.name}
-                          </span>
-                        )}
+                        {user.nickname &&
+                          user.name &&
+                          user.name !== user.nickname && (
+                            <span className="text-xs text-muted-foreground">
+                              {user.name}
+                            </span>
+                          )}
                       </Link>
                     ))}
                   </div>
                 )}
               </div>
             )}
-
-            <div
-              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-            >
-              {MARKETPLACE_STATUS_FILTERS.map((f) => {
-                const active = statusFilter === f.status;
-                return (
-                  <button
-                    key={f.status}
-                    onClick={() => setStatusFilter(f.status)}
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      active
-                        ? "border-primary/40 bg-primary/10 font-medium text-foreground"
-                        : "border-border text-muted-foreground hover:bg-muted/60"
-                    }`}
-                  >
-                    {f.status !== "all" && (
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[f.status]}`}
-                      />
-                    )}
-                    {f.label}
-                    <span className="tabular-nums opacity-60">
-                      {statusCountFor(f.status)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
 
             {viewMode === "defrag" ? (
               filteredBounties.length === 0 ? (
@@ -658,38 +681,38 @@ export default function MarketplacePage() {
                             <ul className="space-y-1">
                               {defragListOpen &&
                                 defragBounties.map((bounty) => {
-                                const color =
-                                  DEFRAG_STATUS_COLORS[bounty.status] ??
-                                  "bg-zinc-600";
-                                return (
-                                  <li key={bounty.id}>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setDefragListOpen(false);
-                                        openBounty(bounty);
-                                      }}
-                                      className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left hover:bg-accent"
-                                    >
-                                      <span
-                                        className={`mt-1 inline-block h-3 w-3 shrink-0 border border-black/80 ${color}`}
-                                      />
-                                      <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-sm font-medium">
-                                          {bounty.title}
+                                  const color =
+                                    DEFRAG_STATUS_COLORS[bounty.status] ??
+                                    "bg-zinc-600";
+                                  return (
+                                    <li key={bounty.id}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setDefragListOpen(false);
+                                          openBounty(bounty);
+                                        }}
+                                        className="flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left hover:bg-accent"
+                                      >
+                                        <span
+                                          className={`mt-1 inline-block h-3 w-3 shrink-0 border border-black/80 ${color}`}
+                                        />
+                                        <span className="min-w-0 flex-1">
+                                          <span className="block truncate text-sm font-medium">
+                                            {bounty.title}
+                                          </span>
+                                          <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                                            {formatStatus(bounty.status)}
+                                            {typeof bounty.bountyAmount ===
+                                            "number"
+                                              ? ` · ${bounty.bountyAmount} ZEC`
+                                              : ""}
+                                          </span>
                                         </span>
-                                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                                          {formatStatus(bounty.status)}
-                                          {typeof bounty.bountyAmount ===
-                                          "number"
-                                            ? ` · ${bounty.bountyAmount} ZEC`
-                                            : ""}
-                                        </span>
-                                      </span>
-                                    </button>
-                                  </li>
-                                );
-                              })}
+                                      </button>
+                                    </li>
+                                  );
+                                })}
                             </ul>
                           </div>
                         </SheetContent>

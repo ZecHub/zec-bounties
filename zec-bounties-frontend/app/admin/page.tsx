@@ -29,8 +29,6 @@ import {
   RefreshCw,
   CreditCard,
   Download,
-  SlidersHorizontal,
-  Check,
   Plus,
   Eye,
   Pencil,
@@ -94,6 +92,13 @@ import { backendUrl } from "@/lib/configENV";
 import Link from "next/link";
 import { parseLinks } from "@/lib/links";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
+import {
+  FilterPanel,
+  FilterSection,
+  FilterChip,
+  FilterSelect,
+  FilterSwitch,
+} from "@/components/filter-panel";
 
 /* ------------------------------------------------------------------ */
 /* Status metadata — single source of truth (kills the repeated ternaries) */
@@ -478,8 +483,7 @@ export default function AdminDashboard() {
   const [repoFilter, setRepoFilter] = useState<RepoId | "all" | "untagged">(
     "all",
   );
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtersRef = useRef<HTMLDivElement>(null);
+
   const [showAdminBountyModal, setShowAdminBountyModal] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<string | null>(null);
   const [isManagingApplications, setIsManagingApplications] = useState(false);
@@ -797,9 +801,6 @@ export default function AdminDashboard() {
 
   const groupIndentClass = groupByWeek ? "pl-8 sm:pl-10" : "pl-4 sm:pl-6";
 
-  const activeCategoryLabel =
-    categoryFilter === "ALL" ? "All Categories" : categoryFilter;
-
   const pendingSuggestionCount = chainFilteredBounties.filter(
     (b) => b.suggestionReviewStatus === "PENDING",
   ).length;
@@ -984,19 +985,6 @@ export default function AdminDashboard() {
       loadWorkSubmissions();
     }
   }, [isManagingSubmissions, selectedBounty]);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        filtersRef.current &&
-        !filtersRef.current.contains(e.target as Node)
-      ) {
-        setFiltersOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const handleFetchTransactionHashes = async () => {
     setIsFetchingTxHashes(true);
@@ -1280,137 +1268,69 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {activeFilterCount > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground"
-                          onClick={resetFilters}
-                        >
-                          Clear
-                        </Button>
-                      )}
-
-                      {/* Category + options popover (status now lives inline) */}
-                      <div className="relative" ref={filtersRef}>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setFiltersOpen(!filtersOpen)}
-                          className="gap-2 font-normal text-muted-foreground"
-                        >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
-                          {activeCategoryLabel}
-                        </Button>
-
-                        {filtersOpen && (
-                          <div className="absolute right-0 z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg">
-                            <p className="mb-1.5 px-1 text-xs text-muted-foreground">
-                              Category
-                            </p>
-                            <div className="max-h-56 overflow-y-auto">
-                              <button
-                                onClick={() => setCategoryFilter("ALL")}
-                                className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-muted"
+                      <FilterPanel
+                        activeCount={activeFilterCount}
+                        onClear={resetFilters}
+                        applyLabel={`Show ${filteredBounties.length} bounties`}
+                      >
+                        <FilterSection label="Status">
+                          <div className="flex flex-wrap gap-2">
+                            {STATUS_FILTERS.map((f) => (
+                              <FilterChip
+                                key={f.status}
+                                active={bountyStatusFilter === f.status}
+                                onClick={() => setBountyStatusFilter(f.status)}
+                                dotClassName={f.dotColor}
+                                count={statusCountFor(f.status)}
                               >
-                                All Categories
-                                {categoryFilter === "ALL" && (
-                                  <Check className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                              {categories.map((category) => (
-                                <button
-                                  key={category.id}
-                                  onClick={() =>
-                                    setCategoryFilter(category.name)
-                                  }
-                                  className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-muted"
-                                >
-                                  {category.name}
-                                  {categoryFilter === category.name && (
-                                    <Check className="h-3.5 w-3.5" />
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-
-                            <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                              <Label
-                                htmlFor="show-cancelled"
-                                className="text-xs font-normal text-muted-foreground"
-                              >
-                                Show cancelled
-                              </Label>
-                              <Switch
-                                id="show-cancelled"
-                                checked={showCancelledBounties}
-                                onCheckedChange={setShowCancelledBounties}
-                              />
-                            </div>
+                                {f.label}
+                              </FilterChip>
+                            ))}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                        </FilterSection>
 
-                  {/* Inline status chips — one click instead of two */}
-                  <div
-                    className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5"
-                    style={{
-                      scrollbarWidth: "none",
-                      msOverflowStyle: "none",
-                    }}
-                  >
-                    {STATUS_FILTERS.map((f) => {
-                      const active = bountyStatusFilter === f.status;
-                      return (
-                        <button
-                          key={f.status}
-                          onClick={() => setBountyStatusFilter(f.status)}
-                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                            active
-                              ? "border-primary/40 bg-primary/10 font-medium text-foreground"
-                              : "border-border text-muted-foreground hover:bg-muted/60"
-                          }`}
-                        >
-                          {f.dotColor && (
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${f.dotColor}`}
+                        <FilterSelect
+                          label="Category"
+                          value={categoryFilter === "ALL" ? "" : categoryFilter}
+                          options={[
+                            { value: "", label: "All Categories" },
+                            ...categories.map((c) => ({
+                              value: c.name,
+                              label: c.name,
+                            })),
+                          ]}
+                          onChange={(v) =>
+                            setCategoryFilter(v === "" ? "ALL" : v)
+                          }
+                        />
+
+                        <FilterSection label="Repository">
+                          <RepoFilter
+                            value={repoFilter}
+                            onChange={setRepoFilter}
+                            counts={repoCounts}
+                          />
+                        </FilterSection>
+
+                        <div className="space-y-2">
+                          <FilterSwitch
+                            id="show-cancelled"
+                            label="Show cancelled"
+                            checked={showCancelledBounties}
+                            onCheckedChange={setShowCancelledBounties}
+                          />
+                          {(pendingSuggestionCount > 0 || suggestionOnly) && (
+                            <FilterSwitch
+                              id="suggestion-only"
+                              label="Suggestion review only"
+                              hint={`${pendingSuggestionCount} pending`}
+                              checked={suggestionOnly}
+                              onCheckedChange={setSuggestionOnly}
                             />
                           )}
-                          {f.label}
-                          <span className="tabular-nums opacity-60">
-                            {statusCountFor(f.status)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {(pendingSuggestionCount > 0 || suggestionOnly) && (
-                      <>
-                        <span className="mx-1 h-4 w-px shrink-0 bg-border" />
-                        <button
-                          onClick={() => setSuggestionOnly((v) => !v)}
-                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                            suggestionOnly
-                              ? "border-amber-500/60 bg-amber-500/20 font-medium text-amber-700 dark:text-amber-400"
-                              : "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
-                          }`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                          Suggestion review
-                          <span className="tabular-nums opacity-70">
-                            {pendingSuggestionCount}
-                          </span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  <div className="pt-2">
-                    <RepoFilter
-                      value={repoFilter}
-                      onChange={setRepoFilter}
-                      counts={repoCounts}
-                    />
+                        </div>
+                      </FilterPanel>
+                    </div>
                   </div>
                   {hasMoreBounties && (
                     <div className="pt-2 flex justify-end">

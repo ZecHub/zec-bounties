@@ -165,6 +165,11 @@ function requireOnboarded(req, res) {
 // avatar:50). Gold star = 15+ completed tasks.
 const GOLD_STAR_THRESHOLD = 15;
 
+// Only these roles are subject to the weekly creation quota.
+// Every other role (ADMIN, TEAM, ...) creates bounties without a limit.
+const QUOTA_ROLES = ["HUNTER", "CLIENT"];
+const hasWeeklyQuota = (role) => QUOTA_ROLES.includes(role);
+
 const WEEKLY_BOUNTY_LIMIT_GOLD =
   process.env.NODE_ENV === "production"
     ? 2
@@ -238,7 +243,7 @@ class WeeklyBountyQuotaError extends Error {
 // transaction at PostgreSQL's default Read Committed isolation still allows
 // simultaneous requests to consume the same last slot.
 async function createBountyWithQuota(user, args) {
-  if (user.role === "ADMIN") return prisma.bounty.create(args);
+  if (!hasWeeklyQuota(user.role)) return prisma.bounty.create(args);
 
   for (let attempt = 0; ; attempt++) {
     try {
@@ -293,6 +298,7 @@ module.exports = {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  hasWeeklyQuota,
   createBountyWithQuota,
   WeeklyBountyQuotaError,
   requireTaskCreation,

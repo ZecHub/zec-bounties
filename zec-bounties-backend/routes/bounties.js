@@ -51,6 +51,7 @@ const {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  hasWeeklyQuota,
   createBountyWithQuota,
   WeeklyBountyQuotaError,
   requireTaskCreation,
@@ -2792,7 +2793,7 @@ router.get("/mine", authenticate, async (req, res) => {
 // ─── My bounty-creation quota ────────────────────────────────────────────────
 router.get("/mine/quota", authenticate, async (req, res) => {
   try {
-    if (req.user.role === "ADMIN") {
+    if (!hasWeeklyQuota(req.user.role)) {
       return res.json({
         limit: null,
         used: 0,
