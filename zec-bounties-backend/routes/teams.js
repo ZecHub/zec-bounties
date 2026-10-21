@@ -196,35 +196,6 @@ async function removeWalletFromMembers(teamId, wallet, userIds) {
   }
 }
 
-        const hasDefault = await tx.zcashParams.findFirst({
-          where: { ownerId: userId, isDefault: true },
-        });
-        if (hasDefault) return;
-
-        // Only a personal wallet becomes the fallback. Promoting another
-        // team wallet would leave the user with a default they may not
-        // expect, and the UI already handles a missing default.
-        const fallback = await tx.zcashParams.findFirst({
-          where: { ownerId: userId, isTeam: false },
-          orderBy: { createdAt: "desc" },
-        });
-
-        if (fallback) {
-          await tx.zcashParams.update({
-            where: { id: fallback.id },
-            data: { isDefault: true },
-          });
-        }
-      });
-    } catch (err) {
-      console.error(
-        `Failed to remove team wallet copy for user ${userId}:`,
-        err,
-      );
-    }
-  }
-}
-
 // Every member's copy of a team wallet points at the team's wallet directory.
 // When the team itself is deleted, remove those copies too and give each
 // owner a fallback default. Once the team is gone there is no team page to
