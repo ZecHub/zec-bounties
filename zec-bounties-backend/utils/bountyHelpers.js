@@ -76,6 +76,17 @@ async function getBroadcastRecipients(bounty) {
     favorites.forEach((f) => recipients.add(f.userId));
   }
 
+  // Assignees need not be team members. Read them fresh so callers that only
+  // selected a few fields still reach the current roster.
+  if (bounty.id) {
+    const assigned = await prisma.bounty.findUnique({
+      where: { id: bounty.id },
+      select: { assignee: true, assignees: { select: { userId: true } } },
+    });
+    if (assigned?.assignee) recipients.add(assigned.assignee);
+    assigned?.assignees.forEach((a) => recipients.add(a.userId));
+  }
+
   return [...recipients];
 }
 
@@ -174,7 +185,7 @@ async function broadcastBountyEvent(
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { isPrivate: true, createdBy: true, teamId: true },
+      select: { id: true, isPrivate: true, createdBy: true, teamId: true },
     });
     if (!bounty) return;
     const recipients =

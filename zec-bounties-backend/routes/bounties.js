@@ -164,11 +164,28 @@ async function canAdministerBounty(bounty, user, db = prisma) {
   return false;
 }
 
+// Legacy `assignee` column or a bountyAssignee row. Callers pass the bounty's
+// `id` and `assignee`; an already-loaded `assignees` roster saves a query.
+async function isBountyAssignee(bounty, userId) {
+  if (bounty.assignee === userId) return true;
+  if (Array.isArray(bounty.assignees)) {
+    return bounty.assignees.some((a) => a.userId === userId);
+  }
+  const row = await prisma.bountyAssignee.findUnique({
+    where: { bountyId_userId: { bountyId: bounty.id, userId } },
+    select: { id: true },
+  });
+  return !!row;
+}
+
 async function canViewPrivateBounty(bounty, user) {
   if (!bounty.isPrivate) return true;
   if (!user) return false;
   if (user.role === "ADMIN") return true;
   if (bounty.createdBy === user.id) return true;
+  // POST /:id/assignees does not require team membership and POST /:id/submit
+  // accepts an assignee's work, so assignees must be able to see the bounty.
+  if (await isBountyAssignee(bounty, user.id)) return true;
   if (!bounty.teamId) return false;
 
   const teamMember = await prisma.teamMember.findUnique({
@@ -558,10 +575,10 @@ router.get("/", optionalAuthenticate, async (req, res) => {
 
     // ------------------------------------------------------------
     // Visibility — public bounties, PLUS any private bounty the viewer
-    // actually has access to: one they created, or one belonging to a
-    // team they're a member of. This is what lets a private team's members
-    // see that team's bounties on their own home feed, not only on the
-    // team's own console page. Admins see everything.
+    // actually has access to: one they created, one they're assigned to, or
+    // one belonging to a team they're a member of. This is what lets a
+    // private team's members see that team's bounties on their own home
+    // feed, not only on the team's own console page. Admins see everything.
     //
     // This filter runs inside the DB query (not a post-fetch JS filter),
     // so `take: limit` below always returns a correctly-sized page —
@@ -577,6 +594,8 @@ router.get("/", optionalAuthenticate, async (req, res) => {
             ...(userId
               ? [
                   { isPrivate: true, createdBy: userId },
+                  { isPrivate: true, assignee: userId },
+                  { isPrivate: true, assignees: { some: { userId } } },
                   { isPrivate: true, team: { members: { some: { userId } } } },
                   ...(req.user.role === "HUNTER"
                     ? [
@@ -1074,7 +1093,13 @@ router.get("/:id/assignees", authenticate, async (req, res) => {
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { id: true, isPrivate: true, createdBy: true, teamId: true },
+      select: {
+        id: true,
+        isPrivate: true,
+        createdBy: true,
+        teamId: true,
+        assignee: true,
+      },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
     if (!(await canViewPrivateBounty(bounty, req.user))) {
