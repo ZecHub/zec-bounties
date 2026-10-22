@@ -131,6 +131,25 @@ interface BountyContextType {
       timeToComplete?: Date;
     },
   ) => Promise<Bounty>;
+  withdrawBountySuggestion: (
+    id: string,
+    reason?: string,
+  ) => Promise<{
+    bounty: Bounty;
+    quotaRefunded: boolean;
+    quota: {
+      limit: number | null;
+      used: number;
+      remaining: number | null;
+      resetsAt: string | null;
+      postEligibility?: {
+        allowed: boolean;
+        completed: number;
+        required: number | null;
+        mode?: "closed" | "open" | "threshold";
+      } | null;
+    };
+  }>;
   bountyQuota: {
     limit: number | null;
     used: number;
@@ -292,6 +311,7 @@ interface BountyContextType {
   // Action methods
   acceptApplication: (applicationId: string) => Promise<BountyApplication>;
   rejectApplication: (applicationId: string) => Promise<BountyApplication>;
+  withdrawApplication: (applicationId: string) => Promise<void>;
 
   // Work submission
   submitWork: (
@@ -1924,6 +1944,54 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const withdrawApplication = async (applicationId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    // The endpoint answers with a message only, so the bounty has to be
+    // resolved from the applications already held in state.
+    const target =
+      applications.find((app) => app.id === applicationId) ||
+      allApplications.find((app) => app.id === applicationId) ||
+      null;
+    const bountyId = target?.bountyId;
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/applications/${applicationId}`,
+        {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to withdraw application");
+      }
+
+      // The withdrawing user is excluded from the `application_deleted`
+      // broadcast, so the local lists are updated here.
+      setApplications((prev) => prev.filter((app) => app.id !== applicationId));
+      setAllApplications((prev) =>
+        prev.filter((app) => app.id !== applicationId),
+      );
+      setBountyApplications((prev) => {
+        if (!bountyId || !prev[bountyId]) return prev;
+        return {
+          ...prev,
+          [bountyId]: prev[bountyId].filter((app) => app.id !== applicationId),
+        };
+      });
+
+      if (bountyId) await patchOneBounty(bountyId);
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      // A review may have landed first; resync so the panel shows the real state.
+      await fetchUserApplications();
+      throw error;
+    }
+  };
+
   const submitWork = async (
     bountyId: string,
     submissionData: {
@@ -3319,6 +3387,34 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return json;
   };
 
+  const withdrawBountySuggestion = async (id: string, reason?: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    const res = await fetch(`${backendUrl}/api/bounties/${id}/withdraw`, {
+      method: "POST",
+      headers: {
+        ...getAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(reason !== undefined ? { reason } : {}),
+    });
+
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Failed to withdraw suggestion");
+    }
+
+    applyBountyUpdate(json.bounty);
+    if (json.quota) {
+      // Keep the eligibility snapshot the quota endpoint returns; the withdraw
+      // response only carries the counters.
+      setBountyQuota((prev) =>
+        prev ? { ...json.quota, postEligibility: prev.postEligibility } : json.quota,
+      );
+    }
+    return json;
+  };
+
   const updateBounty = async (
     id: string,
     data: Partial<BountyFormData> & {
@@ -4135,6 +4231,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         bountiesLoading,
         createBounty,
         reviewBountySuggestion,
+        withdrawBountySuggestion,
         bountyQuota,
         fetchBountyQuota,
         updateBounty,
@@ -4184,6 +4281,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         getAllApplicationsForBounty,
         acceptApplication,
         rejectApplication,
+        withdrawApplication,
         allApplications,
         bountyApplications,
         submitWork,

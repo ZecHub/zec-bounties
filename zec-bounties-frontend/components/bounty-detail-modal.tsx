@@ -9,6 +9,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -131,7 +141,9 @@ export function BountyDetailModal({
   const {
     currentUser,
     updateBounty,
+    withdrawBountySuggestion,
     applyToBounty,
+    withdrawApplication,
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
@@ -143,6 +155,12 @@ export function BountyDetailModal({
   const [applicationMessage, setApplicationMessage] = useState("");
   const [applicationError, setApplicationError] = useState("");
   const [isApplying, setIsApplying] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [isWithdrawSuggestionOpen, setIsWithdrawSuggestionOpen] =
+    useState(false);
+  const [isWithdrawingSuggestion, setIsWithdrawingSuggestion] = useState(false);
+  const [withdrawSuggestionReason, setWithdrawSuggestionReason] = useState("");
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrls, setDeliverableUrls] = useState<string[]>([""]);
   const [submissionErrors, setSubmissionErrors] = useState<{
@@ -288,6 +306,18 @@ export function BountyDetailModal({
     currentUser?.role === "HUNTER" &&
     bounty.createdBy === currentUser.id &&
     bountyEditMsRemaining > 0;
+
+  const canWithdrawSuggestion =
+    !!currentUser &&
+    bounty.createdBy === currentUser.id &&
+    !bounty.isApproved &&
+    bounty.status === "TO_DO" &&
+    (bounty.suggestionReviewStatus === null ||
+      bounty.suggestionReviewStatus === undefined ||
+      bounty.suggestionReviewStatus === "PENDING") &&
+    !bounty.isPaid &&
+    !bounty.paymentAuthorized &&
+    !bounty.paymentInFlight;
 
   const startBountyEdit = () => {
     setBEditTitle(bounty.title);
@@ -516,6 +546,46 @@ export function BountyDetailModal({
       toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleWithdrawSuggestion = async () => {
+    if (!bounty) return;
+
+    setIsWithdrawSuggestionOpen(false);
+    setIsWithdrawingSuggestion(true);
+    try {
+      const result = await withdrawBountySuggestion(
+        bounty.id,
+        withdrawSuggestionReason.trim() || undefined,
+      );
+      setWithdrawSuggestionReason("");
+      toast.success(
+        result.quotaRefunded
+          ? "Suggestion withdrawn — your weekly slot was returned"
+          : "Suggestion withdrawn",
+      );
+    } catch (error) {
+      console.error("Failed to withdraw suggestion:", error);
+      toast.error(getErrorMessage(error, "Failed to withdraw suggestion"));
+    } finally {
+      setIsWithdrawingSuggestion(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!userApplication) return;
+
+    setIsWithdrawOpen(false);
+    setIsWithdrawing(true);
+    try {
+      await withdrawApplication(userApplication.id);
+      toast.success("Application withdrawn");
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      toast.error(getErrorMessage(error, "Failed to withdraw application"));
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -1286,11 +1356,38 @@ export function BountyDetailModal({
           </section>
         )}
 
+        {canWithdrawSuggestion && (
+          <section className="mt-5 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-3">
+            <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">
+              Pending suggestion
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-orange-700 dark:text-orange-300">
+              This suggestion is still waiting for review. You can withdraw it
+              while it is pending. One weekly creation slot is returned per week.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2 w-full border-orange-300 text-orange-800 hover:bg-orange-100 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/40"
+              onClick={() => setIsWithdrawSuggestionOpen(true)}
+              disabled={isWithdrawingSuggestion}
+            >
+              {isWithdrawingSuggestion
+                ? "Withdrawing…"
+                : "Withdraw suggestion"}
+            </Button>
+          </section>
+        )}
+
         {bounty.suggestionReviewReason && (
           <div className="rounded-md border border-border bg-muted/40 px-4 py-3">
             <p className="text-sm font-medium">
-              Team review:{" "}
-              {bounty.suggestionReviewStatus?.toLowerCase() ?? "updated"}
+              {bounty.suggestionReviewStatus === "WITHDRAWN"
+                ? "Withdrawn by you"
+                : "Team review"}{" "}
+              {bounty.suggestionReviewStatus === "WITHDRAWN"
+                ? ""
+                : (bounty.suggestionReviewStatus?.toLowerCase() ?? "updated")}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {bounty.suggestionReviewReason}
@@ -1328,6 +1425,17 @@ export function BountyDetailModal({
                     ? `Under review · applied ${format(new Date(userApplication.appliedAt), "MMM d")}`
                     : "Under review"}
             </p>
+            {userApplication?.status === "pending" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full mt-1"
+                onClick={() => setIsWithdrawOpen(true)}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? "Withdrawing…" : "Withdraw application"}
+              </Button>
+            )}
           </section>
         )}
 
@@ -1340,6 +1448,72 @@ export function BountyDetailModal({
               closed={bounty.status === "DONE"}
             />
           )}
+
+        {/* Withdraw suggestion confirmation */}
+        <AlertDialog
+          open={isWithdrawSuggestionOpen}
+          onOpenChange={setIsWithdrawSuggestionOpen}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw suggestion</AlertDialogTitle>
+              <AlertDialogDescription>
+                The suggestion is closed and cannot be approved or delivered.
+                Your weekly creation slot is returned once per week.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="withdraw-suggestion-reason">
+                Reason (optional)
+              </Label>
+              <Textarea
+                id="withdraw-suggestion-reason"
+                rows={3}
+                maxLength={500}
+                value={withdrawSuggestionReason}
+                onChange={(event) =>
+                  setWithdrawSuggestionReason(event.target.value)
+                }
+                placeholder="Why are you withdrawing this suggestion?"
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isWithdrawingSuggestion}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleWithdrawSuggestion}
+                disabled={isWithdrawingSuggestion}
+              >
+                {isWithdrawingSuggestion ? "Withdrawing…" : "Withdraw"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Withdraw confirmation */}
+        <AlertDialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw application</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to withdraw this application? You can
+                apply again after withdrawing.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isWithdrawing}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleWithdraw}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? "Withdrawing…" : "Withdraw"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

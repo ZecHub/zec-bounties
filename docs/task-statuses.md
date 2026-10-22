@@ -22,7 +22,7 @@ The submission was approved. If it is rejected or sent back for revision instead
 
 ### Cancelled
 
-The bounty is closed without a payout. This happens when an admin removes its approval, a suggestion is declined, or all assignees are removed. Adding an assignee again moves it back to In Progress.
+The bounty is closed without a payout. This happens when an admin removes its approval, a suggestion is declined, a suggestion is withdrawn by the hunter who posted it, or all assignees are removed. Adding an assignee again moves it back to In Progress.
 
 Platform admins can change any status. For team bounties, the team's OWNER and ADMIN members can too.
 
