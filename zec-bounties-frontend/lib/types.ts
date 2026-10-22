@@ -154,7 +154,7 @@ export interface Bounty {
   isApproved: boolean;
   isPaid: boolean;
   isPrivate: boolean;
-  suggestionReviewStatus?: "PENDING" | "APPROVED" | "DECLINED" | null;
+  suggestionReviewStatus?: "PENDING" | "APPROVED" | "DECLINED" | "WITHDRAWN" | null;
   suggestionReviewReason?: string | null;
   paymentAuthorized: boolean;
   paymentBatchId?: string;

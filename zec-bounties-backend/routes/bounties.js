@@ -51,6 +51,7 @@ const {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  getWeeklyRefundCount,
   hasWeeklyQuota,
   createBountyWithQuota,
   WeeklyBountyQuotaError,
@@ -611,7 +612,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
           {
             OR: [
               { suggestionReviewStatus: null },
-              { suggestionReviewStatus: { not: "PENDING" } },
+              { suggestionReviewStatus: { notIn: ["PENDING", "WITHDRAWN"] } },
             ],
           },
         ],
@@ -1105,9 +1106,15 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
     const bountyId = req.params.id;
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { createdBy: true, assignee: true },
+      select: { createdBy: true, assignee: true, suggestionReviewStatus: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
+
+    if (bounty.suggestionReviewStatus === "WITHDRAWN") {
+      return res
+        .status(409)
+        .json({ error: "Suggestion was withdrawn by the hunter" });
+    }
 
     // Approving is what turns a personal bounty into a public one, so it also
     // undoes the two markers that kept it personal: its privacy, and the
@@ -1169,6 +1176,153 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to approve bounty" });
+  }
+});
+
+// ─── Withdraw a pending hunter suggestion ────────────────────────────────────
+// Reviewers decline suggestions; this lets the hunter close their own while it
+// is still pending. The record is kept (soft withdraw) so the decision stays
+// auditable and the suggestion cannot be silently recreated to farm quota.
+router.post("/:id/withdraw", authenticate, async (req, res) => {
+  try {
+    const bounty = await prisma.bounty.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        createdBy: true,
+        status: true,
+        isApproved: true,
+        isPaid: true,
+        paymentAuthorized: true,
+        paymentInFlight: true,
+        suggestionReviewStatus: true,
+        dateCreated: true,
+      },
+    });
+    if (!bounty) return res.status(404).json({ error: "Bounty not found" });
+
+    if (bounty.createdBy !== req.user.id) {
+      return res
+        .status(403)
+        .json({ error: "Only the hunter who suggested this bounty can withdraw it" });
+    }
+
+    if (
+      bounty.isApproved ||
+      bounty.status !== "TO_DO" ||
+      (bounty.suggestionReviewStatus !== null &&
+        bounty.suggestionReviewStatus !== "PENDING")
+    ) {
+      return res
+        .status(409)
+        .json({ error: "Suggestion is no longer pending" });
+    }
+
+    if (bounty.isPaid || bounty.paymentAuthorized || bounty.paymentInFlight) {
+      return res
+        .status(409)
+        .json({ error: "Suggestion has a payment in progress" });
+    }
+
+    const rawReason = req.body?.reason;
+    if (rawReason !== undefined && typeof rawReason !== "string") {
+      return res.status(400).json({ error: "Withdrawal reason must be text" });
+    }
+    const reason = (rawReason?.trim() || "Withdrawn by hunter").slice(0, 500);
+
+    let result;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        result = await prisma.$transaction(
+          async (tx) => {
+            const { start, end } = getCalendarWeekBounds();
+            const created = new Date(bounty.dateCreated);
+            const createdThisWeek = created >= start && created < end;
+            const refundsUsed = createdThisWeek
+              ? await getWeeklyRefundCount(req.user.id, tx)
+              : 1;
+            const refund = createdThisWeek && refundsUsed === 0;
+
+            const updatedCount = await tx.bounty.updateMany({
+              where: {
+                id: bounty.id,
+                createdBy: req.user.id,
+                status: "TO_DO",
+                isApproved: false,
+                isPaid: false,
+                paymentAuthorized: false,
+                paymentInFlight: false,
+                OR: [
+                  { suggestionReviewStatus: null },
+                  { suggestionReviewStatus: "PENDING" },
+                ],
+              },
+              data: {
+                status: "CANCELLED",
+                isApproved: false,
+                suggestionReviewStatus: "WITHDRAWN",
+                suggestionReviewReason: reason,
+                ...(refund && { quotaRefundedAt: new Date() }),
+              },
+            });
+
+            if (updatedCount.count === 0) {
+              const conflict = new Error("Suggestion is no longer pending");
+              conflict.statusCode = 409;
+              throw conflict;
+            }
+
+            const updated = await tx.bounty.findUnique({
+              where: { id: bounty.id },
+              include: {
+                ...ASSIGNEE_INCLUDE,
+                assigneeUser: { select: USER_SELECT },
+                createdByUser: { select: { ...USER_SELECT, role: true } },
+                team: { select: { id: true, name: true, logo: true } },
+              },
+            });
+            const quota = await getWeeklyBountyQuota(req.user.id, tx);
+            return { updated, refund, quota };
+          },
+          { isolationLevel: "Serializable" },
+        );
+        break;
+      } catch (error) {
+        if (error.statusCode) {
+          return res.status(error.statusCode).json({ error: error.message });
+        }
+        if (error.code === "P2034" && attempt < 4) continue;
+        throw error;
+      }
+    }
+
+    await invalidateBounty(bounty.id);
+    await broadcastBountyEvent(
+      "bounty_updated",
+      result.updated,
+      bounty.id,
+      req.user.id,
+    );
+    logActivity(null, {
+      bountyId: bounty.id,
+      actorId: req.user.id,
+      type: "STATUS_CHANGED",
+      meta: {
+        from: "TO_DO",
+        to: "CANCELLED",
+        withdrawn: true,
+        quotaRefunded: result.refund,
+      },
+    }).catch(console.error);
+
+    res.json({
+      bounty: result.updated,
+      quotaRefunded: result.refund,
+      quota: result.quota,
+    });
+  } catch (error) {
+    console.error("Failed to withdraw suggestion:", error);
+    res.status(500).json({ error: "Failed to withdraw suggestion" });
   }
 });
 
@@ -3051,6 +3205,7 @@ router.put("/:id", authenticate, async (req, res) => {
         timeToComplete: true,
         status: true,
         isApproved: true,
+        suggestionReviewStatus: true,
       },
     });
     if (!existing) return res.status(404).json({ error: "Bounty not found" });
@@ -3059,6 +3214,12 @@ router.put("/:id", authenticate, async (req, res) => {
       return res
         .status(403)
         .json({ error: "You do not have permission to edit this bounty" });
+    }
+
+    if (existing.suggestionReviewStatus === "WITHDRAWN") {
+      return res
+        .status(409)
+        .json({ error: "Suggestion was withdrawn by the hunter" });
     }
 
     // Validate the incoming fields (title/description/amount/deadline). This

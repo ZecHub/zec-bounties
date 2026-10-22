@@ -70,7 +70,15 @@ function loadRoutes(prisma) {
     "../helpers/teamRoles": require("../../helpers/teamRoles"),
     "../helpers/zcash/walletConnection": require("../../helpers/zcash/walletConnection"),
     "path": path,
-    "multer": require("multer"),
+    // Stubbed so the harness runs without the upload dependency installed.
+    "multer": Object.assign(
+      () => ({
+        single: () => (req, res, next) => next(),
+        array: () => (req, res, next) => next(),
+        fields: () => (req, res, next) => next(),
+      }),
+      { memoryStorage: () => ({}) },
+    ),
     "fs": { promises: {} },
     "crypto": require("node:crypto"),
     "../zcash/init": { initZcashOnce: noOp, initZcashOnceForTeams: noOp },
@@ -82,6 +90,7 @@ function loadRoutes(prisma) {
     dependencies[`../utils/zingo/zingoLib${name}`] = noOp;
   }
   const handlers = {};
+  const allRoutes = [];
   for (const [file, route] of [["bounties", "/"], ["teams", "/:teamId/bounties"]]) {
     const routes = [];
     const router = Object.fromEntries(["get", "post", "put", "delete", "patch"].map((method) => [method,
@@ -89,6 +98,9 @@ function loadRoutes(prisma) {
     ]));
     loadModule(`routes/${file}.js`, { ...dependencies, express: { Router: () => router } });
     handlers[file] = routes.find((r) => r.method === "post" && r.url === route).callbacks.at(-1);
+    for (const entry of routes) {
+      allRoutes.push({ file, method: entry.method, url: entry.url, handler: entry.callbacks.at(-1) });
+    }
   }
   return {
     effects,
@@ -111,6 +123,21 @@ function loadRoutes(prisma) {
         json(body) { this.body = body; return this; },
       };
       await handlers[route](req, res);
+      return res;
+    },
+    // Calls any loaded route by method and path so a test can drive a
+    // handler other than the creation endpoint.
+    async invoke(file, method, url, req) {
+      const route = allRoutes.find(
+        (r) => r.file === file && r.method === method && r.url === url,
+      );
+      if (!route) throw new Error(`No route ${method} ${url} in ${file}`);
+      const res = {
+        statusCode: 200,
+        status(code) { this.statusCode = code; return this; },
+        json(body) { this.body = body; return this; },
+      };
+      await route.handler(req, res);
       return res;
     },
   };

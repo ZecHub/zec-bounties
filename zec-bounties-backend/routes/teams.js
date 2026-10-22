@@ -735,7 +735,7 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
       ...(!isAdmin && {
         OR: [
           { suggestionReviewStatus: null },
-          { suggestionReviewStatus: { not: "PENDING" } },
+          { suggestionReviewStatus: { notIn: ["PENDING", "WITHDRAWN"] } },
         ],
       }),
     };

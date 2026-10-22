@@ -234,9 +234,24 @@ async function getWeeklyBountyQuota(userId, db = prisma, date = new Date()) {
     : WEEKLY_BOUNTY_LIMIT_STANDARD;
   const { start, end } = getCalendarWeekBounds(date);
   const used = await db.bounty.count({
-    where: { createdBy: userId, dateCreated: { gte: start, lt: end } },
+    where: {
+      createdBy: userId,
+      dateCreated: { gte: start, lt: end },
+      quotaRefundedAt: null,
+    },
   });
   return { limit, used, remaining: Math.max(0, limit - used), resetsAt: end };
+}
+
+async function getWeeklyRefundCount(userId, db = prisma, date = new Date()) {
+  const { start, end } = getCalendarWeekBounds(date);
+  return db.bounty.count({
+    where: {
+      createdBy: userId,
+      dateCreated: { gte: start, lt: end },
+      quotaRefundedAt: { not: null },
+    },
+  });
 }
 
 class WeeklyBountyQuotaError extends Error {
@@ -305,6 +320,8 @@ module.exports = {
   ONBOARDED_ROLES,
   requireOnboarded,
   getWeeklyBountyQuota,
+  getWeeklyRefundCount,
+  getCalendarWeekBounds,
   hasWeeklyQuota,
   createBountyWithQuota,
   WeeklyBountyQuotaError,

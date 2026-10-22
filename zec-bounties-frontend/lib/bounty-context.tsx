@@ -131,6 +131,25 @@ interface BountyContextType {
       timeToComplete?: Date;
     },
   ) => Promise<Bounty>;
+  withdrawBountySuggestion: (
+    id: string,
+    reason?: string,
+  ) => Promise<{
+    bounty: Bounty;
+    quotaRefunded: boolean;
+    quota: {
+      limit: number | null;
+      used: number;
+      remaining: number | null;
+      resetsAt: string | null;
+      postEligibility?: {
+        allowed: boolean;
+        completed: number;
+        required: number | null;
+        mode?: "closed" | "open" | "threshold";
+      } | null;
+    };
+  }>;
   bountyQuota: {
     limit: number | null;
     used: number;
@@ -3367,6 +3386,34 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return json;
   };
 
+  const withdrawBountySuggestion = async (id: string, reason?: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    const res = await fetch(`${backendUrl}/api/bounties/${id}/withdraw`, {
+      method: "POST",
+      headers: {
+        ...getAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(reason !== undefined ? { reason } : {}),
+    });
+
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Failed to withdraw suggestion");
+    }
+
+    applyBountyUpdate(json.bounty);
+    if (json.quota) {
+      // Keep the eligibility snapshot the quota endpoint returns; the withdraw
+      // response only carries the counters.
+      setBountyQuota((prev) =>
+        prev ? { ...json.quota, postEligibility: prev.postEligibility } : json.quota,
+      );
+    }
+    return json;
+  };
+
   const updateBounty = async (
     id: string,
     data: Partial<BountyFormData> & {
@@ -4183,6 +4230,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         bountiesLoading,
         createBounty,
         reviewBountySuggestion,
+        withdrawBountySuggestion,
         bountyQuota,
         fetchBountyQuota,
         updateBounty,
