@@ -218,6 +218,7 @@ curl -sS -X POST "https://zechub.zone/api/bounties/apply" \\
           {[
             ["POST", "/api/bounties/apply", "Apply to a bounty"],
             ["GET", "/api/bounties/my-applications", "Your applications"],
+            ["DELETE", "/api/bounties/applications/:applicationId", "Withdraw a pending application"],
             ["POST", "/api/bounties/:id/submit", "Submit work"],
             ["GET", "/api/bounties/my-submissions", "Your submissions"],
             ["POST", "/api/bounties", "Create a bounty"],
