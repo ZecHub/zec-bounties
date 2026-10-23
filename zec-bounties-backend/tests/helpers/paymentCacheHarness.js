@@ -114,7 +114,6 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
       invalidateSuggestionSettingsCache: () => {},
       VALID_MODES: new Set(["closed", "open", "threshold"]),
     },
-    "../helpers/clearBountyChat": { clearBountyChat: forbidden, isTransitionToDone: () => false },
     "../utils/sendMail": forbidden, "../utils/notifyUser": forbidden,
     "../utils/discord/discordNotify": {}, "../utils/discord/discordAssignWebhook": {},
     "../utils/constants": {}, "../helpers/db-query": {},
