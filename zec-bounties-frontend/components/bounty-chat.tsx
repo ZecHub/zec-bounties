@@ -68,12 +68,18 @@ export function BountyChat({
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const currentBountyId = useRef(bountyId);
+  currentBountyId.current = bountyId;
 
   useEffect(() => {
     setMessages([]);
+    setHasMore(false);
+    setIsLoadingEarlier(false);
     setContent("");
     setSelectedImage(null);
     setPreviewUrl(null);
@@ -93,7 +99,10 @@ export function BountyChat({
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Could not load chat");
-        if (!cancelled) setMessages(data.messages ?? []);
+        if (!cancelled) {
+          setMessages(data.messages ?? []);
+          setHasMore(Boolean(data.hasMore));
+        }
       } catch (loadError) {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : "Could not load chat");
@@ -141,9 +150,39 @@ export function BountyChat({
     };
   }, [active, bountyId]);
 
+  // Scroll down for a new last message only, so loading older ones keeps the reader's place.
+  const lastMessageId = messages[messages.length - 1]?.id;
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [messages]);
+  }, [lastMessageId]);
+
+  const loadEarlier = async () => {
+    const oldest = messages[0];
+    if (!oldest || isLoadingEarlier) return;
+    const requestedFor = bountyId;
+    setIsLoadingEarlier(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${backendUrl}/api/bounties/${bountyId}/chat?before=${encodeURIComponent(oldest.id)}`,
+        { headers: authHeaders() },
+      );
+      const data = await response.json();
+      if (currentBountyId.current !== requestedFor) return; // another bounty was opened meanwhile
+      if (!response.ok) throw new Error(data.error || "Could not load earlier messages");
+      const earlier: ChatMessage[] = data.messages ?? [];
+      setMessages((previous) => [
+        ...earlier.filter((item) => !previous.some((existing) => existing.id === item.id)),
+        ...previous,
+      ]);
+      setHasMore(Boolean(data.hasMore));
+    } catch (loadError) {
+      if (currentBountyId.current !== requestedFor) return;
+      setError(loadError instanceof Error ? loadError.message : "Could not load earlier messages");
+    } finally {
+      if (currentBountyId.current === requestedFor) setIsLoadingEarlier(false);
+    }
+  };
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -207,6 +246,22 @@ export function BountyChat({
         className="max-h-64 min-h-24 space-y-3 overflow-y-auto rounded-md border bg-muted/20 p-3"
         aria-live="polite"
       >
+        {hasMore && !isLoading && messages.length > 0 && (
+          <div className="flex justify-center">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void loadEarlier()}
+              disabled={isLoadingEarlier}
+            >
+              {isLoadingEarlier ? (
+                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+              ) : null}
+              Load earlier messages
+            </Button>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading conversation
