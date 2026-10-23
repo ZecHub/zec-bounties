@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
+import { toDateInputValue } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -36,10 +37,7 @@ export function ReviewBountySuggestionModal({
     setTitle(bounty.title);
     setDescription(bounty.description);
     setBountyAmount(String(bounty.bountyAmount));
-    const dueDate = new Date(bounty.timeToComplete);
-    setDeadline(
-      Number.isNaN(dueDate.getTime()) ? "" : dueDate.toISOString().slice(0, 10),
-    );
+    setDeadline(toDateInputValue(new Date(bounty.timeToComplete)));
     setReason("");
   }, [bounty, open]);
 
