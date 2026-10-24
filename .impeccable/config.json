@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-10-24T11:47:17.861Z",
+        "reason": "Email-client-safe inline font fallback in the wallet recovery OTP email; not application UI typography"
+      }
+    ]
+  }
+}
