@@ -45,6 +45,13 @@ test("deleting assignee caches removes both admin and user snapshots", async () 
   assert.equal(h.calls.length, 1);
 });
 
+test("invalidating the user directory clears public and admin snapshots", async () => {
+  const h = harness(["users:all", "users:public", "other"]);
+  await h.invalidateUserDirectory();
+  assert.deepEqual([...h.keys], ["other"]);
+  assert.equal(h.calls.length, 1);
+});
+
 test("pattern deletion removes keys from every SCAN batch", async () => {
   const h = harness(["bounty:a", "bounty:b", "bounty:c", "other"], [
     ["bounty:a", "bounty:b"], [], ["bounty:c"],
