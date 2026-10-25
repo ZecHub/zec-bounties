@@ -621,7 +621,11 @@ router.patch("/me/profile", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all").catch(() => {});
+    // Bust BOTH directory caches: GET /api/bounties/users caches the public
+    // directory under `users:public` while /users/full uses `users:all`
+    // (see routes/bounties.js). Deleting only `users:all` left a stale
+    // public directory behind — same class of gap #379 fixed for assignees.
+    await delCache("users:all", "users:public").catch(() => {});
     if (data.profileVisibility) {
       // Bust leaderboard (and any other privacy-scoped) cache so redaction
       // reflects the new flags immediately.
