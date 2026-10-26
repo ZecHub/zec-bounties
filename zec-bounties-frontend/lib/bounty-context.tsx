@@ -276,7 +276,10 @@ interface BountyContextType {
     submissionId: string,
     data: { description: string; deliverableUrl?: string },
   ) => Promise<WorkSubmission>;
-  rejectOtherSubmissions: (submissionId: string) => Promise<void>;
+  rejectOtherSubmissions: (
+    submissionId: string,
+    bountyId?: string,
+  ) => Promise<void>;
 
   // Fetch methods
   fetchUserApplications: () => Promise<void>;
@@ -1824,10 +1827,15 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const rejectOtherSubmissions = async (submissionId: string) => {
+  // Pages that keep their own submission list (the team page) pass the bounty.
+  const rejectOtherSubmissions = async (
+    submissionId: string,
+    bountyId?: string,
+  ) => {
     if (!currentUser) throw new Error("User not authenticated");
 
     const bountyId_ =
+      bountyId ??
       allSubmissions.find((s) => s.id === submissionId)?.bountyId ??
       Object.values(bountySubmissions)
         .flat()
