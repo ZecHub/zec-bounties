@@ -107,6 +107,7 @@ for (const timezone of ["America/New_York", "Asia/Tokyo", "UTC"]) {
         categories: [{ id: "Development", name: "Development" }],
       }) };
       if (id === "sonner") return { toast: { error() {}, success() {} } };
+      if (id === "@/lib/configENV") return { IS_DEV: false };
       if (id === "lucide-react" || id.startsWith("@/components/ui/")) return ui;
       throw new Error(`Unexpected dependency: ${id}`);
     });
@@ -117,7 +118,9 @@ for (const timezone of ["America/New_York", "Asia/Tokyo", "UTC"]) {
     field("timeToComplete").props.onChange({ target: { value: "2026-11-20" } });
     tree = render();
     assert.equal(field("timeToComplete").props.value, "2026-11-20");
-    assert.match(text(tree), /Nov 20, 2026/);
+    // The preview uses the viewer's locale, so build the expected text the same way.
+    const shown = new Date(2026, 10, 20).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    assert.ok(text(tree).includes(shown), `the preview shows ${shown}`);
     for (const [id, value] of [["title", "Fixture"], ["category", "Development"], ["reward", "1"], ["description", "Fixture work"]]) {
       field(id).props.onChange({ target: { value } });
     }
