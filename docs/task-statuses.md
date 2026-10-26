@@ -18,7 +18,7 @@ An assignee has submitted work: a description of what was done, usually with a d
 
 ### Done
 
-The submission was approved. If it is rejected or sent back for revision instead, the bounty returns to In Progress.
+The submission was approved. If it is rejected or sent back for revision instead, the bounty stays In Review while other submissions wait, and otherwise returns to In Progress. A rejection that leaves nobody assigned cancels it.
 
 ### Cancelled
 

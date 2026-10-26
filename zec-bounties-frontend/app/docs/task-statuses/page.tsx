@@ -59,7 +59,9 @@ export default function TaskStatusesPage() {
         </Status>
         <Status name="Done">
           The submission was approved. If it is rejected or sent back for
-          revision instead, the bounty returns to In Progress.
+          revision instead, the bounty stays In Review while other
+          submissions wait, and otherwise returns to In Progress. A rejection
+          that leaves nobody assigned cancels it.
         </Status>
         <Status name="Cancelled">
           The bounty is closed without a payout. This happens when an admin

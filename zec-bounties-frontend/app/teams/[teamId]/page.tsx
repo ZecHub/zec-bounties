@@ -99,6 +99,7 @@ import {
   RescanButton,
   useRescanCooldown,
 } from "@/components/layout/admin/navbar";
+import { toast } from "sonner";
 
 type Tab =
   | "Overview"
@@ -689,6 +690,12 @@ function OverviewTab({
     setIsUpdating(true);
     try {
       await reviewWorkSubmission(submissionId, { status: action, reviewNotes });
+      await loadActivity();
+    } catch (error) {
+      // Someone else may have decided first: say why and show the current list.
+      toast.error(
+        error instanceof Error ? error.message : "Failed to review submission",
+      );
       await loadActivity();
     } finally {
       setIsUpdating(false);
@@ -1495,6 +1502,11 @@ function TeamActivityFeed({
     setActioningId(id);
     try {
       await reviewWorkSubmission(id, { status });
+      await loadActivity();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to review submission",
+      );
       await loadActivity();
     } finally {
       setActioningId(null);
