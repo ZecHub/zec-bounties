@@ -1,6 +1,11 @@
 const { redactBroadcastPayload } = require("../utils/privacy");
 
-const clients = new Map(); // userId -> { ws, userId, userName }
+const clients = new Map(); // userId -> Set of that user's sockets, one per tab or device
+
+// Opening more sockets than this closes the user's oldest one with code 4001.
+// The client does not reconnect after 4001, so tabs can't keep evicting
+// each other.
+const MAX_SOCKETS_PER_USER = 5;
 
 // User fields that must never reach another user's socket. Every name here
 // exists only on the User model, so dropping it by key is safe at any depth
@@ -27,54 +32,59 @@ function serializeForBroadcast(data) {
   );
 }
 
+function sendToSockets(sockets, message) {
+  sockets.forEach((ws) => {
+    if (ws.readyState === 1) ws.send(message);
+  });
+}
+
 // Broadcast to all connected clients
-function broadcast(data, excludeWs) {
+function broadcast(data, excludeUserId) {
   const message = serializeForBroadcast(data);
   console.log(message);
-  clients.forEach((client) => {
-    if (client.ws !== excludeWs && client.ws.readyState === 1) {
-      client.ws.send(message);
-    }
+  clients.forEach((sockets, userId) => {
+    if (userId !== excludeUserId) sendToSockets(sockets, message);
   });
 }
 
 // Broadcast only to a specific set of userIds — used for private-bounty
 // events so the payload never reaches sockets outside that team's community.
-function broadcastToUsers(data, userIds, excludeWs) {
+function broadcastToUsers(data, userIds, excludeUserId) {
   const message = serializeForBroadcast(data);
   const idSet = new Set(userIds);
-  clients.forEach((client, userId) => {
-    if (!idSet.has(userId)) return;
-    if (client.ws !== excludeWs && client.ws.readyState === 1) {
-      client.ws.send(message);
+  clients.forEach((sockets, userId) => {
+    if (idSet.has(userId) && userId !== excludeUserId) {
+      sendToSockets(sockets, message);
     }
   });
 }
 
-// Get WebSocket connection by userId
-function getClientByUserId(userId) {
-  const client = clients.get(userId);
-  return client ? client.ws : null;
+// Send a message to a specific user only (no broadcast), on each open tab
+function sendToUser(userId, type, payload) {
+  const sockets = clients.get(userId);
+  if (sockets) sendToSockets(sockets, JSON.stringify({ type, payload }));
 }
 
-// Send a message to a specific user only (no broadcast)
-function sendToUser(userId, type, payload) {
-  const ws = getClientByUserId(userId);
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type, payload }));
-  }
+// Returns false if the socket was already removed (e.g. by the cap).
+function removeSocket(userId, ws) {
+  const sockets = clients.get(userId);
+  if (!sockets?.delete(ws)) return false;
+  if (sockets.size === 0) clients.delete(userId);
+  return true;
 }
 
 function handleWebSocket(ws, prisma, user) {
-  // If this user already has a live connection, close the old one so a
-  // stale/duplicate/hijacked socket can't keep receiving sendToUser events.
-  const existing = clients.get(user.id);
-  if (existing && existing.ws.readyState === 1) {
-    existing.ws.close(4001, "Replaced by new connection");
+  // Every tab or device keeps its own live socket. Past the cap, close the
+  // oldest so stale or duplicate sockets can't pile up and keep receiving
+  // sendToUser events.
+  let sockets = clients.get(user.id);
+  if (!sockets) clients.set(user.id, (sockets = new Set()));
+  while (sockets.size >= MAX_SOCKETS_PER_USER) {
+    const [oldest] = sockets;
+    sockets.delete(oldest);
+    oldest.close(4001, "Too many open connections");
   }
-
-  const currentClient = { ws, userId: user.id, userName: user.name };
-  clients.set(user.id, currentClient);
+  sockets.add(ws);
 
   ws.send(
     JSON.stringify({
@@ -88,7 +98,7 @@ function handleWebSocket(ws, prisma, user) {
       type: "system",
       content: `${user.name} joined the chat`,
     },
-    ws,
+    user.id,
   );
 
   console.log(`User ${user.name} connected. Total clients: ${clients.size}`);
@@ -148,10 +158,9 @@ function handleWebSocket(ws, prisma, user) {
   });
 
   ws.on("close", () => {
-    // Only remove the map entry if it's still this socket — avoids a race
-    // where an old socket's close event deletes a newer replacement client.
-    if (clients.get(user.id)?.ws === ws) {
-      clients.delete(user.id);
+    // The user has left once their last socket closes. A socket the cap
+    // already removed is skipped, so its late close event changes nothing.
+    if (removeSocket(user.id, ws) && !clients.has(user.id)) {
       console.log(
         `User ${user.name} disconnected. Total clients: ${clients.size}`,
       );
@@ -164,24 +173,23 @@ function handleWebSocket(ws, prisma, user) {
 
   ws.on("error", (error) => {
     console.error("WebSocket error:", error);
-    if (clients.get(user.id)?.ws === ws) {
-      clients.delete(user.id);
-    }
+    removeSocket(user.id, ws);
   });
 }
 
-// Broadcast to all clients except the sender (for shared events like new bounties)
+// Broadcast to all clients except the sender (for shared events like new bounties).
+// All of the sender's tabs are skipped: the acting tab already has the change
+// from its HTTP response, and the server can't tell which tab that was.
 function sendRealtimeUpdate(
   type,
   payload,
   excludeUserId = null,
   recipientUserIds = null,
 ) {
-  const excludeWs = excludeUserId ? getClientByUserId(excludeUserId) : null;
   if (recipientUserIds) {
-    broadcastToUsers({ type, payload }, recipientUserIds, excludeWs);
+    broadcastToUsers({ type, payload }, recipientUserIds, excludeUserId);
   } else {
-    broadcast({ type, payload }, excludeWs);
+    broadcast({ type, payload }, excludeUserId);
   }
 }
 
@@ -205,5 +213,4 @@ module.exports = {
   sendRealtimeUpdate,
   sendToUser,
   sendUserUpdated,
-  getClientByUserId,
 };

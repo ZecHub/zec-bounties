@@ -35,7 +35,11 @@ function connect(id) {
     on(event, fn) {
       handlers[event] = fn;
     },
-    close() {},
+    close(code, reason) {
+      // Like `ws`: the socket starts closing now, its "close" event comes later.
+      ws.closed = { code, reason };
+      ws.readyState = 2;
+    },
     disconnect() {
       handlers.close();
     },
@@ -410,3 +414,70 @@ test("wide bounty updates drop submission bodies", () => {
   assert.equal(bounty.workSubmissions.length, 1, "source is not mutated");
 });
 
+
+test("every open tab of a user receives that user's events", (t) => {
+  const firstTab = connect("alice");
+  const secondTab = connect("alice");
+  t.after(() => [firstTab, secondTab].forEach((ws) => ws.disconnect()));
+
+  sendToUser("alice", "notification_new", { bountyId: "b1" });
+  sendRealtimeUpdate("bounty_updated", bountyPayload(), "bob");
+
+  for (const tab of [firstTab, secondTab]) {
+    assert.equal(tab.closed, undefined, "opening a tab must not close another");
+    assert.equal(eventsOf(tab, "notification_new").length, 1);
+    assert.equal(eventsOf(tab, "bounty_updated").length, 1);
+  }
+});
+
+test("each tab gets one copy of an event, and every tab of the sender is skipped", (t) => {
+  const alice = [connect("alice"), connect("alice")];
+  const bob = [connect("bob"), connect("bob")];
+  t.after(() => [...alice, ...bob].forEach((ws) => ws.disconnect()));
+
+  sendRealtimeUpdate("bounty_updated", bountyPayload(), "alice");
+  sendRealtimeUpdate("bounty_approved", bountyPayload(), "alice", ["alice", "bob", "bob"]);
+  sendUserUpdated("alice", { id: "alice", name: "Alice", email: "alice@example.com" });
+
+  for (const tab of alice) {
+    assert.equal(eventsOf(tab, "bounty_updated").length, 0);
+    assert.equal(eventsOf(tab, "bounty_approved").length, 0);
+    const own = eventsOf(tab, "user_updated");
+    assert.equal(own.length, 1, "the owner's tab gets only the full row");
+    assert.equal(own[0].payload.email, "alice@example.com");
+  }
+  for (const tab of bob) {
+    assert.equal(eventsOf(tab, "bounty_updated").length, 1);
+    assert.equal(eventsOf(tab, "bounty_approved").length, 1);
+    assert.equal(eventsOf(tab, "user_updated").length, 1);
+  }
+});
+
+test("closing one tab leaves the user's other tabs connected", (t) => {
+  const firstTab = connect("alice");
+  const secondTab = connect("alice");
+  t.after(() => secondTab.disconnect());
+
+  firstTab.disconnect();
+  sendToUser("alice", "notification_new", { bountyId: "b1" });
+  sendRealtimeUpdate("bounty_updated", bountyPayload(), "bob", ["alice"]);
+
+  assert.equal(firstTab.received.length, 0);
+  assert.equal(eventsOf(secondTab, "notification_new").length, 1);
+  assert.equal(eventsOf(secondTab, "bounty_updated").length, 1);
+});
+
+test("a sixth tab closes the user's oldest one", (t) => {
+  const tabs = Array.from({ length: 6 }, () => connect("alice"));
+  t.after(() => tabs.forEach((ws) => ws.disconnect()));
+
+  assert.deepEqual(tabs[0].closed, { code: 4001, reason: "Too many open connections" });
+  tabs[0].disconnect(); // its close event arrives after the newer tabs joined
+
+  sendToUser("alice", "notification_new", { bountyId: "b1" });
+  assert.equal(eventsOf(tabs[0], "notification_new").length, 0);
+  for (const tab of tabs.slice(1)) {
+    assert.equal(tab.closed, undefined);
+    assert.equal(eventsOf(tab, "notification_new").length, 1);
+  }
+});
