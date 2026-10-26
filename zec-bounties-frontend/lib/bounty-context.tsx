@@ -292,6 +292,7 @@ interface BountyContextType {
   // Action methods
   acceptApplication: (applicationId: string) => Promise<BountyApplication>;
   rejectApplication: (applicationId: string) => Promise<BountyApplication>;
+  withdrawApplication: (applicationId: string) => Promise<void>;
 
   // Work submission
   submitWork: (
@@ -1920,6 +1921,54 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       return updatedApplication;
     } catch (error) {
       console.error("Failed to reject application:", error);
+      throw error;
+    }
+  };
+
+  const withdrawApplication = async (applicationId: string) => {
+    if (!currentUser) throw new Error("User not authenticated");
+
+    // The endpoint answers with a message only, so the bounty has to be
+    // resolved from the applications already held in state.
+    const target =
+      applications.find((app) => app.id === applicationId) ||
+      allApplications.find((app) => app.id === applicationId) ||
+      null;
+    const bountyId = target?.bountyId;
+
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/bounties/applications/${applicationId}`,
+        {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        },
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to withdraw application");
+      }
+
+      // The withdrawing user is excluded from the `application_deleted`
+      // broadcast, so the local lists are updated here.
+      setApplications((prev) => prev.filter((app) => app.id !== applicationId));
+      setAllApplications((prev) =>
+        prev.filter((app) => app.id !== applicationId),
+      );
+      setBountyApplications((prev) => {
+        if (!bountyId || !prev[bountyId]) return prev;
+        return {
+          ...prev,
+          [bountyId]: prev[bountyId].filter((app) => app.id !== applicationId),
+        };
+      });
+
+      if (bountyId) await patchOneBounty(bountyId);
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      // A review may have landed first; resync so the panel shows the real state.
+      await fetchUserApplications();
       throw error;
     }
   };
@@ -4184,6 +4233,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         getAllApplicationsForBounty,
         acceptApplication,
         rejectApplication,
+        withdrawApplication,
         allApplications,
         bountyApplications,
         submitWork,
