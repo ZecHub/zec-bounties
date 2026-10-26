@@ -70,6 +70,8 @@ function createDb() {
       findUnique: async ({ where }) => teams.find((t) => t.id === where.id) ?? null,
       delete: async ({ where }) => teams.splice(teams.findIndex((t) => t.id === where.id), 1)[0],
     },
+    // No payouts from the team wallet are waiting to be settled.
+    transaction: { count: async () => 0 },
     user: {
       findUnique: async ({ where }) => ({ id: where.id, role: "TEAM", isRobin: false }),
       update: async ({ where, data }) => ({ id: where.id, ...data }),
@@ -79,7 +81,7 @@ function createDb() {
 }
 
 function loadRoutes(file, db, overrides = {}) {
-  const effects = { removedDirs: [] };
+  const effects = { removedDirs: [], retiredDirs: [] };
   const routes = {};
   const router = new Proxy(
     {},
@@ -90,7 +92,14 @@ function loadRoutes(file, db, overrides = {}) {
     "@prisma/client": { PrismaClient: function () { return db; } },
     "../prisma/client": db,
     "../helpers/zcash/zcashHelper.js": { getWalletDataDir: (walletId) => `wallets/${walletId}` },
-    fs: { promises: { rm: async (dir) => effects.removedDirs.push(dir) } },
+    path,
+    fs: {
+      promises: {
+        rm: async (dir) => effects.removedDirs.push(dir),
+        mkdir: async () => {},
+        rename: async (dir) => effects.retiredDirs.push(dir),
+      },
+    },
     ...overrides,
   };
   const filename = path.join(__dirname, "../routes", file);
@@ -150,7 +159,7 @@ test("deleting a team removes every member's copy of the team wallet", async () 
     params: { teamId: "team-1" },
   });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(teams.effects.removedDirs, ["wallets/team-wallet"]);
+  assert.deepEqual(teams.effects.retiredDirs, ["wallets/team-wallet"]);
   assert.equal(db.teams.length, 0);
   assertCopiesRemoved(db);
 });
@@ -182,7 +191,7 @@ test("converting a team owner to hunter removes the copies of their team's walle
   });
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body.deletedTeamIds, ["team-1"]);
-  assert.deepEqual(teams.effects.removedDirs, ["wallets/team-wallet"]);
+  assert.deepEqual(teams.effects.retiredDirs, ["wallets/team-wallet"]);
   assertCopiesRemoved(db);
 });
 
@@ -196,7 +205,7 @@ test("deleting a team without a wallet leaves members' wallets alone", async () 
     params: { teamId: "team-1" },
   });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(teams.effects.removedDirs, []);
+  assert.deepEqual(teams.effects.retiredDirs, []);
   assert.deepEqual(db.wallets, before);
 });
 
