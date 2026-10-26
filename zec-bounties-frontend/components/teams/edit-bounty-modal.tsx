@@ -36,6 +36,7 @@ import { useBounty } from "@/lib/bounty-context";
 import { Bounty } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
 import { IS_DEV } from "@/lib/configENV";
+import { parseDateInputValue, toDateInputValue } from "@/lib/utils";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -77,7 +78,7 @@ export function TeamsEditBountyModal({
     setBountyAmount(String(bounty.bountyAmount ?? ""));
     setTimeToComplete(
       bounty.timeToComplete
-        ? new Date(bounty.timeToComplete).toISOString().slice(0, 10)
+        ? toDateInputValue(new Date(bounty.timeToComplete))
         : "",
     );
     setChain(bounty.chain ?? "MAIN");
@@ -127,7 +128,7 @@ export function TeamsEditBountyModal({
 
       // Preserve unchanged deadlines, including expired dates and their time of day.
       const originalDeadline = bounty.timeToComplete
-        ? new Date(bounty.timeToComplete).toISOString().slice(0, 10)
+        ? toDateInputValue(new Date(bounty.timeToComplete))
         : "";
       await updateBounty(bounty.id, {
         title,
@@ -135,7 +136,7 @@ export function TeamsEditBountyModal({
         bountyAmount: parseFloat(bountyAmount),
         timeToComplete:
           timeToComplete && timeToComplete !== originalDeadline
-            ? new Date(timeToComplete).toISOString()
+            ? parseDateInputValue(timeToComplete).toISOString()
             : undefined,
         ...(IS_DEV && chain !== (bounty.chain ?? "MAIN") && { chain }),
         notifyUsers,
@@ -304,7 +305,7 @@ export function TeamsEditBountyModal({
                   <Input
                     id="edit-deadline"
                     type="date"
-                    min={new Date().toISOString().split("T")[0]}
+                    min={toDateInputValue(new Date())}
                     value={timeToComplete}
                     onChange={(e) => setTimeToComplete(e.target.value)}
                   />
