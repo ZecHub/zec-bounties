@@ -133,24 +133,34 @@ async function broadcastTeamEvent(
 // (bounty, submission, application, { bountyId }). Fails closed — if the
 // audience can't be resolved nothing is sent; clients refetch on their own.
 // Who REST lets see one submission's body: the bounty creator, platform
-// admins, and the submitter. Assignees only see their own via REST, so other
+// admins, the submitter, and for a team bounty the team's OWNER and ADMIN
+// members, who review it. Assignees only see their own via REST, so other
 // assignees are not in this set. Returns [] when the bounty is gone so the
 // caller fails closed.
 async function getSubmissionRecipients(bountyId, submitterId) {
   const bounty = await prisma.bounty.findUnique({
     where: { id: bountyId },
-    select: { createdBy: true },
+    select: { createdBy: true, teamId: true },
   });
   if (!bounty) return [];
   const admins = await prisma.user.findMany({
     where: { role: "ADMIN" },
     select: { id: true },
   });
+  const teamReviewers = bounty.teamId
+    ? await prisma.teamMember.findMany({
+        where: { teamId: bounty.teamId, role: { in: ["OWNER", "ADMIN"] } },
+        select: { userId: true },
+      })
+    : [];
   return [
     ...new Set(
-      [bounty.createdBy, submitterId, ...admins.map((a) => a.id)].filter(
-        Boolean,
-      ),
+      [
+        bounty.createdBy,
+        submitterId,
+        ...admins.map((a) => a.id),
+        ...teamReviewers.map((m) => m.userId),
+      ].filter(Boolean),
     ),
   ];
 }
