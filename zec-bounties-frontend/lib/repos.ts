@@ -32,7 +32,7 @@ export const REPOS: readonly RepoMeta[] = [
     icon: "/zechub-wiki.svg",
     patterns: [
       /github\.com\/ZecHub\/zechub-wiki\b/i,
-      /zechub\.wiki\//i,
+      /(?:^|[^\w./-])(?:https?:\/\/)?zechub\.wiki(?=[/?#\s)\]>"']|$)/i,
     ],
   },
   {
@@ -51,6 +51,7 @@ export const REPOS: readonly RepoMeta[] = [
     patterns: [
       /github\.com\/ZecHub\/Namada\b/i,
       /github\.com\/namada-net\/namada\b/i,
+      /(?:^|[^\w./-])(?:https?:\/\/)?namada\.zechub\.wiki(?=[/?#\s)\]>"']|$)/i,
     ],
   },
 ];
