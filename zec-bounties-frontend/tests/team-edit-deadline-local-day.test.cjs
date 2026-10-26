@@ -72,6 +72,7 @@ function loadEditModal(h, sent) {
       nonAdminUsers: [],
     }) };
     if (id === "@/lib/displayName") return { displayName: (u) => u.name ?? "" };
+    if (id === "@/lib/configENV") return { IS_DEV: false };
     if (id === "lucide-react" || id.startsWith("@/components/ui/")) return ui;
     throw new Error(`Unexpected dependency: ${id}`);
   }).TeamsEditBountyModal;
