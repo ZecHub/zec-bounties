@@ -89,7 +89,7 @@ function loadRoutes(prisma) {
     dependencies[`../utils/zingo/zingoLib${name}`] = noOp;
   }
   const handlers = {};
-  for (const [name, file, method, route] of [["create", "bounties", "post", "/"], ["team", "teams", "post", "/:teamId/bounties"], ["edit", "bounties", "put", "/:id"]]) {
+  for (const [name, file, method, route] of [["create", "bounties", "post", "/"], ["team", "teams", "post", "/:teamId/bounties"], ["edit", "bounties", "put", "/:id"], ["reviewApplication", "bounties", "put", "/applications/:applicationId"]]) {
     const routes = [];
     const router = Object.fromEntries(["get", "post", "put", "delete", "patch"].map((method) => [method,
       (url, ...callbacks) => routes.push({ method, url, callbacks }),
@@ -99,8 +99,8 @@ function loadRoutes(prisma) {
   }
   return {
     effects,
-    async request(route, body, { user = { id: "admin", role: "ADMIN" }, teamId = "team1", bountyId = "b1" } = {}) {
-      const req = { user, params: { teamId, id: bountyId }, body };
+    async request(route, body, { user = { id: "admin", role: "ADMIN" }, teamId = "team1", bountyId = "b1", applicationId = "a1" } = {}) {
+      const req = { user, params: { teamId, id: bountyId, applicationId }, body };
       const res = {
         statusCode: 200,
         status(code) { this.statusCode = code; return this; },

@@ -2506,6 +2506,7 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
             title: true,
             createdBy: true,
             teamId: true,
+            status: true,
           },
         },
       },
@@ -2522,6 +2523,13 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
       return res.status(403).json({
         error: "You do not have permission to manage this application",
       });
+    }
+    // A late application on a finished bounty can still be rejected, but
+    // accepting it would reopen the bounty.
+    if (status === "accepted" && application.bounty.status === "DONE") {
+      return res
+        .status(400)
+        .json({ error: "Cannot accept an application on a completed bounty" });
     }
 
     const [result, updatedBounty, activityRow] = await prisma.$transaction(
@@ -2572,9 +2580,12 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
             },
           });
 
-          await tx.bounty.update({
+          // Start work only from TO_DO or CANCELLED, like POST /:id/assignees;
+          // a bounty already in progress or under review keeps its status.
+          await tx.bounty.updateMany({
             where: {
               id: application.bountyId,
+              status: { in: ["TO_DO", "CANCELLED"] },
             },
             data: {
               status: "IN_PROGRESS",
