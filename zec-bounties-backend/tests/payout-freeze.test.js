@@ -68,8 +68,9 @@ function fixture(payment = {}) {
     bountyAssignee: {
       findMany: async () => full().assignees,
       deleteMany: async ({ where }) => {
-        writes.push({ removed: where.userId?.in ?? roster });
-        roster = where.userId ? roster.filter((id) => !where.userId.in.includes(id)) : [];
+        const removed = where.userId === undefined ? roster : where.userId.in ?? [where.userId];
+        writes.push({ removed });
+        roster = roster.filter((id) => !removed.includes(id));
       },
       createMany: async ({ data }) => {
         writes.push({ added: data.map((a) => a.userId) });
@@ -93,6 +94,7 @@ function fixture(payment = {}) {
   };
   return {
     ...loadRoutes(db),
+    db,
     bounty,
     submissions,
     writes,
@@ -136,6 +138,22 @@ const requests = [
     unpaid: (h) => assert.equal(h.bounty.status, "CANCELLED"),
   },
   {
+    action: "Approve Bounty (isApproved: true)",
+    route: "edit",
+    body: { isApproved: true },
+    unpaid: (h) => assert.equal(h.bounty.status, "IN_PROGRESS"),
+  },
+  {
+    action: "approving a bounty its creator is assigned to",
+    route: "approve",
+    body: {},
+    bounty: { createdBy: "alice" },
+    unpaid: (h) => {
+      assert.equal(h.bounty.assignee, null);
+      assert.deepEqual(h.roster(), ["bob"]);
+    },
+  },
+  {
     action: "rejecting the other submissions",
     route: "rejectOthers",
     body: {},
@@ -153,10 +171,10 @@ const frozenStates = [
   ["authorised", { paymentAuthorized: true }],
 ];
 
-for (const { action, route, body } of requests) {
+for (const { action, route, body, bounty } of requests) {
   for (const [state, payment] of frozenStates) {
     test(`${action} is refused once the payout is ${state}`, async () => {
-      const h = fixture(payment);
+      const h = fixture({ ...bounty, ...payment });
       const res = await h.request(route, body);
       assert.equal(res.statusCode, 409, JSON.stringify(res.body));
       assert.match(res.body.error, /cannot be changed once payment is authorised or in progress/);
@@ -169,11 +187,45 @@ for (const { action, route, body } of requests) {
   }
 }
 
-for (const { action, route, body, unpaid } of requests) {
+for (const { action, route, body, bounty, unpaid } of requests) {
   test(`control: ${action} still works before payment`, async () => {
-    const h = fixture();
+    const h = fixture(bounty);
     const res = await h.request(route, body);
     assert.equal(res.statusCode, 200, JSON.stringify(res.body));
     unpaid(h);
   });
 }
+
+for (const [state, payment] of frozenStates) {
+  test(`a title-only edit still works once the payout is ${state}`, async () => {
+    const h = fixture(payment);
+    const res = await h.request("edit", { title: "Renamed fixture" });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(h.bounty.title, "Renamed fixture");
+    assert.equal(h.bounty.status, "DONE");
+    assert.equal(h.bounty.assignee, "alice");
+  });
+}
+
+test("rejecting the other submissions with none pending is still a no-op once paid", async () => {
+  const h = fixture({ isPaid: true });
+  h.submissions[1].status = "rejected";
+  const res = await h.request("rejectOthers", {});
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.rejectedCount, 0);
+  assert.deepEqual(h.writes, []);
+});
+
+test("a payout claimed after the first read is caught before the assignees change", async () => {
+  const h = fixture();
+  // The payout claim commits while the route waits for the bounty's row lock.
+  h.db.$queryRaw = async () => {
+    h.bounty.paymentInFlight = true;
+    return [];
+  };
+  const res = await h.request("assignees", { userIds: [] });
+  assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+  assert.deepEqual(h.writes, []);
+  assert.equal(h.bounty.status, "DONE");
+  assert.deepEqual(h.roster(), ["alice", "bob"]);
+});

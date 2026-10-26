@@ -57,6 +57,7 @@ test("a started payout freezes payee, assignees and status in real PostgreSQL", 
       ["reopening the bounty", "status", { status: "IN_PROGRESS" }],
       ["clearing the assignees", "assignees", { userIds: [] }],
       ["Reject Bounty (isApproved: false)", "edit", { isApproved: false }],
+      ["Approve Bounty (isApproved: true)", "edit", { isApproved: true }],
       ["rejecting the other submissions", "rejectOthers", {}],
     ];
     for (const [action, route, body] of requests) {
@@ -68,6 +69,39 @@ test("a started payout freezes payee, assignees and status in real PostgreSQL", 
         assert.deepEqual(await state(f.bountyId), before);
       });
     }
+    await t.test("paid: approving a bounty its creator is assigned to is refused", async () => {
+      const f = await seed({ isPaid: true, paymentAuthorized: true, paidAt: new Date(), createdBy: ids.alice });
+      const before = await state(f.bountyId);
+      const res = await h.request("approve", {}, { user: admin, ...f });
+      assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+      assert.deepEqual(await state(f.bountyId), before);
+    });
+    await t.test("a payout claimed while the assignees route waits for its row lock is caught", async () => {
+      const f = await seed({});
+      const before = await state(f.bountyId);
+      // Commits the claim on another connection just before the route locks
+      // the bounty, after its first read saw an unpaid bounty.
+      const claimFirst = (tx) => new Proxy(tx, {
+        get(target, key) {
+          const value = target[key];
+          if (key !== "$queryRaw") return typeof value === "function" ? value.bind(target) : value;
+          return async (...args) => {
+            await db.bounty.update({ where: { id: f.bountyId }, data: { paymentInFlight: true } });
+            return value.apply(target, args);
+          };
+        },
+      });
+      const racing = new Proxy(db, {
+        get(target, key) {
+          if (key === "$transaction") return (fn, options) => target.$transaction(tx => fn(claimFirst(tx)), options);
+          const value = target[key];
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      const res = await loadRoutes(racing).request("assignees", { userIds: [] }, { user: admin, ...f });
+      assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+      assert.deepEqual(await state(f.bountyId), before);
+    });
     await t.test("in flight: clearing the assignees is refused", async () => {
       const f = await seed({ paymentInFlight: true });
       const before = await state(f.bountyId);
@@ -90,7 +124,7 @@ test("a started payout freezes payee, assignees and status in real PostgreSQL", 
       assert.deepEqual(after.roster, []);
     });
   } finally {
-    await db.bounty.deleteMany({ where: { createdBy: ids.admin } });
+    await db.bounty.deleteMany({ where: { createdBy: { in: Object.values(ids) } } });
     await db.user.deleteMany({ where: { id: { in: Object.values(ids) } } });
     await db.$disconnect();
   }

@@ -89,7 +89,7 @@ function loadRoutes(prisma) {
     dependencies[`../utils/zingo/zingoLib${name}`] = noOp;
   }
   const handlers = {};
-  for (const [name, file, method, route] of [["create", "bounties", "post", "/"], ["team", "teams", "post", "/:teamId/bounties"], ["edit", "bounties", "put", "/:id"], ["status", "bounties", "patch", "/:id/status"], ["assignees", "bounties", "post", "/:id/assignees"], ["rejectOthers", "bounties", "patch", "/submissions/:submissionId/reject-others"]]) {
+  for (const [name, file, method, route] of [["create", "bounties", "post", "/"], ["team", "teams", "post", "/:teamId/bounties"], ["edit", "bounties", "put", "/:id"], ["status", "bounties", "patch", "/:id/status"], ["assignees", "bounties", "post", "/:id/assignees"], ["rejectOthers", "bounties", "patch", "/submissions/:submissionId/reject-others"], ["approve", "bounties", "patch", "/:id/approve"]]) {
     const routes = [];
     const router = Object.fromEntries(["get", "post", "put", "delete", "patch"].map((method) => [method,
       (url, ...callbacks) => routes.push({ method, url, callbacks }),

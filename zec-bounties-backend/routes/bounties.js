@@ -898,8 +898,17 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       `;
         const currentBounty = await tx.bounty.findUniqueOrThrow({
           where: { id: bountyId },
-          select: { status: true },
+          select: {
+            status: true,
+            isPaid: true,
+            paymentAuthorized: true,
+            paymentInFlight: true,
+          },
         });
+        // A payout claimed since the check above is caught here, under the lock
+        if (!requirePayoutNotStarted(currentBounty, res, "Assignees")) {
+          return [];
+        }
         const previousAssignees = await tx.bountyAssignee.findMany({
           where: { bountyId },
           include: { user: { select: USER_SELECT_FULL } },
@@ -948,6 +957,7 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         });
         return [bountyRow, created, previousAssignees];
       });
+    if (!freshBounty) return; // refused under the lock
     const existingAssigneeIds = new Set(existingAssignees.map((a) => a.userId));
     const newAssigneeIds = new Set(userIds);
 
@@ -1190,7 +1200,13 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
     const bountyId = req.params.id;
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { createdBy: true, assignee: true },
+      select: {
+        createdBy: true,
+        assignee: true,
+        isPaid: true,
+        paymentAuthorized: true,
+        paymentInFlight: true,
+      },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
@@ -1199,6 +1215,12 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
     // self-assignment that would otherwise stop anyone else from applying. An
     // assignment an admin made deliberately is left alone.
     const releaseSelfAssignment = bounty.assignee === bounty.createdBy;
+    if (
+      releaseSelfAssignment &&
+      !requirePayoutNotStarted(bounty, res, "Assignee")
+    ) {
+      return;
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       if (releaseSelfAssignment) {
@@ -2114,9 +2136,6 @@ router.patch(
           error: "Can only reject other submissions once one has been approved",
         });
       }
-      if (!requirePayoutNotStarted(keptSubmission.bounty, res, "Assignees")) {
-        return;
-      }
 
       const othersPending = await prisma.workSubmission.findMany({
         where: {
@@ -2132,6 +2151,15 @@ router.patch(
           message: "No other pending submissions",
           rejectedCount: 0,
         });
+      }
+      if (
+        !requirePayoutNotStarted(
+          keptSubmission.bounty,
+          res,
+          "Submissions and assignees",
+        )
+      ) {
+        return;
       }
 
       const rejectedUserIds = [
