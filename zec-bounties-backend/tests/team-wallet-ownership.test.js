@@ -161,3 +161,58 @@ test("adding a new member still works", async () => {
   assert.equal(res.statusCode, 201);
   assert.equal(db.members.find((m) => m.userId === "newcomer").role, "MEMBER");
 });
+
+// Two global admins are members of team-1 and each holds a copy of its
+// wallet. Each pays platform bounties from a personal default wallet.
+function createDefaultsDb() {
+  const wallets = [
+    { id: 1, ownerId: "admin-b", accountName: "Main", teamId: null, isDefault: true },
+    { id: 2, ownerId: "admin-b", accountName: "Team", teamId: "team-1", isDefault: false },
+    { id: 3, ownerId: "admin-a", accountName: "Main", teamId: null, isDefault: true },
+    { id: 4, ownerId: "admin-a", accountName: "Team", teamId: "team-1", isDefault: false },
+  ];
+  const matches = (row, where) =>
+    Object.entries(where).every(([key, value]) => row[key] === value);
+  const zcashParams = {
+    findFirst: async ({ where }) => wallets.find((row) => matches(row, where)) ?? null,
+    update: async ({ where, data }) =>
+      Object.assign(wallets.find((row) => row.id === where.id), data),
+    updateMany: async ({ where, data }) => {
+      const hit = wallets.filter((row) => matches(row, where));
+      hit.forEach((row) => Object.assign(row, data));
+      return { count: hit.length };
+    },
+  };
+  return { wallets, zcashParams, $transaction: async (fn) => fn({ zcashParams }) };
+}
+
+const defaultsOf = (db, ownerId) =>
+  db.wallets
+    .filter((w) => w.ownerId === ownerId && w.isDefault)
+    .map((w) => (w.teamId ? `${w.accountName}@${w.teamId}` : w.accountName));
+
+const setDefault = (db, user, accountName, teamId) =>
+  loadRoutes("zcash.js", db, {
+    "../utils/zingo/getZingo": { invalidateZingo() {} },
+    "../middleware/websocket": { sendToUser() {} },
+  }).call("patch /params/:accountName/set-default", {
+    user,
+    params: { accountName },
+    body: { teamId },
+  });
+
+test("choosing a team wallet as default changes only the caller's own copy", async () => {
+  const db = createDefaultsDb();
+  const res = await setDefault(db, { id: "admin-a", role: "ADMIN" }, "Team", "team-1");
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(defaultsOf(db, "admin-a"), ["Team@team-1"]);
+  assert.deepEqual(defaultsOf(db, "admin-b"), ["Main"]);
+});
+
+test("setting a default leaves the caller with only that one", async () => {
+  const db = createDefaultsDb();
+  db.wallets[1].isDefault = true; // admin-b has two defaults
+  const res = await setDefault(db, { id: "admin-b", role: "ADMIN" }, "Main");
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(defaultsOf(db, "admin-b"), ["Main"]);
+});

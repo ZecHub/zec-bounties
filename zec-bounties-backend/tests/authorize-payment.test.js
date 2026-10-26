@@ -114,6 +114,7 @@ beforeEach(() => {
     serverUrl: "http://fake",
     dataDir: "/tmp/unused",
     teamId: null,
+    isDefault: true,
   };
   bounties = [
     {
@@ -205,6 +206,22 @@ describe("POST /authorize-payment settlement", () => {
 
   it("does not pay from a team wallet that became the admin's default", async () => {
     adminWallet.teamId = "team1";
+    let sent = false;
+    sendImpl = async () => {
+      sent = true;
+      return { txids: [TXID], error: null, timedOut: false, raw: "{}" };
+    };
+    const { status } = await pay();
+
+    assert.equal(status, 400);
+    assert.equal(sent, false);
+    assert.equal(bounties[0].paymentInFlight, false);
+  });
+
+  it("does not pay from a wallet the admin never marked as default", async () => {
+    // getDefaultZcashParams falls back to the newest wallet when none is
+    // marked default.
+    adminWallet.isDefault = false;
     let sent = false;
     sendImpl = async () => {
       sent = true;

@@ -128,7 +128,7 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
   // Only the external wallet boundary is substituted. The retained payout
   // handler performs its real claim, settlement and cache invalidation steps.
   dependencies["../helpers/zcash/zcashHelper"] = {
-    getDefaultZcashParams: async () => ({ walletId: "fixture-wallet", accountName: "Main", chain: "mainnet" }),
+    getDefaultZcashParams: async () => ({ walletId: "fixture-wallet", accountName: "Main", chain: "mainnet", isDefault: true }),
   };
   dependencies["../utils/zingo/zingoLibQuickSend"] = async () => sendError
     ? { error: sendError }

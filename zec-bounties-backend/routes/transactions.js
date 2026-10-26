@@ -175,10 +175,12 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         .json({ error: "No bounties selected for payment" });
     }
 
-    // Resolve the acting admin's default wallet
+    // Resolve the acting admin's default wallet. Without one marked default,
+    // getDefaultZcashParams falls back to their newest wallet; that is fine
+    // for reading, but a payout only goes out from a wallet they chose.
     const adminWallet = await getDefaultZcashParams(req.user.id);
 
-    if (!adminWallet) {
+    if (!adminWallet?.isDefault) {
       return res.status(400).json({
         error:
           "No default wallet configured. Please set a default wallet in settings before authorizing payments.",

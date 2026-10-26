@@ -615,8 +615,12 @@ router.patch(
       const userId = req.user.id;
       const { teamId } = req.body;
 
+      // Every team member holds their own copy of a team wallet; only the
+      // caller's copy can become their default.
       const existing = teamId
-        ? await prisma.zcashParams.findFirst({ where: { accountName, teamId } })
+        ? await prisma.zcashParams.findFirst({
+            where: { accountName, teamId, ownerId: userId },
+          })
         : await prisma.zcashParams.findFirst({
             where: { accountName, ownerId: userId, teamId: null },
           });
@@ -630,16 +634,11 @@ router.patch(
 
       const updated = await prisma.$transaction(
         async (tx) => {
-          const currentDefault = await tx.zcashParams.findFirst({
-            where: { isDefault: true, ownerId: userId },
+          // Clear every default the caller has, so they end up with one.
+          await tx.zcashParams.updateMany({
+            where: { ownerId: userId, isDefault: true },
+            data: { isDefault: false },
           });
-
-          if (currentDefault) {
-            await tx.zcashParams.update({
-              where: { id: currentDefault.id },
-              data: { isDefault: false },
-            });
-          }
 
           return tx.zcashParams.update({
             where: { id: existing.id },
