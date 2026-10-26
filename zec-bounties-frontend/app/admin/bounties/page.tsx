@@ -97,6 +97,7 @@ export default function MarketplacePage() {
     bounties,
     bountiesLoading,
     hasMoreBounties,
+    bountiesResetVersion,
     loadMoreBounties,
     loadAllBounties,
     currentUser,
@@ -203,17 +204,29 @@ export default function MarketplacePage() {
     return () => observer.disconnect();
   }, [hasMoreBounties, bountiesLoading, loadMoreBounties, viewMode]);
 
-  const defragLoadStarted = useRef(false);
+  // The list reset version the current full load started under.
+  const defragLoadStarted = useRef<number | null>(null);
   useEffect(() => {
     if (viewMode !== "defrag") {
-      defragLoadStarted.current = false;
+      defragLoadStarted.current = null;
       return;
     }
-    if (!hasMoreBounties || bountiesLoading || defragLoadStarted.current)
+    // Load every page once per list reset; a reset is back on page 1.
+    if (
+      !hasMoreBounties ||
+      bountiesLoading ||
+      defragLoadStarted.current === bountiesResetVersion
+    )
       return;
-    defragLoadStarted.current = true;
+    defragLoadStarted.current = bountiesResetVersion;
     loadAllBounties();
-  }, [viewMode, hasMoreBounties, bountiesLoading, loadAllBounties]);
+  }, [
+    viewMode,
+    hasMoreBounties,
+    bountiesLoading,
+    loadAllBounties,
+    bountiesResetVersion,
+  ]);
 
   const openBounty = (bounty: Bounty) => {
     setSelectedBounty(bounty);

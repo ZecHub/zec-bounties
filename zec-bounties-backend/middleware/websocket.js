@@ -186,7 +186,8 @@ function sendRealtimeUpdate(
 }
 
 // Profile fields other users may see when someone's account changes. Their
-// clients only use the event to refresh bounty and user lists.
+// clients use the event to refresh the user list, and the bounty list when
+// the role changed.
 const PUBLIC_USER_UPDATE_FIELDS = ["id", "name", "nickname", "avatar", "role"];
 
 // The owner gets the full row; everyone else gets the public profile fields

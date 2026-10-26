@@ -130,6 +130,7 @@ function HomeContent() {
     loadMoreBounties,
     loadAllBounties,
     hasMoreBounties,
+    bountiesResetVersion,
     fetchBountyById,
     teamBounties,
     teamBountiesLoading,
@@ -147,7 +148,8 @@ function HomeContent() {
   );
   const [filterLoadError, setFilterLoadError] = useState(false);
   const [filterLoadRetry, setFilterLoadRetry] = useState(0);
-  const filterLoadStarted = useRef(false);
+  // The list reset version the full load last ran for.
+  const filterLoadStarted = useRef<number | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
@@ -359,17 +361,23 @@ function HomeContent() {
   useEffect(() => {
     if (activeTeamId) return;
     if (!requiresCompleteResults) {
-      filterLoadStarted.current = false;
+      filterLoadStarted.current = null;
       setFilterLoadError(false);
       return;
     }
-    if (!hasMoreBounties || bountiesLoading || filterLoadStarted.current)
+    // Load every page once per list reset; a reset is back on page 1.
+    if (bountiesLoading || filterLoadStarted.current === bountiesResetVersion)
       return;
 
-    filterLoadStarted.current = true;
+    const version = bountiesResetVersion;
+    filterLoadStarted.current = version;
     setFilterLoadError(false);
+    if (!hasMoreBounties) return;
     void loadAllBounties().then((loaded) => {
-      if (!loaded) setFilterLoadError(true);
+      // Ignore a load that a later list reset superseded.
+      if (!loaded && filterLoadStarted.current === version) {
+        setFilterLoadError(true);
+      }
     });
   }, [
     requiresCompleteResults,
@@ -378,6 +386,7 @@ function HomeContent() {
     loadAllBounties,
     filterLoadRetry,
     activeTeamId,
+    bountiesResetVersion,
   ]);
 
   const canLoadMore = sourceHasMore && !requiresCompleteResults;
@@ -780,7 +789,7 @@ function HomeContent() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        filterLoadStarted.current = false;
+                        filterLoadStarted.current = null;
                         setFilterLoadRetry((attempt) => attempt + 1);
                         setFilterLoadError(false);
                       }}

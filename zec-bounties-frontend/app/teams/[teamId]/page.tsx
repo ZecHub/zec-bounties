@@ -2565,7 +2565,13 @@ function SettingsTab({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateTeam(team.id, { name, description, isPrivate });
+      // Send isPrivate only when it was toggled: a privacy change rewrites
+      // every team bounty and reloads every open board.
+      await updateTeam(team.id, {
+        name,
+        description,
+        ...(isPrivate !== team.isPrivate && { isPrivate }),
+      });
     } catch (err) {
       console.error(err);
     } finally {

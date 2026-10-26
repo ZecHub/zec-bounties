@@ -190,6 +190,8 @@ interface BountyContextType {
   loadAllBounties: () => Promise<boolean>;
   hasMoreBounties: boolean;
   bountiesPage: number;
+  /** Bumped each time the board list is reset to its first page. */
+  bountiesResetVersion: number;
   myBounties: Bounty[];
   myBountiesLoading: boolean;
   fetchMyBounties: () => Promise<void>;
@@ -495,6 +497,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [bountiesLoading, setBountiesLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
+  // The WebSocket handler is created once per sign-in; it reads the
+  // current users list through this ref.
+  const usersRef = useRef(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
   const [nonAdminUsers, setNonAdminUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [applications, setApplications] = useState<BountyApplication[]>([]);
@@ -519,6 +527,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const BOUNTIES_PER_PAGE = 10;
   const [bountiesPage, setBountiesPage] = useState(1);
   const [hasMoreBounties, setHasMoreBounties] = useState(true);
+  const [bountiesResetVersion, setBountiesResetVersion] = useState(0);
   const [totalBountyAmount, setTotalBountyAmount] = useState(0);
   const [totalBountyCount, setTotalBountyCount] = useState(0);
   const [totalActiveCount, setTotalActiveCount] = useState(0);
@@ -2850,8 +2859,24 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                   ...msg.payload,
                 }),
               );
+              fetchBounties();
+            } else {
+              // Another user's profile change keeps the board's loaded pages;
+              // their name and avatar update on the next load. A role change
+              // can change what this viewer may see, so it reloads the list.
+              // A new user's first role pick (from CLIENT) cannot.
+              const known = usersRef.current.find(
+                (u) => u.id === msg.payload.id,
+              );
+              if (
+                known &&
+                known.role !== "CLIENT" &&
+                msg.payload.role &&
+                msg.payload.role !== known.role
+              ) {
+                fetchBounties();
+              }
             }
-            fetchBounties();
             fetchUsers();
             break;
 
@@ -3021,6 +3046,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (reset) {
         setBounties(incoming);
         setBountiesPage(2);
+        setBountiesResetVersion((v) => v + 1);
       } else {
         setBounties((prev) => {
           const existingIds = new Set(prev.map((b) => b.id));
@@ -4232,6 +4258,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         loadAllBounties,
         hasMoreBounties,
         bountiesPage,
+        bountiesResetVersion,
         totalBountyAmount,
         totalBountyCount,
         totalActiveCount,
