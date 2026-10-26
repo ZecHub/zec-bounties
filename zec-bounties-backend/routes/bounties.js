@@ -136,6 +136,20 @@ const invalidateSubmissions = async (bountyId, submittedBy) => {
 
 const HUNTER_EDIT_WINDOW_MS = 15 * 60 * 1000;
 
+// Once a payout is authorised, in flight or done, the payee, the assignees and
+// the status are frozen, like the assignee and reward in the edit route:
+// earnings and leaderboard credit follow them. Sends a 409 and returns false
+// for such a bounty.
+function requirePayoutNotStarted(bounty, res, what) {
+  if (bounty.isPaid || bounty.paymentInFlight || bounty.paymentAuthorized) {
+    res.status(409).json({
+      error: `${what} cannot be changed once payment is authorised or in progress`,
+    });
+    return false;
+  }
+  return true;
+}
+
 async function canManageBounty(bounty, user) {
   if (user.role === "ADMIN") return true;
   if (bounty.createdBy === user.id) return true;
@@ -862,6 +876,9 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         title: true,
         teamId: true,
         createdBy: true,
+        isPaid: true,
+        paymentAuthorized: true,
+        paymentInFlight: true,
       },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
@@ -871,6 +888,7 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         error: "You do not have permission to manage this bounty's assignees",
       });
     }
+    if (!requirePayoutNotStarted(bounty, res, "Assignees")) return;
 
     const [freshBounty, assignees, existingAssignees] =
       await prisma.$transaction(async (tx) => {
@@ -1353,6 +1371,9 @@ router.patch("/:id/status", authenticate, async (req, res) => {
         assignee: true,
         createdBy: true,
         teamId: true,
+        isPaid: true,
+        paymentAuthorized: true,
+        paymentInFlight: true,
         assignees: { select: { userId: true } },
       },
     });
@@ -1364,6 +1385,7 @@ router.patch("/:id/status", authenticate, async (req, res) => {
         error: "You do not have permission to change this bounty's status",
       });
     }
+    if (!requirePayoutNotStarted(bounty, res, "Status and winner")) return;
 
     const isApproved = !["CANCELLED", "TO_DO"].includes(status);
     let paymentAssigneeId = bounty.assignee;
@@ -2065,7 +2087,16 @@ router.patch(
           bountyId: true,
           submittedBy: true,
           status: true,
-          bounty: { select: { id: true, createdBy: true, assignee: true } },
+          bounty: {
+            select: {
+              id: true,
+              createdBy: true,
+              assignee: true,
+              isPaid: true,
+              paymentAuthorized: true,
+              paymentInFlight: true,
+            },
+          },
         },
       });
       if (!keptSubmission)
@@ -2082,6 +2113,9 @@ router.patch(
         return res.status(400).json({
           error: "Can only reject other submissions once one has been approved",
         });
+      }
+      if (!requirePayoutNotStarted(keptSubmission.bounty, res, "Assignees")) {
+        return;
       }
 
       const othersPending = await prisma.workSubmission.findMany({
@@ -3220,6 +3254,13 @@ router.put("/:id", authenticate, async (req, res) => {
       return res
         .status(403)
         .json({ error: "Only admins can change approval status" });
+    }
+    // Approving or rejecting also sets the status (nextStatus below)
+    if (
+      req.body.isApproved !== undefined &&
+      !requirePayoutNotStarted(existing, res, "Approval and status")
+    ) {
+      return;
     }
 
     if (
