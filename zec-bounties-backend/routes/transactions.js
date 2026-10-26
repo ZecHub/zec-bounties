@@ -17,6 +17,10 @@ const executeZingoCliQuit = require("../utils/zingo/zingoLibQuit.js");
 const executeZingoCliBalance = require("../utils/zingo/zingoLibBalance.js");
 const { resolvePayingWallet } = require("../helpers/zcash/resolvePayingWallet");
 const { invalidateBounty } = require("../utils/bountyHelpers");
+const {
+  trackPayout,
+  markSentButUnrecorded,
+} = require("../utils/payoutRecovery");
 const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 const { randomUUID } = require("crypto");
 
@@ -165,7 +169,7 @@ router.get("/addresses", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
+router.post("/authorize-payment", authenticate, isAdmin, trackPayout(async (req, res) => {
   try {
     const { bountyIds } = req.body; // array of selected bounty IDs from admin
 
@@ -306,6 +310,9 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
             toAddress: p.address,
             memo: p.memo,
             batchKey,
+            chain: p.chain,
+            initiatedBy: req.user.id,
+            walletAccount: adminWallet.accountName,
           })),
         });
       });
@@ -393,26 +400,45 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     const txid = sendResult.txids[0];
     const paidAt = new Date();
 
-    await prisma.$transaction([
-      prisma.transaction.updateMany({
-        where: { batchKey },
-        data: {
-          status: "BROADCAST",
-          txid,
-          rawResult: sendResult.raw || null,
-          settledAt: paidAt,
-        },
-      }),
-      prisma.bounty.updateMany({
-        where: { id: { in: payableIds } },
-        data: {
-          isPaid: true,
-          paymentAuthorized: true,
-          paidAt,
-          paymentInFlight: false,
-        },
-      }),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.transaction.updateMany({
+          where: { batchKey },
+          data: {
+            status: "BROADCAST",
+            txid,
+            rawResult: sendResult.raw || null,
+            settledAt: paidAt,
+          },
+        }),
+        prisma.bounty.updateMany({
+          where: { id: { in: payableIds } },
+          data: {
+            isPaid: true,
+            paymentAuthorized: true,
+            paidAt,
+            paymentInFlight: false,
+          },
+        }),
+      ]);
+    } catch (err) {
+      console.error(
+        `⚠️ Batch ${batchKey} sent (txid ${txid}) but not recorded:`,
+        err,
+      );
+      await markSentButUnrecorded(batchKey, txid, sendResult.raw).catch((e) =>
+        console.error(`Batch ${batchKey} left PENDING:`, e.message),
+      );
+      await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+      return res.status(502).json({
+        success: false,
+        outcome: "unknown",
+        error: "Payment sent but not recorded",
+        details: `The wallet sent it (txid ${txid}), but saving the result failed. These bounties stay locked; resolve their payment records as broadcast with this txid.`,
+        txids: sendResult.txids,
+        batchKey,
+      });
+    }
     await Promise.all(payableIds.map((id) => invalidateBounty(id)));
 
     sendRealtimeUpdate(
@@ -441,7 +467,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     console.error("Error in authorize-payment:", error);
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 // Durable payout records (DB) — as opposed to GET / above, which is the live
 // wallet history and knows nothing about bounties.
@@ -477,9 +503,8 @@ router.get("/records", authenticate, isAdmin, async (req, res) => {
 // queued behind other sends on the shared wallet process, and the send's
 // own timeout does not start until it is written, so age says nothing about
 // whether it is still live. Reopening a PENDING bounty could double-pay one
-// whose send later goes through. Recovering a genuinely-stuck PENDING row
-// needs positive evidence the sender cannot run (a durable attempt/lease),
-// which is out of scope here.
+// whose send later goes through. A PENDING row left by a process that has
+// since stopped becomes UNKNOWN after the next start (utils/payoutRecovery.js).
 router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
   try {
     const { outcome, txid, confirm } = req.body;

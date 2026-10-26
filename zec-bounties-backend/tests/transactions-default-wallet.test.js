@@ -58,6 +58,7 @@ function createHarness({ defaults }) {
     "../helpers/zcash/walletConnection": require("../helpers/zcash/walletConnection"),
     crypto: require("node:crypto"),
     "../middleware/websocket": { sendRealtimeUpdate() {}, sendToUser() {} },
+    "../utils/payoutRecovery": { trackPayout: (handler) => handler },
     path,
   };
   const filename = path.join(__dirname, "../routes/transactions.js");

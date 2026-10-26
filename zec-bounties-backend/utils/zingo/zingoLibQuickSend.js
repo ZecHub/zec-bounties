@@ -1,4 +1,5 @@
 const { getZingo, withSendLock, zingoKey } = require("./getZingo");
+const { SEND_TIMEOUT_MS } = require("./sendTimeout");
 
 async function executeZingoQuickSend(recipients, params) {
   const key = zingoKey({
@@ -8,7 +9,7 @@ async function executeZingoQuickSend(recipients, params) {
   });
   return withSendLock(key, async () => {
     const zingo = getZingo(params, { forSend: true });
-    return zingo.quicksend(recipients);
+    return zingo.quicksend(recipients, SEND_TIMEOUT_MS);
   });
 }
 

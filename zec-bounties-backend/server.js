@@ -12,6 +12,7 @@ const { WebSocketServer } = require("ws");
 const prisma = require("./prisma/client");
 const { connectRedis } = require("./config/redis");
 const { startDeadlineReminderJob } = require("./utils/deadlineReminders");
+const { startPayoutRecovery, drainPayouts } = require("./utils/payoutRecovery");
 const cookieParser = require("cookie-parser");
 
 const app = express();
@@ -100,21 +101,28 @@ const PORT = process.env.PORT || 9001;
 server.listen(PORT, async () => {
   await connectRedis();
   startDeadlineReminderJob();
+  startPayoutRecovery();
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}`);
 });
 
-// Graceful shutdown
-process.on("SIGINT", async () => {
+// Graceful shutdown. Running payouts finish first: one cut off between its
+// send and its settle write is left for an admin to resolve. A second signal
+// exits at once; the recovery after the next start covers what it cuts off.
+let stopping = false;
+async function shutdown() {
+  if (stopping) return process.exit(1);
+  stopping = true;
   console.log("\nShutting down gracefully...");
+  if (!(await drainPayouts())) {
+    console.error(
+      "Payouts still running at shutdown; the next start marks them UNKNOWN",
+    );
+  }
   wss.close();
   await prisma.$disconnect();
   process.exit(0);
-});
+}
 
-process.on("SIGTERM", async () => {
-  console.log("\nShutting down gracefully...");
-  wss.close();
-  await prisma.$disconnect();
-  process.exit(0);
-});
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
