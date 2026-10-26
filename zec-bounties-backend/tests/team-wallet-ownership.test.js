@@ -202,6 +202,7 @@ const setDefault = (db, user, accountName, teamId) =>
   });
 
 test("choosing a team wallet as default changes only the caller's own copy", async () => {
+  // admin-b's rows come first, so a lookup without the owner finds admin-b's copy.
   const db = createDefaultsDb();
   const res = await setDefault(db, { id: "admin-a", role: "ADMIN" }, "Team", "team-1");
   assert.equal(res.statusCode, 200);
