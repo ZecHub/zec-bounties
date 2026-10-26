@@ -99,6 +99,7 @@ import {
   RescanButton,
   useRescanCooldown,
 } from "@/components/layout/admin/navbar";
+import { toast } from "sonner";
 
 type Tab =
   | "Overview"
@@ -695,11 +696,18 @@ function OverviewTab({
     }
   };
 
-  const handleRejectOthers = async (submissionId: string) => {
+  const handleRejectOthers = async (submissionId: string, bountyId: string) => {
     setIsUpdating(true);
     try {
-      await rejectOtherSubmissions(submissionId);
+      await rejectOtherSubmissions(submissionId, bountyId);
       await loadActivity();
+    } catch (error) {
+      console.error("Failed to reject other submissions:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to reject other submissions",
+      );
     } finally {
       setIsUpdating(false);
     }
@@ -1328,7 +1336,10 @@ function OverviewTab({
                                 "Reject all other pending submissions for this bounty? This can't be undone.",
                               )
                             ) {
-                              handleRejectOthers(submission.id);
+                              handleRejectOthers(
+                                submission.id,
+                                submission.bountyId,
+                              );
                             }
                           }}
                           disabled={isUpdating}

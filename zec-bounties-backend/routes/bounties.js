@@ -2056,7 +2056,6 @@ router.patch(
     try {
       const { submissionId } = req.params;
       const userId = req.user.id;
-      const userRole = req.user.role;
 
       const keptSubmission = await prisma.workSubmission.findUnique({
         where: { id: submissionId },
@@ -2065,13 +2064,20 @@ router.patch(
           bountyId: true,
           submittedBy: true,
           status: true,
-          bounty: { select: { id: true, createdBy: true, assignee: true } },
+          bounty: {
+            select: { id: true, createdBy: true, assignee: true, teamId: true },
+          },
         },
       });
       if (!keptSubmission)
         return res.status(404).json({ error: "Submission not found" });
 
-      if (keptSubmission.bounty.createdBy !== userId && userRole !== "ADMIN") {
+      // Whoever may approve a submission (team OWNER/ADMIN included) may also
+      // reject the rest; the bounty's creator keeps the right as before.
+      if (
+        keptSubmission.bounty.createdBy !== userId &&
+        !(await canAdministerBounty(keptSubmission.bounty, req.user))
+      ) {
         return res.status(403).json({
           error:
             "You do not have permission to manage this bounty's submissions",
