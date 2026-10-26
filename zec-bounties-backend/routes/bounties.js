@@ -2838,8 +2838,14 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
 
 router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
   try {
+    // Bounties paid or being paid in the app stay out of the off-platform payout.
     const bounties = await prisma.bounty.findMany({
-      where: { status: "DONE", chain: "MAIN" },
+      where: {
+        status: "DONE",
+        chain: "MAIN",
+        isPaid: false,
+        paymentInFlight: false,
+      },
       include: {
         assigneeUser: {
           select: USER_SELECT_EXPORT,
@@ -2955,8 +2961,8 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
           _count: { id: true },
         }),
         // DONE, not yet paid, AND not already exported — an exported bounty
-        // is already in someone's payout queue outside the app, so it
-        // shouldn't keep counting as "due" until isPaid catches up.
+        // is paid outside the app and nothing sets isPaid for it, so it no
+        // longer counts as "due".
         prisma.bounty.count({
           where: {
             chain: "MAIN",
@@ -2993,6 +2999,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
 // ─── Mark completed bounties as exported (Admin) ─────────────────────────────
 // First-exported-wins: only stamps rows that haven't been exported before, so
 // a later re-export never overwrites the original exportedAt/exportedBy.
+// Rows paid or being paid in the app are never stamped.
 router.patch(
   "/export-completed/mark-exported",
   authenticate,
@@ -3008,7 +3015,12 @@ router.patch(
 
       const exportedAt = new Date();
       const result = await prisma.bounty.updateMany({
-        where: { id: { in: bountyIds }, exportedAt: null },
+        where: {
+          id: { in: bountyIds },
+          exportedAt: null,
+          isPaid: false,
+          paymentInFlight: false,
+        },
         data: { exportedAt, exportedBy: req.user.id },
       });
 

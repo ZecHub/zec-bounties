@@ -2586,7 +2586,8 @@ router.post(
       const teamParams = await buildTeamParams(teamId, wallet);
       const bountyChainForWallet = wallet.chain === "mainnet" ? "MAIN" : "TEST";
 
-      // Fetch the selected bounties, scoped to THIS team, with their assignee
+      // Fetch the selected bounties, scoped to THIS team, with their assignee.
+      // Exported bounties are paid outside the app (Export Completed).
       const bounties = await prisma.bounty.findMany({
         where: {
           id: { in: bountyIds },
@@ -2595,6 +2596,7 @@ router.post(
           isPaid: false,
           isApproved: true,
           paymentInFlight: false,
+          exportedAt: null,
         },
         include: {
           assigneeUser: {
@@ -2620,7 +2622,7 @@ router.post(
       if (bounties.length === 0) {
         return res.status(400).json({
           error:
-            "None of the selected bounties are eligible for payment (must belong to this team, be DONE, approved, and unpaid)",
+            "None of the selected bounties are eligible for payment (must belong to this team, be DONE, approved, unpaid, and not exported)",
         });
       }
 
@@ -2675,6 +2677,7 @@ router.post(
               isApproved: true,
               isPaid: false,
               paymentInFlight: false,
+              exportedAt: null,
             },
             data: { paymentInFlight: true },
           });

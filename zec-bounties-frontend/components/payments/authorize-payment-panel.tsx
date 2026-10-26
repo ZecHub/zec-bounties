@@ -61,6 +61,7 @@ export function AuthorizePaymentPanel() {
 
   const activeChain = walletChainToBountyChain(defaultWallet?.chain);
 
+  // Exported bounties are paid outside the app (Export Completed).
   const eligibleBounties = bounties.filter(
     (b) =>
       !b.teamId &&
@@ -68,6 +69,7 @@ export function AuthorizePaymentPanel() {
       b.isApproved &&
       !b.isPaid &&
       !b.paymentInFlight &&
+      !b.exportedAt &&
       b.chain === activeChain,
   );
 
@@ -77,6 +79,7 @@ export function AuthorizePaymentPanel() {
       b.isApproved &&
       !b.isPaid &&
       !b.paymentInFlight &&
+      !b.exportedAt &&
       b.chain !== activeChain,
   );
 
