@@ -2836,16 +2836,19 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
   }
 });
 
+// The Export Completed list: completed mainnet bounties that are not paid or
+// being paid in the app. Mark-exported stamps only rows that match it.
+const EXPORTABLE_BOUNTY = {
+  status: "DONE",
+  chain: "MAIN",
+  isPaid: false,
+  paymentInFlight: false,
+};
+
 router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
   try {
-    // Bounties paid or being paid in the app stay out of the off-platform payout.
     const bounties = await prisma.bounty.findMany({
-      where: {
-        status: "DONE",
-        chain: "MAIN",
-        isPaid: false,
-        paymentInFlight: false,
-      },
+      where: EXPORTABLE_BOUNTY,
       include: {
         assigneeUser: {
           select: USER_SELECT_EXPORT,
@@ -2961,8 +2964,8 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
           _count: { id: true },
         }),
         // DONE, not yet paid, AND not already exported — an exported bounty
-        // is paid outside the app and nothing sets isPaid for it, so it no
-        // longer counts as "due".
+        // is already in someone's payout queue outside the app, so it
+        // shouldn't keep counting as "due" until isPaid catches up.
         prisma.bounty.count({
           where: {
             chain: "MAIN",
@@ -2999,7 +3002,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
 // ─── Mark completed bounties as exported (Admin) ─────────────────────────────
 // First-exported-wins: only stamps rows that haven't been exported before, so
 // a later re-export never overwrites the original exportedAt/exportedBy.
-// Rows paid or being paid in the app are never stamped.
+// Only rows the export list offers (EXPORTABLE_BOUNTY) are stamped.
 router.patch(
   "/export-completed/mark-exported",
   authenticate,
@@ -3016,10 +3019,9 @@ router.patch(
       const exportedAt = new Date();
       const result = await prisma.bounty.updateMany({
         where: {
+          ...EXPORTABLE_BOUNTY,
           id: { in: bountyIds },
           exportedAt: null,
-          isPaid: false,
-          paymentInFlight: false,
         },
         data: { exportedAt, exportedBy: req.user.id },
       });

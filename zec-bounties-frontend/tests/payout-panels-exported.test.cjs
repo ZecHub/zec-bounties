@@ -51,7 +51,7 @@ function bounty(id, fields = {}) {
   };
 }
 
-const EXPORTED = "2026-10-04T22:27:11.481Z";
+const EXPORTED = "2026-01-15T12:00:00.000Z";
 
 function adminPanel(bounties, chain = "mainnet") {
   // unpaidDoneCount is the server's count behind the "Payments Due" header:

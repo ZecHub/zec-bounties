@@ -232,7 +232,7 @@ describe("POST /authorize-payment settlement", () => {
   });
 
   it("does not pay a bounty exported for an off-platform payout", async () => {
-    bounties[0].exportedAt = new Date("2026-10-04T22:27:11Z");
+    bounties[0].exportedAt = new Date("2026-01-15T12:00:00Z");
     let sent = false;
     sendImpl = async () => {
       sent = true;
@@ -260,8 +260,9 @@ describe("POST /authorize-payment settlement", () => {
       return { txids: [TXID], error: null, timedOut: false, raw: "{}" };
     };
     try {
-      const { status } = await pay();
+      const { status, body } = await pay();
       assert.equal(status, 409);
+      assert.match(body.error, /no longer eligible/);
     } finally {
       prisma.bounty.findMany = read;
     }

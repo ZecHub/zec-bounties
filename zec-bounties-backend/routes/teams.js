@@ -2586,8 +2586,7 @@ router.post(
       const teamParams = await buildTeamParams(teamId, wallet);
       const bountyChainForWallet = wallet.chain === "mainnet" ? "MAIN" : "TEST";
 
-      // Fetch the selected bounties, scoped to THIS team, with their assignee.
-      // Exported bounties are paid outside the app (Export Completed).
+      // Fetch the selected bounties, scoped to THIS team, with their assignee
       const bounties = await prisma.bounty.findMany({
         where: {
           id: { in: bountyIds },
@@ -2596,7 +2595,7 @@ router.post(
           isPaid: false,
           isApproved: true,
           paymentInFlight: false,
-          exportedAt: null,
+          exportedAt: null, // paid outside the app (Export Completed)
         },
         include: {
           assigneeUser: {
@@ -2698,7 +2697,7 @@ router.post(
         if (err !== claimConflict) throw err;
         return res.status(409).json({
           error:
-            "Some of the selected bounties are already being paid by another request. Refresh and try again.",
+            "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
         });
       }
 

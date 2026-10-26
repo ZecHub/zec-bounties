@@ -316,7 +316,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       if (err !== claimConflict) throw err;
       return res.status(409).json({
         error:
-          "Some of the selected bounties are already being paid by another request. Refresh and try again.",
+          "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
       });
     }
 

@@ -145,7 +145,7 @@ const payTeam = (teams, bountyIds) =>
 
 test("the team payout does not pay a bounty exported for an off-platform payout", async () => {
   const db = createDb([
-    bounty("exported", { teamId: "team-1", exportedAt: new Date("2026-10-04T22:27:11Z") }),
+    bounty("exported", { teamId: "team-1", exportedAt: new Date("2026-01-15T12:00:00Z") }),
   ]);
   const teams = loadRoutes("teams.js", db);
   const res = await payTeam(teams, ["exported"]);
@@ -169,6 +169,7 @@ test("the team payout does not claim a bounty exported after it was read", async
   const res = await payTeam(teams, ["b1"]);
 
   assert.equal(res.statusCode, 409);
+  assert.match(res.body.error, /no longer eligible/);
   assert.deepEqual(teams.effects.sent, []);
   assert.equal(db.bounties[0].isPaid, false);
   assert.equal(db.bounties[0].paymentInFlight, false);
@@ -188,7 +189,7 @@ test("the team payout still pays a bounty that was not exported", async () => {
 test("the export list leaves out bounties paid or being paid in the app", async () => {
   const db = createDb([
     bounty("due"),
-    bounty("paid", { isPaid: true, paidAt: new Date("2026-09-30T22:10:43Z") }),
+    bounty("paid", { isPaid: true, paidAt: new Date("2026-01-10T12:00:00Z") }),
     bounty("in-flight", { paymentInFlight: true }),
   ]);
   const bounties = loadRoutes("bounties.js", db);
@@ -212,5 +213,24 @@ test("marking an export does not stamp bounties paid or being paid in the app", 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.newlyMarked, 1);
   const stamped = db.bounties.filter((b) => b.exportedAt).map((b) => b.id);
+  assert.deepEqual(stamped, ["due"]);
+});
+
+test("marking an export stamps only bounties the export list offers", async () => {
+  const db = createDb([
+    bounty("due"),
+    bounty("in-progress", { status: "IN_PROGRESS" }),
+    bounty("testnet", { chain: "TEST" }),
+  ]);
+  const bounties = loadRoutes("bounties.js", db);
+  const listed = (await bounties.call("get /export-completed", {})).body.data.map((b) => b.id);
+  const res = await bounties.call("patch /export-completed/mark-exported", {
+    body: { bountyIds: ["due", "in-progress", "testnet"] },
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.newlyMarked, 1);
+  const stamped = db.bounties.filter((b) => b.exportedAt).map((b) => b.id);
+  assert.deepEqual(stamped, listed);
   assert.deepEqual(stamped, ["due"]);
 });
