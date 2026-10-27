@@ -419,14 +419,14 @@ test("submission events reach the team's OWNER and ADMIN members, who review the
     "submission_reviewed",
     { id: "s1", bountyId: "b1", description: "secret deliverable", submittedBy: "submitter" },
     "b1",
-    "admin",
+    null,
     audience,
   );
 
-  for (const id of ["creator", "submitter", "teamOwner", "teamAdmin"]) {
+  for (const id of ["creator", "admin", "submitter", "teamOwner", "teamAdmin"]) {
     assert.equal(eventsOf(sockets[id], "submission_reviewed").length, 1, `${id} should receive it`);
   }
-  for (const id of ["admin", "teamMember", "fan"]) {
+  for (const id of ["teamMember", "fan"]) {
     assert.equal(eventsOf(sockets[id], "submission_reviewed").length, 0, `${id} should not receive it`);
   }
 });
