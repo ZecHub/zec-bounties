@@ -23,7 +23,12 @@ const {
 const sendMail = require("../utils/sendMail");
 const notifyUser = require("../utils/notifyUser");
 const { notifyNewBounty } = require("../utils/discord/discordNotify");
-const { notifyAssignment } = require("../utils/discord/discordAssignWebhook");
+// Bot notices for In-progress bounties and bounty state changes
+const {
+  notifyAssignment,
+  notifyBountyAssignees,
+  notifyBountyState,
+} = require("../utils/discord/discordAssignWebhook");
 const { REQUIRED_TEAM_VERIFICATIONS } = require("../utils/constants");
 const {
   validateBountyCreate,
@@ -965,6 +970,9 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
     await invalidateBounty(bountyId);
     res.status(200).json({ assignees });
 
+    // Fire-and-forget Discord state update; an empty roster cancels the bounty
+    notifyBountyState(prisma, bountyId);
+
     // Discord assignment webhook — fire-and-forget, only for newly added assignees
     (async () => {
       try {
@@ -1129,6 +1137,9 @@ router.delete("/:id/assignees/:userId", authenticate, async (req, res) => {
     );
     await invalidateBounty(bountyId);
     res.json({ message: "Assignee removed successfully" });
+
+    // The removed assignee's Discord channel can now be closed
+    notifyBountyState(prisma, bountyId);
   } catch (error) {
     console.error("Error removing assignee:", error);
     res.status(500).json({ error: "Failed to remove assignee" });
@@ -1328,6 +1339,12 @@ router.patch("/:id/suggestion-review", authenticate, async (req, res) => {
       bounty.id,
       req.user.id,
     );
+    // Approved suggestions reach IN_PROGRESS without the assignee routes, so notify the bot here
+    if (req.body.action === "approve") {
+      notifyBountyAssignees(prisma, bounty.id).catch((err) =>
+        console.error("Discord in-progress notify failed:", err.message),
+      );
+    }
     return res.json(updated);
   } catch (error) {
     console.error("Failed to review bounty suggestion:", error);
@@ -1435,6 +1452,13 @@ router.patch("/:id/status", authenticate, async (req, res) => {
       req.user.id,
     );
     res.json(updated);
+    // Fire-and-forget Discord notices: assignees on IN_PROGRESS, then the new bounty state
+    if (status === "IN_PROGRESS" && bounty.status !== "IN_PROGRESS") {
+      notifyBountyAssignees(prisma, bountyId).catch((err) =>
+        console.error("Discord in-progress notify failed:", err.message),
+      );
+    }
+    notifyBountyState(prisma, bountyId);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to update bounty status" });
@@ -1897,6 +1921,9 @@ router.patch(
         submission: updatedSubmission,
         bounty: updatedBounty,
       });
+
+      // Approving completes the bounty and rejecting drops the author; both change the bot's view
+      notifyBountyState(prisma, updatedBounty.id);
     } catch (error) {
       console.error("Error reviewing submission:", error);
       res.status(500).json({ error: "Failed to review submission" });
@@ -3402,6 +3429,14 @@ router.put("/:id", authenticate, async (req, res) => {
 
     await invalidateBounty(req.params.id);
     res.json(updated);
+
+    // isApproved can flip the status (see nextStatus), so send the same notices as /:id/status
+    if (nextStatus === "IN_PROGRESS" && existing.status !== "IN_PROGRESS") {
+      notifyBountyAssignees(prisma, req.params.id).catch((err) =>
+        console.error("Discord in-progress notify failed:", err.message),
+      );
+    }
+    notifyBountyState(prisma, req.params.id);
 
     if (notifyUsers === true) {
       const changes = [];

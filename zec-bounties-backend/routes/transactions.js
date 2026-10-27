@@ -1,5 +1,7 @@
 const express = require("express");
 const prisma = require("../prisma/client");
+// Discord bot state notice, sent when a payment is confirmed
+const { notifyBountyState } = require("../utils/discord/discordAssignWebhook");
 const router = express.Router();
 const { authenticate, isAdmin } = require("../middleware/auth");
 const executeZingoQuickSend = require("../utils/zingo/zingoLibQuickSend.js");
@@ -414,6 +416,8 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       }),
     ]);
     await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+    // Fire-and-forget: let the Discord bot know these bounties are paid
+    payableIds.forEach((id) => notifyBountyState(prisma, id));
 
     sendRealtimeUpdate(
       "payment_authorized",
@@ -570,6 +574,8 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
 
     await invalidateBounty(record.bountyId);
     res.json({ success: true });
+    // Only a confirmed payment (broadcast) is sent to the bot; failed or unknown outcomes are not
+    if (outcome === "broadcast") notifyBountyState(prisma, record.bountyId);
   } catch (error) {
     console.error("Error resolving payment record:", error);
     res.status(500).json({ error: error.message });
