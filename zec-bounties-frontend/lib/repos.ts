@@ -32,7 +32,7 @@ export const REPOS: readonly RepoMeta[] = [
     icon: "/zechub-wiki.svg",
     patterns: [
       /github\.com\/ZecHub\/zechub-wiki\b/i,
-      /(?:^|[^\w./-])(?:https?:\/\/)?zechub\.wiki(?=[/?#\s)\]>"']|$)/i,
+      /(?:^|[^\w./-])(?:https?:\/\/)?(?:www\.)?zechub\.wiki(?=[/?#\s)\]>"']|$)/i,
     ],
   },
   {

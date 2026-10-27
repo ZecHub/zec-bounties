@@ -43,7 +43,18 @@ test("Namada dashboard URLs belong to Namada, not the wiki", () => {
 });
 
 test("wiki links still match with or without a trailing slash", () => {
-  for (const url of ["https://zechub.wiki/", "https://zechub.wiki", "https://zechub.wiki/start", "Read zechub.wiki/ for details."])
+  for (const url of [
+    "https://zechub.wiki/",
+    "https://zechub.wiki",
+    "https://zechub.wiki/start",
+    "Read zechub.wiki/ for details.",
+    "https://www.zechub.wiki/",
+    "https://www.zechub.wiki/start",
+    "http://www.zechub.wiki",
+    "https://www.zechub.wiki?tab=learn",
+    "https://www.zechub.wiki#start",
+    "Read WWW.ZECHUB.WIKI/ for details.",
+  ])
     assert.equal(repos.bountyRepo({ description: url }), "zechub-wiki", url);
 });
 
@@ -52,6 +63,9 @@ test("unrelated subdomains and lookalike hosts stay untagged", () => {
     "https://other.zechub.wiki/",
     "https://notzechub.wiki/",
     "https://namada.zechub.wiki.example.com/",
+    "https://www.zechub.wiki.example.com/",
+    "https://other.www.zechub.wiki/",
+    "https://wwww.zechub.wiki/",
   ]) assert.equal(repos.bountyRepo({ description: url }), null, url);
 });
 
