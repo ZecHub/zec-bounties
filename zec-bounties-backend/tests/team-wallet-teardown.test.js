@@ -71,6 +71,7 @@ function createDb(payouts = []) {
     teams,
     members,
     wallets,
+    records,
     users,
     zcashParams,
     async $transaction(fn) {
@@ -123,7 +124,7 @@ function createDb(payouts = []) {
   };
 }
 
-function loadRoutes(db, { seedError } = {}) {
+function loadRoutes(db, { seedError, duringRestore } = {}) {
   const effects = { removedDirs: [], movedDirs: [], seeds: [] };
   const routes = {};
   const router = new Proxy(
@@ -155,6 +156,7 @@ function loadRoutes(db, { seedError } = {}) {
     },
     "../utils/zingo/zingoLibSeed": async (params) => {
       effects.seeds.push(params.dataDir);
+      await duringRestore?.();
       if (seedError) throw new Error(seedError);
       return { message: "Wallet restored" };
     },
@@ -291,6 +293,51 @@ test("a replacement seed that fails to restore leaves the current wallet in plac
   assert.equal(teams.effects.seeds.length, 1);
   assert.notEqual(teams.effects.seeds[0], "wallets/team-wallet");
   assert.deepEqual(teams.effects.removedDirs, teams.effects.seeds);
+});
+
+test("a payout that starts during the restore stops the replace", async () => {
+  const db = createDb(["BROADCAST"]);
+  const teams = loadRoutes(db, {
+    duringRestore: () => db.records.push({ id: "r-new", bountyId: "tb1", status: "PENDING" }),
+  });
+  const res = await teams.call("post /:teamId/wallet/import", {
+    user: owner,
+    params: { teamId: "team-1" },
+    body: replaceBody,
+  });
+  assert.equal(res.statusCode, 409);
+  assert.equal(db.teams[0].wallet?.id, "tw-1");
+  assert.deepEqual(
+    db.wallets.map((w) => [w.ownerId, w.walletId]),
+    [["owner", "team-wallet"], ["member", "team-wallet"]],
+  );
+  assert.deepEqual(teams.effects.movedDirs, []);
+  // Only the directory the seed was restored into is cleaned up.
+  assert.equal(teams.effects.seeds.length, 1);
+  assert.deepEqual(teams.effects.removedDirs, teams.effects.seeds);
+});
+
+test("a failure after the old wallet is torn down deletes neither directory", async () => {
+  const db = createDb();
+  db.teamWallet.create = async () => {
+    throw new Error("Database unavailable");
+  };
+  const teams = loadRoutes(db);
+  const res = await teams.call("post /:teamId/wallet/import", {
+    user: owner,
+    params: { teamId: "team-1" },
+    body: replaceBody,
+  });
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(teams.effects.removedDirs, []);
+  const [restored] = teams.effects.seeds;
+  assert.deepEqual(
+    teams.effects.movedDirs.map(([from]) => from),
+    ["wallets/team-wallet", restored],
+  );
+  for (const [from, to] of teams.effects.movedDirs) {
+    assert.match(to, new RegExp(`^wallets/\\.retired/${from.slice("wallets/".length)}-\\d+$`));
+  }
 });
 
 // Controls: with every payout settled, each path still works.

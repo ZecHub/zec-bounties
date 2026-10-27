@@ -205,6 +205,7 @@ test("deleting a team without a wallet leaves members' wallets alone", async () 
     params: { teamId: "team-1" },
   });
   assert.equal(res.statusCode, 200);
+  assert.deepEqual(teams.effects.removedDirs, []);
   assert.deepEqual(teams.effects.retiredDirs, []);
   assert.deepEqual(db.wallets, before);
 });

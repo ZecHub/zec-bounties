@@ -2233,6 +2233,7 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
     const walletId = randomUUID();
     const dataDir = getWalletDataDir(walletId);
     let wallet = null;
+    let replacing = false;
 
     try {
       await fs.mkdir(dataDir, { recursive: true });
@@ -2242,7 +2243,17 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
         birthdayHeight,
       );
 
-      if (existing) await teardownTeamWallet(teamId, existing);
+      if (existing) {
+        // A payout may have started from the old wallet during the restore.
+        if (await hasUnresolvedTeamPayouts([teamId])) {
+          await fs
+            .rm(dataDir, { recursive: true, force: true })
+            .catch(() => {});
+          return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+        }
+        replacing = true;
+        await teardownTeamWallet(teamId, existing);
+      }
 
       wallet = await prisma.teamWallet.create({
         data: { teamId, accountName: accountName.trim(), chain, serverUrl },
@@ -2259,8 +2270,14 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
       });
     } catch (err) {
       // Same cleanup order as the admin import: invalidate, rm, delete rows.
+      // Once the old wallet is being torn down, keep the restored directory
+      // too: move it aside like the old one instead of deleting it.
       invalidateZingo({ chain, serverUrl, dataDir });
-      await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+      if (replacing) {
+        await retireWalletDir(dataDir).catch(() => {});
+      } else {
+        await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+      }
       if (wallet) {
         await prisma.zcashParams
           .deleteMany({ where: { teamId } })
