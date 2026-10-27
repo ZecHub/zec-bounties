@@ -17,6 +17,7 @@ for (const [mod, exports] of [
   require.cache[file] = { id: file, filename: file, loaded: true, exports };
 }
 process.env.PORT = "0";
+process.env.DEADLINE_REMINDERS_ENABLED = "false";
 process.env.JWT_SECRET ||= "websocket-handshake-test";
 
 const prisma = require("../prisma/client");
@@ -66,7 +67,7 @@ function nextOfType(ws, type) {
 const tokenFor = (id, options = { expiresIn: "1h" }) =>
   jwt.sign({ id }, process.env.JWT_SECRET, options);
 
-test("sockets without a valid, unexpired token are still refused", async () => {
+test("sockets without a valid, unexpired token are still refused", { timeout: 5000 }, async () => {
   for (const token of [
     null,
     tokenFor("alice", { expiresIn: -60 }),
@@ -78,7 +79,7 @@ test("sockets without a valid, unexpired token are still refused", async () => {
   }
 });
 
-test("a signed-in user's tabs all stay live until a sixth closes the oldest", async () => {
+test("a signed-in user's tabs all stay live until a sixth closes the oldest", { timeout: 5000 }, async () => {
   const tabs = [];
   for (let i = 0; i < 5; i++) tabs.push(await openTab(tokenFor("alice")));
 
@@ -94,4 +95,11 @@ test("a signed-in user's tabs all stay live until a sixth closes the oldest", as
   assert.equal(code, 4001);
   assert.equal(String(reason), "Too many open connections");
   assert.ok(tabs.slice(1).every((ws) => ws.readyState === WebSocket.OPEN));
+});
+
+test("a socket is closed when its sign-in token expires", { timeout: 5000 }, async () => {
+  const ws = await openTab(tokenFor("alice", { expiresIn: 2 }));
+  const [code, reason] = await once(ws, "close");
+  assert.equal(code, 4002);
+  assert.equal(String(reason), "Session expired");
 });

@@ -73,10 +73,9 @@ function removeSocket(userId, ws) {
   return true;
 }
 
-function handleWebSocket(ws, prisma, user) {
+function handleWebSocket(ws, prisma, user, tokenExp) {
   // Every tab or device keeps its own live socket. Past the cap, close the
-  // oldest so stale or duplicate sockets can't pile up and keep receiving
-  // sendToUser events.
+  // oldest, so a user has at most MAX_SOCKETS_PER_USER (5) sockets open.
   let sockets = clients.get(user.id);
   if (!sockets) clients.set(user.id, (sockets = new Set()));
   while (sockets.size >= MAX_SOCKETS_PER_USER) {
@@ -85,6 +84,15 @@ function handleWebSocket(ws, prisma, user) {
     oldest.close(4001, "Too many open connections");
   }
   sockets.add(ws);
+
+  // Close the socket when its sign-in token expires (`exp` is in seconds).
+  // Delays past about 24 days overflow setTimeout and would fire at once.
+  const expiryTimer =
+    tokenExp &&
+    setTimeout(
+      () => ws.close(4002, "Session expired"),
+      Math.min(tokenExp * 1000 - Date.now(), 2 ** 31 - 1),
+    );
 
   ws.send(
     JSON.stringify({
@@ -158,6 +166,7 @@ function handleWebSocket(ws, prisma, user) {
   });
 
   ws.on("close", () => {
+    clearTimeout(expiryTimer);
     // The user has left once their last socket closes. A socket the cap
     // already removed is skipped, so its late close event changes nothing.
     if (removeSocket(user.id, ws) && !clients.has(user.id)) {

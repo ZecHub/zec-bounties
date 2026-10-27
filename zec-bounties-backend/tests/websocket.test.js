@@ -43,6 +43,9 @@ function connect(id) {
     disconnect() {
       handlers.close();
     },
+    fail(error) {
+      handlers.error(error);
+    },
   };
   handleWebSocket(ws, prisma, { id, name: id });
   ws.received.length = 0; // drop the join/welcome chatter
@@ -480,4 +483,37 @@ test("a sixth tab closes the user's oldest one", (t) => {
     assert.equal(tab.closed, undefined);
     assert.equal(eventsOf(tab, "notification_new").length, 1);
   }
+});
+
+test("a user leaves only when their last tab closes", (t) => {
+  const bob = connect("bob");
+  const firstTab = connect("alice");
+  const secondTab = connect("alice");
+  t.after(() => bob.disconnect());
+  const left = () => bob.received.filter((m) => m.content === "alice left the chat");
+
+  firstTab.disconnect();
+  assert.equal(left().length, 0, "alice still has a tab open");
+  secondTab.disconnect();
+  assert.equal(left().length, 1);
+
+  sendToUser("alice", "notification_new", { bountyId: "b1" });
+  assert.equal(eventsOf(secondTab, "notification_new").length, 0);
+});
+
+test("a tab whose socket errors stops receiving, and the others keep going", (t) => {
+  const originalError = console.error;
+  console.error = () => {};
+  const firstTab = connect("alice");
+  const secondTab = connect("alice");
+  t.after(() => {
+    console.error = originalError;
+    [firstTab, secondTab].forEach((ws) => ws.disconnect());
+  });
+
+  firstTab.fail(new Error("connection reset"));
+  sendToUser("alice", "notification_new", { bountyId: "b1" });
+
+  assert.equal(eventsOf(firstTab, "notification_new").length, 0);
+  assert.equal(eventsOf(secondTab, "notification_new").length, 1);
 });
