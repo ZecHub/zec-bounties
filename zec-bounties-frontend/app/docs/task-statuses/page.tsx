@@ -22,8 +22,10 @@ Done
   ▼
 Paid (txid recorded)
 
-Cancelled ◄── approval removed, or
-              all assignees removed`;
+Cancelled ◄── approval removed,
+              all assignees removed, or
+              the last assignee's
+              submission rejected`;
 
 export default function TaskStatusesPage() {
   return (
@@ -65,8 +67,9 @@ export default function TaskStatusesPage() {
         </Status>
         <Status name="Cancelled">
           The bounty is closed without a payout. This happens when an admin
-          removes its approval, a suggestion is declined, or all assignees are
-          removed. Adding an assignee
+          removes its approval, a suggestion is declined, all assignees are
+          removed, or the last assignee&apos;s submission is rejected. Adding
+          an assignee
           again moves it back to In Progress.
         </Status>
 

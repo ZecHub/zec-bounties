@@ -27,12 +27,14 @@ The concurrency tests pause actual database reads to force stale snapshots:
 - Two reviewers decide the same pending entry. The retried one sees the first
   decision and gets 409 instead of overwriting it.
 
-The sequential cases pin the status rule after a decision: an approved entry or
-a DONE bounty stays DONE, with its payee; otherwise an entry still pending keeps
-the bounty In Review, then remaining assignees make it In Progress, and with
-nobody left it is cancelled. Removing the last assignee of an In Progress bounty
-cancels it the same way. Reviewing an entry that is no longer pending, or any
-entry of a cancelled bounty, returns 409 and changes nothing.
+The sequential cases pin the status rule after a rejection or revision: a DONE
+bounty stays DONE, and a bounty with another approved entry keeps its current
+status. Otherwise an entry still pending keeps the bounty In Review, a revision
+returns it to In Progress, and a rejection returns it to In Progress while
+assignees remain and cancels it when nobody is left. Removing the last assignee
+of an In Progress bounty cancels it the same way. Reviewing an entry that is no
+longer pending, any entry of a cancelled bounty, or rejecting or revising the
+winner's own entry on a DONE bounty returns 409 and changes nothing.
 
 Controls cover reverse commit order, sequential reviews, roster changes, review
 metadata, global/team authorization, missing submissions and invalid status.

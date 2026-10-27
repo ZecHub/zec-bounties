@@ -22,7 +22,7 @@ The submission was approved. If it is rejected or sent back for revision instead
 
 ### Cancelled
 
-The bounty is closed without a payout. This happens when an admin removes its approval, a suggestion is declined, or all assignees are removed. Adding an assignee again moves it back to In Progress.
+The bounty is closed without a payout. This happens when an admin removes its approval, a suggestion is declined, all assignees are removed, or the last assignee's submission is rejected. Adding an assignee again moves it back to In Progress.
 
 Platform admins can change any status. For team bounties, the team's OWNER and ADMIN members can too.
 
@@ -44,8 +44,10 @@ Done
   ▼
 Paid (txid recorded)
 
-Cancelled ◄── approval removed, or
-              all assignees removed
+Cancelled ◄── approval removed,
+              all assignees removed, or
+              the last assignee's
+              submission rejected
 ```
 
 ## Done is not the same as paid

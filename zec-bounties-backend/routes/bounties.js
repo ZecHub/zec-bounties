@@ -1798,6 +1798,19 @@ router.patch(
                     "This bounty is cancelled. Reactivate it before reviewing its submissions",
                 };
               }
+              // On a DONE bounty the legacy assignee is the payee. Turning down
+              // their own entry would still pay them, so reopen the bounty first.
+              if (
+                status !== "approved" &&
+                submission.bounty.status === "DONE" &&
+                submission.bounty.assignee === submission.submittedBy
+              ) {
+                return {
+                  statusCode: 409,
+                  error:
+                    "This entry belongs to the bounty's winner. Reopen the bounty before rejecting it or asking for a revision",
+                };
+              }
 
               let newBountyStatus = submission.bounty.status;
 
@@ -1815,9 +1828,10 @@ router.patch(
                   select: { id: true },
                 });
                 if (!approvedExists) {
-                  // Other entries still waiting keep the bounty in review.
-                  // Otherwise it goes back to the remaining assignees, or is
-                  // cancelled when none are left, as when the last one is removed.
+                  // Other entries still waiting keep the bounty in review. A
+                  // revision goes back to its submitter. A rejection goes back
+                  // to the remaining assignees, or cancels the bounty when none
+                  // are left, as when the last one is removed.
                   const pendingExists = await tx.workSubmission.findFirst({
                     where: {
                       bountyId: submission.bounty.id,
@@ -1826,19 +1840,19 @@ router.patch(
                     },
                     select: { id: true },
                   });
-                  const assigneesLeft = await tx.bountyAssignee.count({
-                    where: {
-                      bountyId: submission.bounty.id,
-                      ...(status === "rejected" && {
+                  if (pendingExists) {
+                    newBountyStatus = "IN_REVIEW";
+                  } else if (status === "needs_revision") {
+                    newBountyStatus = "IN_PROGRESS";
+                  } else {
+                    const assigneesLeft = await tx.bountyAssignee.count({
+                      where: {
+                        bountyId: submission.bounty.id,
                         userId: { not: submission.submittedBy },
-                      }),
-                    },
-                  });
-                  newBountyStatus = pendingExists
-                    ? "IN_REVIEW"
-                    : assigneesLeft
-                      ? "IN_PROGRESS"
-                      : "CANCELLED";
+                      },
+                    });
+                    newBountyStatus = assigneesLeft ? "IN_PROGRESS" : "CANCELLED";
+                  }
                 }
               }
 
@@ -1874,10 +1888,7 @@ router.patch(
                       assignee: submission.submittedBy,
                       completedAt: new Date(),
                     }),
-                  // On a DONE bounty the legacy assignee is the payee, so a
-                  // rejection leaves it alone there.
                   ...(status === "rejected" &&
-                    submission.bounty.status !== "DONE" &&
                     submission.bounty.assignee === submission.submittedBy && {
                       assignee: null,
                     }),

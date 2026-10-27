@@ -252,17 +252,35 @@ test("submission reviews keep aggregate state consistent in PostgreSQL", {
       assert.ok(bounty.completedAt);
       assert.equal(await db.bountyAssignee.count({ where: { bountyId: f.bounty.id } }), 1);
     });
-    await t.test("reviewing entries left on a bounty marked done keeps it done and keeps the payee", async () => {
-      const f = await fixture();
-      // Marked done through the status route, so no entry is approved.
+    await t.test("on a bounty marked done, other entries keep it done and the winner's entry is refused", async () => {
+      const f = await fixture("pending", 3);
+      // Marked done through the status route with users[1] as winner, so no
+      // entry is approved.
       const completedAt = new Date();
       await db.bounty.update({ where: { id: f.bounty.id }, data: { status: "DONE", completedAt } });
       const route = loadSubmissionReviewRoute(db);
+      for (const status of ["rejected", "needs_revision"]) {
+        const res = await route.review(f.users[0], f.submissions[0].id, { status });
+        assert.equal(res.statusCode, 409);
+        assert.match(res.body.error, /winner/);
+      }
       assert.equal((await route.review(f.users[0], f.submissions[1].id, { status: "needs_revision" })).statusCode, 200);
-      assert.equal((await route.review(f.users[0], f.submissions[0].id, { status: "rejected" })).statusCode, 200);
+      assert.equal((await route.review(f.users[0], f.submissions[2].id, { status: "rejected" })).statusCode, 200);
       const bounty = await db.bounty.findUniqueOrThrow({ where: { id: f.bounty.id } });
       assert.equal(bounty.status, "DONE");
       assert.equal(bounty.completedAt.getTime(), completedAt.getTime());
+      assert.equal(bounty.assignee, f.users[1].id);
+      assert.equal((await db.workSubmission.findUniqueOrThrow({ where: { id: f.submissions[0].id } })).status, "pending");
+      assert.equal(await db.bountyAssignee.count({ where: { bountyId: f.bounty.id, userId: f.users[1].id } }), 1);
+    });
+    await t.test("a revision never cancels, even for an assignee without an assignee row", async () => {
+      const f = await fixture("pending", 1);
+      // Older bounties can name their assignee only in the legacy field.
+      await db.bountyAssignee.deleteMany({ where: { bountyId: f.bounty.id } });
+      const route = loadSubmissionReviewRoute(db);
+      assert.equal((await route.review(f.users[0], f.submissions[0].id, { status: "needs_revision" })).statusCode, 200);
+      const bounty = await db.bounty.findUniqueOrThrow({ where: { id: f.bounty.id } });
+      assert.equal(bounty.status, "IN_PROGRESS");
       assert.equal(bounty.assignee, f.users[1].id);
     });
     for (const code of ["P2034", "P2003"]) {
