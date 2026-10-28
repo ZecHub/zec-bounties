@@ -42,6 +42,7 @@ function loadRoutes(team) {
   const helpers = withDefaults({
     requireOnboarded: () => true,
     requireTaskCreation: (req, res, next) => next(),
+    validateBountyChain: () => null,
     canAdministerBounty: async () => true,
     getBroadcastRecipients: async (bounty) => (bounty.isPrivate ? ["creator", "teammate"] : null),
     broadcastBountyEvent: async (...args) => effects.scoped.push(args),

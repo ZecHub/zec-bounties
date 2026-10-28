@@ -608,15 +608,19 @@ router.delete("/params/:accountName", authenticate, async (req, res) => {
 router.patch(
   "/params/:accountName/set-default",
   authenticate,
-  isAdmin,
   async (req, res) => {
     try {
       const { accountName } = req.params;
       const userId = req.user.id;
       const { teamId } = req.body;
+      const isPrivileged = req.user.role === "ADMIN" || req.user.isRobin;
 
+      // Locate the target param. Team wallets must match teamId;
+      // personal wallets must be owned by the caller.
       const existing = teamId
-        ? await prisma.zcashParams.findFirst({ where: { accountName, teamId } })
+        ? await prisma.zcashParams.findFirst({
+            where: { accountName, teamId, ownerId: userId },
+          })
         : await prisma.zcashParams.findFirst({
             where: { accountName, ownerId: userId, teamId: null },
           });
@@ -626,6 +630,24 @@ router.patch(
           success: false,
           message: `Zcash parameters not found for account: ${accountName}`,
         });
+      }
+
+      // Authorization:
+      // - ADMIN / isRobin may set any of their own params.
+      // - Others may set a personal wallet they own.
+      // - Others may set a team wallet only if they are OWNER or ADMIN of that team.
+      if (!isPrivileged) {
+        if (existing.teamId) {
+          const member = await prisma.teamMember.findFirst({
+            where: { teamId: existing.teamId, userId },
+          });
+          if (!member || !["OWNER", "ADMIN"].includes(member.role)) {
+            return res
+              .status(403)
+              .json({ error: "Team owner or admin access required" });
+          }
+        }
+        // Personal wallet: ownership already enforced by the lookup above.
       }
 
       const updated = await prisma.$transaction(
