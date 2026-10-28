@@ -21,9 +21,20 @@ The concurrency tests pause actual database reads to force stale snapshots:
   Upstream overwrites DONE with the earlier IN_REVIEW status, even though approved
   work remains. The corrected route retries a real PostgreSQL serialization
   conflict, rereads the bounty, and preserves DONE and its completion metadata.
-- Two rejections read each other's approved submission before either commits.
-  Upstream leaves DONE after both approved submissions are rejected. The corrected
-  route removes the final approval and clears completion in a serial order.
+- Two rejections each read the other entry as still pending. The retried one
+  sees that nothing waits and nobody is assigned, so the bounty is cancelled
+  instead of left In Review or In Progress with nobody on it.
+- Two reviewers decide the same pending entry. The retried one sees the first
+  decision and gets 409 instead of overwriting it.
+
+The sequential cases pin the status rule after a rejection or revision: a DONE
+bounty stays DONE, and a bounty with another approved entry keeps its current
+status. Otherwise an entry still pending keeps the bounty In Review, a revision
+returns it to In Progress, and a rejection returns it to In Progress while
+assignees remain and cancels it when nobody is left. Removing the last assignee
+of an In Progress bounty cancels it the same way. Reviewing an entry that is no
+longer pending, any entry of a cancelled bounty, or rejecting or revising the
+winner's own entry on a DONE bounty returns 409 and changes nothing.
 
 Controls cover reverse commit order, sequential reviews, roster changes, review
 metadata, global/team authorization, missing submissions and invalid status.

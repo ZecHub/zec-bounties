@@ -69,6 +69,7 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     bountyAssignee: {
       findUnique: async () => ({ userId: "hunter" }),
       deleteMany: async () => { assignees.length = 0; },
+      count: async ({ where }) => assignees.filter(a => a.userId !== where.userId?.not).length,
     },
     workSubmission: {
       create: async ({ data, include }) => {
@@ -170,7 +171,8 @@ for (const scenario of [
   { name: "submit work", method: "post", path: "/:id/submit", initial: "IN_PROGRESS", input: { description: "Finished" }, role: "HUNTER", expected: "IN_REVIEW" },
   { name: "approve work", method: "patch", path: "/submissions/:submissionId/review", initial: "IN_REVIEW", input: { status: "approved" }, expected: "DONE" },
   { name: "request revision", method: "patch", path: "/submissions/:submissionId/review", initial: "IN_REVIEW", input: { status: "needs_revision" }, expected: "IN_PROGRESS" },
-  { name: "reject work", method: "patch", path: "/submissions/:submissionId/review", initial: "IN_REVIEW", input: { status: "rejected" }, expected: "IN_PROGRESS" },
+  // The only assignee is rejected, so nobody is left on the bounty.
+  { name: "reject work", method: "patch", path: "/submissions/:submissionId/review", initial: "IN_REVIEW", input: { status: "rejected" }, expected: "CANCELLED" },
   { name: "resubmit revision", method: "patch", path: "/submissions/:submissionId", initial: "IN_PROGRESS", submissionStatus: "needs_revision", input: { description: "Revision completed" }, role: "HUNTER", expected: "IN_REVIEW" },
 ]) {
   test(scenario.name + " returns authoritative bounty data and invalidates before broadcasting", async () => {

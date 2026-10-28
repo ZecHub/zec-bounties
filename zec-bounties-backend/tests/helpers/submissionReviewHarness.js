@@ -21,7 +21,9 @@ function load(relativePath, dependencies) {
 }
 
 // Execute the real review handler and authorization helpers; substitute only auth,
-// cache and outbound services. Database tests supply real Prisma clients.
+// cache and outbound services. Database tests supply real Prisma clients. The
+// assignee removal handler is exposed too: it applies the same rule when the
+// last assignee goes.
 function loadSubmissionReviewRoute(prisma) {
   const noOp = async () => {};
   const effects = { broadcasts: [], invalidations: [] };
@@ -37,12 +39,19 @@ function loadSubmissionReviewRoute(prisma) {
     "./notifyUser": noOp,
     "../middleware/websocket": { sendRealtimeUpdate: (...args) => effects.broadcasts.push(args) },
   });
-  let handler;
+  const handlers = {};
   const router = Object.fromEntries(["get", "post", "put", "delete", "patch"].map(method => [method,
-    (url, ...callbacks) => {
-      if (method === "patch" && url === "/submissions/:submissionId/review") handler = callbacks.at(-1);
-    },
+    (url, ...callbacks) => { handlers[`${method} ${url}`] = callbacks.at(-1); },
   ]));
+  async function call(route, req) {
+    const res = {
+      statusCode: 200,
+      status(code) { this.statusCode = code; return this; },
+      json(body) { this.body = body; return this; },
+    };
+    await handlers[route](req, res);
+    return res;
+  }
   load("routes/bounties.js", {
     express: { Router: () => router },
     "../prisma/client": prisma,
@@ -71,15 +80,11 @@ function loadSubmissionReviewRoute(prisma) {
   });
   return {
     effects,
-    async review(user, submissionId, body) {
-      const req = { user, params: { submissionId }, body };
-      const res = {
-        statusCode: 200,
-        status(code) { this.statusCode = code; return this; },
-        json(body) { this.body = body; return this; },
-      };
-      await handler(req, res);
-      return res;
+    review(user, submissionId, body) {
+      return call("patch /submissions/:submissionId/review", { user, params: { submissionId }, body });
+    },
+    removeAssignee(user, bountyId, userId) {
+      return call("delete /:id/assignees/:userId", { user, params: { id: bountyId, userId } });
     },
   };
 }

@@ -961,6 +961,11 @@ export default function AdminDashboard() {
       await Promise.all([loadWorkSubmissions(), fetchAllSubmissions()]);
     } catch (error) {
       console.error("Failed to review submission:", error);
+      // Someone else may have decided first: say why and show the current list.
+      toast.error(
+        error instanceof Error ? error.message : "Failed to review submission",
+      );
+      await Promise.all([loadWorkSubmissions(), fetchAllSubmissions()]);
     } finally {
       setIsUpdating(false);
     }

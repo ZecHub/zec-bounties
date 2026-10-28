@@ -1095,6 +1095,11 @@ router.delete("/:id/assignees/:userId", authenticate, async (req, res) => {
         where: { id: bountyId, status: { not: "DONE" }, assignee: userId },
         data: { assignee: null },
       }),
+      // Nobody is left working on it: cancel it, as an empty roster does
+      prisma.bounty.updateMany({
+        where: { id: bountyId, status: "IN_PROGRESS", assignees: { none: {} } },
+        data: { status: "CANCELLED" },
+      }),
     ]);
     logActivity(null, {
       bountyId,
@@ -1779,6 +1784,34 @@ router.patch(
                   error: "You do not have permission to review this submission",
                 };
               }
+              // A decision is final, so a reviewer with an old view cannot
+              // overwrite one, such as a paid approval.
+              if (submission.status !== "pending") {
+                return {
+                  statusCode: 409,
+                  error: "This submission has already been reviewed",
+                };
+              }
+              if (submission.bounty.status === "CANCELLED") {
+                return {
+                  statusCode: 409,
+                  error:
+                    "This bounty is cancelled. Reactivate it before reviewing its submissions",
+                };
+              }
+              // On a DONE bounty the legacy assignee is the payee. Turning down
+              // their own entry would still pay them, so reopen the bounty first.
+              if (
+                status !== "approved" &&
+                submission.bounty.status === "DONE" &&
+                submission.bounty.assignee === submission.submittedBy
+              ) {
+                return {
+                  statusCode: 409,
+                  error:
+                    "This entry belongs to the bounty's winner. Reopen the bounty before rejecting it or asking for a revision",
+                };
+              }
 
               let newBountyStatus = submission.bounty.status;
 
@@ -1786,7 +1819,7 @@ router.patch(
                 if (submission.bounty.status !== "DONE") {
                   newBountyStatus = "DONE";
                 }
-              } else if (["rejected", "needs_revision"].includes(status)) {
+              } else if (submission.bounty.status !== "DONE") {
                 const approvedExists = await tx.workSubmission.findFirst({
                   where: {
                     bountyId: submission.bounty.id,
@@ -1795,7 +1828,33 @@ router.patch(
                   },
                   select: { id: true },
                 });
-                if (!approvedExists) newBountyStatus = "IN_PROGRESS";
+                if (!approvedExists) {
+                  // Other entries still waiting keep the bounty in review. A
+                  // revision goes back to its submitter. A rejection goes back
+                  // to the remaining assignees, or cancels the bounty when none
+                  // are left, as when the last one is removed.
+                  const pendingExists = await tx.workSubmission.findFirst({
+                    where: {
+                      bountyId: submission.bounty.id,
+                      status: "pending",
+                      id: { not: submissionId },
+                    },
+                    select: { id: true },
+                  });
+                  if (pendingExists) {
+                    newBountyStatus = "IN_REVIEW";
+                  } else if (status === "needs_revision") {
+                    newBountyStatus = "IN_PROGRESS";
+                  } else {
+                    const assigneesLeft = await tx.bountyAssignee.count({
+                      where: {
+                        bountyId: submission.bounty.id,
+                        userId: { not: submission.submittedBy },
+                      },
+                    });
+                    newBountyStatus = assigneesLeft ? "IN_PROGRESS" : "CANCELLED";
+                  }
+                }
               }
 
               const updSub = await tx.workSubmission.update({
@@ -1830,9 +1889,6 @@ router.patch(
                       assignee: submission.submittedBy,
                       completedAt: new Date(),
                     }),
-                  ...(status !== "approved" &&
-                    submission.bounty.status === "DONE" &&
-                    newBountyStatus !== "DONE" && { completedAt: null }),
                   ...(status === "rejected" &&
                     submission.bounty.assignee === submission.submittedBy && {
                       assignee: null,
