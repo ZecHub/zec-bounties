@@ -55,6 +55,7 @@ const {
   createBountyWithQuota,
   WeeklyBountyQuotaError,
   requireTaskCreation,
+  validateBountyChain,
 } = require("../utils/bountyHelpers");
 const { redactPublicUser } = require("../utils/privacy");
 
@@ -196,6 +197,44 @@ async function removeWalletFromMembers(teamId, wallet, userIds) {
   }
 }
 
+// Full teardown of a team wallet. Order matters: resolve the params row
+// BEFORE removeWalletFromMembers deletes rows, or the directory is orphaned.
+async function teardownTeamWallet(teamId, wallet) {
+  const zcashParams = await prisma.zcashParams.findFirst({
+    where: { teamId, accountName: wallet.accountName },
+  });
+
+  const members = await prisma.teamMember.findMany({
+    where: { teamId },
+    select: { userId: true },
+  });
+  await removeWalletFromMembers(
+    teamId,
+    wallet,
+    members.map((m) => m.userId),
+  );
+
+  if (zcashParams) {
+    const dataDir = getWalletDataDir(zcashParams.walletId);
+    invalidateZingo({
+      chain: wallet.chain,
+      serverUrl: wallet.serverUrl,
+      dataDir,
+    });
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+
+  // Sweeps rows owned by non-members (e.g. a global admin who created it)
+  await prisma.zcashParams.deleteMany({ where: { teamId } });
+  await prisma.teamWallet.delete({ where: { teamId } });
+}
+
+async function canDeleteTeamWallet(teamId, req) {
+  if (req.user.role === "ADMIN") return true;
+  const member = await getTeamMember(teamId, req.user.id);
+  return member?.role === "OWNER";
+}
+
 // Every member's copy of a team wallet points at the team's wallet directory.
 // When the team itself is deleted, remove those copies too and give each
 // owner a fallback default. Once the team is gone there is no team page to
@@ -212,11 +251,9 @@ async function removeTeamWalletCopies(teamId, wallet) {
     byName.get(c.accountName).add(c.ownerId);
   }
   for (const [accountName, ownerIds] of byName) {
-    await removeWalletFromMembers(
-      teamId,
-      { ...wallet, accountName },
-      [...ownerIds],
-    );
+    await removeWalletFromMembers(teamId, { ...wallet, accountName }, [
+      ...ownerIds,
+    ]);
   }
 }
 
@@ -856,8 +893,11 @@ router.post(
       if (!categoryValidation.valid) {
         return res.status(400).json({ error: categoryValidation.error });
       }
-      if (chain && !["MAIN", "TEST"].includes(chain)) {
-        return res.status(400).json({ error: "Invalid chain value" });
+      const chainError = validateBountyChain(chain);
+      if (chainError) {
+        return res
+          .status(chain === "TEST" ? 403 : 400)
+          .json({ error: chainError });
       }
 
       if (req.user.role !== "ADMIN") {
@@ -2113,20 +2153,18 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
       chain = "mainnet",
       serverUrl = "https://zec.rocks:443",
       birthdayHeight,
+      replace = false,
     } = req.body;
 
     if (!accountName?.trim() || !seedPhrase) {
-      return res.status(400).json({
-        error: "accountName and seedPhrase are required",
-      });
+      return res
+        .status(400)
+        .json({ error: "accountName and seedPhrase are required" });
     }
 
     const words = seedPhrase.trim().split(/\s+/);
-
     if (words.length !== 24) {
-      return res.status(400).json({
-        error: "Seed phrase must be 24 words",
-      });
+      return res.status(400).json({ error: "Seed phrase must be 24 words" });
     }
 
     const connectionError = validateWalletConnection({ chain, serverUrl });
@@ -2134,16 +2172,18 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
       return res.status(400).json({ error: connectionError });
     }
 
-    const existing = await prisma.teamWallet.findUnique({
-      where: {
-        teamId,
-      },
-    });
-
+    // All validation is done before anything destructive happens.
+    const existing = await prisma.teamWallet.findUnique({ where: { teamId } });
     if (existing) {
-      return res.status(409).json({
-        error: "Team already has a wallet",
-      });
+      if (!replace) {
+        return res.status(409).json({ error: "Team already has a wallet" });
+      }
+      if (!(await canDeleteTeamWallet(teamId, req))) {
+        return res
+          .status(403)
+          .json({ error: "Only the team owner can replace the wallet" });
+      }
+      await teardownTeamWallet(teamId, existing);
     }
 
     let wallet = null;
@@ -2151,17 +2191,9 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
 
     try {
       wallet = await prisma.teamWallet.create({
-        data: {
-          teamId,
-          accountName: accountName.trim(),
-          chain,
-          serverUrl,
-        },
+        data: { teamId, accountName: accountName.trim(), chain, serverUrl },
       });
 
-      /*
-       * initZcashOnce creates the walletId and wallet directory.
-       */
       zcashParams = await initZcashOnce(
         req.user.id,
         wallet.accountName,
@@ -2169,81 +2201,50 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
         teamId,
       );
       zcashParams = await prisma.zcashParams.update({
-        where: {
-          id: zcashParams.id,
-        },
-        data: {
-          isTeam: true,
-          teamId,
-        },
+        where: { id: zcashParams.id },
+        data: { isTeam: true, teamId },
       });
 
       const params = await buildTeamParams(teamId, wallet);
-
       await executeZingoCliSeed(params, seedPhrase, birthdayHeight);
     } catch (err) {
-      if (wallet) {
-        await prisma.teamWallet
-          .delete({
-            where: {
-              id: wallet.id,
-            },
-          })
-          .catch(() => {});
+      // Same cleanup order as the admin import: invalidate, rm, delete rows.
+      if (zcashParams?.walletId) {
+        const dir = getWalletDataDir(zcashParams.walletId);
+        invalidateZingo({
+          chain: wallet?.chain ?? chain,
+          serverUrl: wallet?.serverUrl ?? serverUrl,
+          dataDir: dir,
+        });
+        await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
       }
-
-      if (zcashParams) {
-        await prisma.zcashParams
-          .delete({
-            where: {
-              id: zcashParams.id,
-            },
-          })
-          .catch(() => {});
-
-        const walletDir = getWalletDataDir(zcashParams.walletId);
-
-        await fs
-          .rm(walletDir, {
-            recursive: true,
-            force: true,
-          })
-          .catch(() => {});
-      }
-
+      await prisma.zcashParams
+        .deleteMany({ where: { teamId } })
+        .catch(() => {});
+      await prisma.teamWallet.deleteMany({ where: { teamId } }).catch(() => {});
       throw err;
     }
 
-    const allMembers = await prisma.teamMember.findMany({
-      where: {
-        teamId,
-      },
-    });
-
-    const memberUserIds = allMembers.map((m) => m.userId);
-
-    await syncWalletToMembers(teamId, wallet, memberUserIds);
+    const allMembers = await prisma.teamMember.findMany({ where: { teamId } });
+    await syncWalletToMembers(
+      teamId,
+      wallet,
+      allMembers.map((m) => m.userId),
+    );
 
     await broadcastTeamEvent(
       "team_wallet_imported",
-      {
-        teamId,
-        wallet,
-      },
+      { teamId, wallet },
       teamId,
       req.user.id,
       { membersOnly: true },
     );
 
-    res.status(201).json({
-      success: true,
-      wallet,
-    });
+    res.status(201).json({ success: true, wallet });
   } catch (err) {
     console.error(err);
-
     res.status(500).json({
-      error: "Failed to import team wallet",
+      error: `Failed to import team wallet: ${err.message || "unknown error"}`,
     });
   }
 });
@@ -2951,97 +2952,30 @@ router.delete("/:teamId/wallet", authenticate, async (req, res) => {
   try {
     const { teamId } = req.params;
 
-    if (req.user.role !== "ADMIN") {
-      const member = await getTeamMember(teamId, req.user.id);
-
-      if (!member || member.role !== "OWNER") {
-        return res.status(403).json({
-          error: "Only the team owner can delete the wallet",
-        });
-      }
+    if (!(await canDeleteTeamWallet(teamId, req))) {
+      return res
+        .status(403)
+        .json({ error: "Only the team owner can delete the wallet" });
     }
 
-    const wallet = await prisma.teamWallet.findUnique({
-      where: {
-        teamId,
-      },
-    });
+    const wallet = await prisma.teamWallet.findUnique({ where: { teamId } });
+    if (!wallet) return res.status(404).json({ error: "Wallet not found" });
 
-    if (!wallet) {
-      return res.status(404).json({
-        error: "Wallet not found",
-      });
-    }
-
-    await removeWalletFromMembers(
-      teamId,
-      wallet,
-      (
-        await prisma.teamMember.findMany({
-          where: {
-            teamId,
-          },
-        })
-      ).map((m) => m.userId),
-    );
-
-    /*
-     * IMPORTANT:
-     * Resolve the wallet directory using walletId.
-     * Do NOT reconstruct it from teamId/accountName/chain.
-     */
-    const zcashParams = await prisma.zcashParams.findFirst({
-      where: {
-        teamId,
-        accountName: wallet.accountName,
-      },
-    });
-
-    if (zcashParams) {
-      const dataDir = getWalletDataDir(zcashParams.walletId);
-
-      invalidateZingo({
-        chain: wallet.chain,
-        serverUrl: wallet.serverUrl,
-        dataDir,
-      });
-
-      await fs.rm(dataDir, {
-        recursive: true,
-        force: true,
-      });
-
-      await prisma.zcashParams.delete({
-        where: {
-          id: zcashParams.id,
-        },
-      });
-    }
-
-    await prisma.teamWallet.delete({
-      where: {
-        teamId,
-      },
-    });
+    await teardownTeamWallet(teamId, wallet);
 
     await broadcastTeamEvent(
       "team_wallet_deleted",
-      {
-        teamId,
-      },
+      { teamId },
       teamId,
       req.user.id,
       { membersOnly: true },
-    );
+    ).catch(() => {});
 
-    res.json({
-      message: "Team wallet deleted successfully",
-    });
+    res.json({ message: "Team wallet deleted successfully" });
   } catch (err) {
     console.error(err);
-
     res.status(500).json({
-      error: "Failed to delete team wallet",
+      error: `Failed to delete team wallet: ${err.message || "unknown error"}`,
     });
   }
 });

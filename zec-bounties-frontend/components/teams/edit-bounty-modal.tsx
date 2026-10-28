@@ -35,6 +35,7 @@ import {
 import { useBounty } from "@/lib/bounty-context";
 import { Bounty } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
+import { IS_DEV } from "@/lib/configENV";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -61,7 +62,7 @@ export function TeamsEditBountyModal({
   const [description, setDescription] = useState("");
   const [bountyAmount, setBountyAmount] = useState("");
   const [timeToComplete, setTimeToComplete] = useState("");
-  const [chain, setChain] = useState<"MAIN" | "TEST">("TEST");
+  const [chain, setChain] = useState<"MAIN" | "TEST">("MAIN");
 
   // Assignee picker
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -79,7 +80,7 @@ export function TeamsEditBountyModal({
         ? new Date(bounty.timeToComplete).toISOString().slice(0, 10)
         : "",
     );
-    setChain(bounty.chain ?? "TEST");
+    setChain(bounty.chain ?? "MAIN");
     // Pre-select existing assignees
     const existingIds = bounty.assignees?.map((a) => a.userId) ?? [];
     setSelectedUserIds(existingIds);
@@ -136,9 +137,8 @@ export function TeamsEditBountyModal({
           timeToComplete && timeToComplete !== originalDeadline
             ? new Date(timeToComplete).toISOString()
             : undefined,
-        chain,
+        ...(IS_DEV && chain !== (bounty.chain ?? "MAIN") && { chain }),
         notifyUsers,
-        // Pass userIds for assignees — handled in updateBounty
         ...(assigneesChanged && { userIds: selectedUserIds }),
       } as any);
       onOpenChange(false);
@@ -271,18 +271,26 @@ export function TeamsEditBountyModal({
                     <Coins className="h-3.5 w-3.5 text-muted-foreground" />
                     Network
                   </Label>
-                  <Select
-                    value={chain}
-                    onValueChange={(v) => setChain(v as "MAIN" | "TEST")}
-                  >
-                    <SelectTrigger id="edit-chain" className="w-full">
-                      <SelectValue placeholder="Select network" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="TEST">Testnet</SelectItem>
-                      <SelectItem value="MAIN">Mainnet</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {IS_DEV ? (
+                    <Select
+                      value={chain}
+                      onValueChange={(v) => setChain(v as "MAIN" | "TEST")}
+                    >
+                      <SelectTrigger id="edit-chain" className="w-full">
+                        <SelectValue placeholder="Select network" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MAIN">Mainnet</SelectItem>
+                        <SelectItem value="TEST">Testnet</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="edit-chain"
+                      value={chain === "MAIN" ? "Mainnet" : "Testnet"}
+                      disabled
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">

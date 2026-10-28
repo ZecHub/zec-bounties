@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AlertTriangle, CheckCircle2, Coins, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { setNymSending } from "@/components/nym-sending-indicator";
 import type { Bounty, Team } from "@/lib/types";
 
 export function TeamAuthorizePaymentPanel({
@@ -101,6 +102,7 @@ export function TeamAuthorizePaymentPanel({
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
     setIsProcessing(true);
+    setNymSending(true);
     const ids = Array.from(selectedIds);
     try {
       const result = await authorizeTeamDuePayment(
@@ -129,6 +131,7 @@ export function TeamAuthorizePaymentPanel({
       toast.error(title || "Payment failed", { description, duration: 8000 });
     } finally {
       setIsProcessing(false);
+      setNymSending(false);
     }
   };
 

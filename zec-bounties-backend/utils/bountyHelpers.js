@@ -11,6 +11,8 @@ const sendMail = require("./sendMail");
 const notifyUser = require("./notifyUser");
 const { sendRealtimeUpdate } = require("../middleware/websocket");
 
+const IS_DEV = process.env.NODE_ENV !== "production";
+
 // ─── Email settings ─────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
 
@@ -146,7 +148,9 @@ async function getSubmissionRecipients(bountyId, submitterId) {
   });
   return [
     ...new Set(
-      [bounty.createdBy, submitterId, ...admins.map((a) => a.id)].filter(Boolean),
+      [bounty.createdBy, submitterId, ...admins.map((a) => a.id)].filter(
+        Boolean,
+      ),
     ),
   ];
 }
@@ -154,7 +158,11 @@ async function getSubmissionRecipients(bountyId, submitterId) {
 // Wide bounty_updated events must not carry submission bodies. Involved
 // clients get those on the scoped work_submitted / submission_* events.
 function withoutSubmissionBodies(bounty) {
-  if (!bounty || typeof bounty !== "object" || !Array.isArray(bounty.workSubmissions)) {
+  if (
+    !bounty ||
+    typeof bounty !== "object" ||
+    !Array.isArray(bounty.workSubmissions)
+  ) {
     return bounty;
   }
   const { workSubmissions, ...rest } = bounty;
@@ -319,6 +327,19 @@ async function createBountyWithQuota(user, args) {
   }
 }
 
+/**
+ * Returns an error string, or null if the chain value is acceptable.
+ * TEST is only allowed outside production.
+ */
+function validateBountyChain(chain) {
+  if (chain == null || chain === "") return null; // falls back to schema default
+  if (!["MAIN", "TEST"].includes(chain)) return "Invalid chain value";
+  if (chain === "TEST" && !IS_DEV) {
+    return "Testnet bounties can only be created in development mode";
+  }
+  return null;
+}
+
 const requireTaskCreation = async (req, res, next) => {
   try {
     const u = await prisma.user.findUnique({
@@ -354,4 +375,5 @@ module.exports = {
   createBountyWithQuota,
   WeeklyBountyQuotaError,
   requireTaskCreation,
+  validateBountyChain,
 };
