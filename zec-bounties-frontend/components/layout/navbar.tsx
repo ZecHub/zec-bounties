@@ -43,13 +43,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/theme/theme-picker";
 import { NotificationsInbox } from "@/components/notifications-inbox";
+import { ActiveWalletTypePill, WalletBalanceGroup } from "@/components/layout/admin/navbar";
+import { WalletSwitchDialog } from "@/components/wallet-switch-dialog";
 
 // ── Role toggle button ────────────────────────────────────────────────────────
 const ROLE_OPTIONS = [
@@ -59,86 +61,129 @@ const ROLE_OPTIONS = [
   { value: "TEAM", label: "Team", icon: Users, redirect: "/home" },
 ] as const;
 
+function SetActiveWalletButton() {
+  const { currentUser, teams, zcashParams, setDefaultWallet, setActiveTeamId, fetchZcashParams } = useBounty();
+  const [open, setOpen] = useState(false);
+
+  if (!currentUser) return null;
+
+  const isTeamManager = teams.some((t) =>
+    t.members?.some(
+      (m) =>
+        m.userId === currentUser.id &&
+        (m.role === "OWNER" || m.role === "ADMIN"),
+    ),
+  );
+  if (!isTeamManager || zcashParams.length === 0) return null;
+
+  const handleConfirm = async (
+    selection: { accountName: string; teamId?: string } | null,
+  ) => {
+    setOpen(false);
+    if (!selection) return;
+    try {
+      await setDefaultWallet(selection.accountName, selection.teamId);
+      if (selection.teamId) setActiveTeamId(selection.teamId);
+      else setActiveTeamId(null);
+      await fetchZcashParams();
+    } catch (e) {
+      console.warn("Failed to set active wallet:", e);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 h-8 text-xs"
+        onClick={() => setOpen(true)}
+      >
+        <Wallet className="h-3.5 w-3.5" />
+        <span className="hidden xl:inline">Active wallet</span>
+      </Button>
+      <WalletSwitchDialog
+        open={open}
+        onOpenChange={setOpen}
+        targetRole="TEAM"
+        onConfirm={handleConfirm}
+      />
+    </>
+  );
+}
+
 function RoleToggleButton({ compact = false }: { compact?: boolean }) {
-  const { currentUser, switchRole, isSwitchingRole } = useBounty();
+  const { currentUser, switchRole, isSwitchingRole, setDefaultWallet, zcashParams, fetchZcashParams, setActiveTeamId } = useBounty();
   const router = useRouter();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingRole, setPendingRole] = useState<(typeof ROLE_OPTIONS)[number] | null>(null);
+
   if (!currentUser?.isRobin) return null;
 
   const current = ROLE_OPTIONS.find((r) => r.value === currentUser.role);
   const CurrentIcon = current?.icon ?? ShieldCheck;
 
+  const doSwitch = async (
+    role: (typeof ROLE_OPTIONS)[number],
+    wallet: { accountName: string; teamId?: string } | null,
+  ) => {
+    if (wallet) {
+      try {
+        await setDefaultWallet(wallet.accountName, wallet.teamId);
+        if (wallet.teamId) setActiveTeamId(wallet.teamId);
+        else setActiveTeamId(null);
+      } catch (e) {
+        console.warn("Wallet set failed during role switch:", e);
+      }
+    }
+    await switchRole(role.value);
+    await fetchZcashParams();
+    router.push(role.redirect);
+  };
+
   const handleSelect = async (role: (typeof ROLE_OPTIONS)[number]) => {
     if (role.value === currentUser.role || isSwitchingRole) return;
-    await switchRole(role.value);
-    router.push(role.redirect);
+    // Always offer the picker when the user has wallets so they choose.
+    if (zcashParams.length > 0) {
+      setPendingRole(role);
+      setPickerOpen(true);
+      return;
+    }
+    await doSwitch(role, null);
+  };
+
+  const handlePickerConfirm = async (
+    selection: { accountName: string; teamId?: string } | null,
+  ) => {
+    setPickerOpen(false);
+    if (pendingRole) {
+      await doSwitch(pendingRole, selection);
+      setPendingRole(null);
+    }
   };
 
   if (compact) {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            className="gap-2 justify-start"
-            disabled={isSwitchingRole}
-          >
-            {isSwitchingRole ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CurrentIcon className="h-4 w-4" />
-            )}
-            {isSwitchingRole
-              ? "Switching..."
-              : `Role: ${current?.label ?? currentUser.role}`}
-            <ChevronDown className="h-3.5 w-3.5 ml-auto opacity-60" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
-          <DropdownMenuLabel>Switch role</DropdownMenuLabel>
-          {ROLE_OPTIONS.map((role) => {
-            const Icon = role.icon;
-            const isActive = role.value === currentUser.role;
-            return (
-              <DropdownMenuItem
-                key={role.value}
-                className="gap-2"
-                onClick={() => handleSelect(role)}
-                disabled={isActive}
-              >
-                <Icon className="h-4 w-4" />
-                {role.label}
-                {isActive && <Check className="h-3.5 w-3.5 ml-auto" />}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+      <>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
-              size="sm"
-              className="gap-1.5 h-8 text-xs font-medium border-dashed"
+              className="gap-2 justify-start"
               disabled={isSwitchingRole}
             >
               {isSwitchingRole ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <CurrentIcon className="h-3.5 w-3.5" />
+                <CurrentIcon className="h-4 w-4" />
               )}
-              <span className="hidden xl:inline">
-                {isSwitchingRole ? "..." : (current?.label ?? currentUser.role)}
-              </span>
-              <ChevronDown className="h-3 w-3 opacity-60" />
+              {isSwitchingRole
+                ? "Switching..."
+                : `Role: ${current?.label ?? currentUser.role}`}
+              <ChevronDown className="h-3.5 w-3.5 ml-auto opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuContent align="start" className="w-48">
             <DropdownMenuLabel>Switch role</DropdownMenuLabel>
             {ROLE_OPTIONS.map((role) => {
               const Icon = role.icon;
@@ -158,11 +203,71 @@ function RoleToggleButton({ compact = false }: { compact?: boolean }) {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
-        Switch role
-      </TooltipContent>
-    </Tooltip>
+        <WalletSwitchDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          targetRole={pendingRole?.value ?? "ADMIN"}
+          onConfirm={handlePickerConfirm}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8 text-xs font-medium border-dashed"
+                disabled={isSwitchingRole}
+              >
+                {isSwitchingRole ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CurrentIcon className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden xl:inline">
+                  {isSwitchingRole ? "..." : (current?.label ?? currentUser.role)}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Switch role</DropdownMenuLabel>
+              {ROLE_OPTIONS.map((role) => {
+                const Icon = role.icon;
+                const isActive = role.value === currentUser.role;
+                return (
+                  <DropdownMenuItem
+                    key={role.value}
+                    className="gap-2"
+                    onClick={() => handleSelect(role)}
+                    disabled={isActive}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {role.label}
+                    {isActive && <Check className="h-3.5 w-3.5 ml-auto" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Switch role
+        </TooltipContent>
+      </Tooltip>
+      <WalletSwitchDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        targetRole={pendingRole?.value ?? "ADMIN"}
+        onConfirm={handlePickerConfirm}
+      />
+    </>
   );
 }
 
@@ -180,7 +285,13 @@ export function Navbar({
   const [topupOpen, setTopupOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [zecBalance] = useState(0.0);
-  const { currentUser, logout } = useBounty();
+  const { currentUser, logout, zcashParams, currentTeam, teamBalances, fetchTeamWalletBalance } = useBounty();
+  const showWallet = isAdmin || !!currentUser?.isRobin || (zcashParams?.length ?? 0) > 0;
+  const teamBalance = currentTeam ? (teamBalances[currentTeam.id] ?? null) : null;
+
+  useEffect(() => {
+    if (currentTeam?.id) fetchTeamWalletBalance(currentTeam.id);
+  }, [currentTeam?.id]);
 
   return (
     <>
@@ -269,18 +380,33 @@ export function Navbar({
               />
             </div>
 
-            {isAdmin && currentUser && (
-              <Button
-                variant="ghost"
-                className="gap-2 h-9 text-xs font-mono"
-                onClick={() => setTopupOpen(true)}
-              >
-                <Wallet className="h-4 w-4" />
-                {zecBalance.toFixed(4)} ZEC
-              </Button>
+            {showWallet && currentUser && (
+              <div className="flex items-center gap-1">
+                {currentTeam ? (
+                  <WalletBalanceGroup
+                    balance={teamBalance}
+                    isRefreshing={false}
+                    onOpen={() => setTopupOpen(true)}
+                    onRefresh={() => fetchTeamWalletBalance(currentTeam.id)}
+                  />
+                ) : (
+                  <>
+                    <ActiveWalletTypePill />
+                    <Button
+                      variant="ghost"
+                      className="gap-2 h-9 text-xs font-mono"
+                      onClick={() => setTopupOpen(true)}
+                    >
+                      <Wallet className="h-4 w-4" />
+                      {zecBalance.toFixed(4)} ZEC
+                    </Button>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Role Toggle */}
+            {currentUser && <SetActiveWalletButton />}
             {currentUser && <RoleToggleButton />}
 
             <Button
@@ -510,7 +636,7 @@ export function Navbar({
         </div>
       </nav>
 
-      {isAdmin && currentUser && (
+      {showWallet && currentUser && (
         <WalletTopupModal open={topupOpen} onOpenChange={setTopupOpen} />
       )}
     </>

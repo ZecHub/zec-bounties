@@ -57,6 +57,7 @@ function mount(kind) {
     }
     if (id === "@/lib/utils") return utils;
     if (id === "@/lib/displayName") return { displayName: user => user.name };
+    if (id === "@/lib/configENV") return { IS_DEV: false };
     if (id === "@/lib/bounty-context") return { useBounty: () => ({
       currentUser: { id: "admin", role: "ADMIN" },
       fetchBountyActivity: async () => [],
