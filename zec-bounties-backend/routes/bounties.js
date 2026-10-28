@@ -5,6 +5,7 @@ const { escapeHtml, formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
   authenticate,
+  isTeamOrAdmin,
   isAdmin,
   optionalAuthenticate,
   signSessionToken,
@@ -2210,6 +2211,33 @@ router.get("/users/full", authenticate, isAdmin, async (req, res) => {
         canCreateTasks: true,
       },
     });
+    await setCache(cacheKey, users, TTL.USERS);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/users/teams", authenticate, isTeamOrAdmin, async (req, res) => {
+  try {
+    const cacheKey = "users:teams";
+    const cached = await getCache(cacheKey);
+    if (cached) return res.json(cached);
+
+    const users = await prisma.user.findMany({
+      where: { role: { not: "ADMIN" } },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        email: true,
+        role: true,
+        avatar: true,
+        z_address: true,
+        UA_address: true,
+      },
+    });
+
     await setCache(cacheKey, users, TTL.USERS);
     res.json(users);
   } catch (err) {
