@@ -1021,8 +1021,29 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     accountName: string,
     teamId?: string,
   ): Promise<void> => {
-    if (!currentUser || currentUser.role !== "ADMIN") {
-      throw new Error("Only admins can set a default wallet");
+    if (!currentUser) throw new Error("User not authenticated");
+
+    // Allowed if: global admin / role-switcher, OR the wallet is one of the
+    // caller's own params and (for team wallets) they are OWNER/ADMIN of that team.
+    const isPrivileged = currentUser.isRobin || currentUser.role === "ADMIN";
+    if (!isPrivileged) {
+      const target = zcashParams.find(
+        (p) =>
+          p.accountName === accountName &&
+          (p.teamId ?? null) === (teamId ?? null),
+      );
+      if (!target) {
+        throw new Error("Wallet not found in your account");
+      }
+      if (target.isTeam && target.teamId) {
+        const team = teams.find((t) => t.id === target.teamId);
+        const membership = team?.members?.find(
+          (m) => m.userId === currentUser.id,
+        );
+        if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
+          throw new Error("Team owner or admin access required");
+        }
+      }
     }
 
     const res = await fetch(
@@ -1449,7 +1470,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const endpoint =
         currentUser?.role === "ADMIN"
           ? `${backendUrl}/api/bounties/users/full`
-          : `${backendUrl}/api/bounties/users`;
+          : currentUser?.role === "TEAM"
+            ? `${backendUrl}/api/bounties/users/teams`
+            : `${backendUrl}/api/bounties/users`;
       const res = await fetch(endpoint, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch users");
       const data = await res.json();

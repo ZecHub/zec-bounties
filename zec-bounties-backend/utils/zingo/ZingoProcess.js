@@ -8,9 +8,10 @@ const {
 
 // ---------------------------------------------------------------------------
 // Logging
-// Set ZINGO_DEBUG=0 to silence. ZINGO_LOG_MAX controls truncation (chars).
+// Off unless ZINGO_DEBUG=1. ZINGO_LOG_MAX controls truncation (chars).
+// Never log raw stdout or stderr: recovery_info prints the wallet seed.
 // ---------------------------------------------------------------------------
-const DEBUG = process.env.ZINGO_DEBUG !== "0";
+const DEBUG = process.env.ZINGO_DEBUG === "1";
 const LOG_MAX = Number(process.env.ZINGO_LOG_MAX) || 20000;
 const ANSI = /\u001b\[[0-9;]*m/g;
 
@@ -265,7 +266,6 @@ class ZingoProcess {
 
     this.proc.stdout.on("data", (data) => {
       const text = data.toString();
-      log("stdout", "raw chunk", text);
       this.buffer += text;
 
       // Resolve any pending command waiting for output
@@ -273,8 +273,6 @@ class ZingoProcess {
     });
 
     this.proc.stderr.on("data", (data) => {
-      log("stderr:raw", "raw chunk", data.toString());
-
       const message = data.toString().replace(/\u001b\[[0-9;]*m/g, "");
 
       const meaningful = message
