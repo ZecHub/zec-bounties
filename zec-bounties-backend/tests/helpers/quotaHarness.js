@@ -68,6 +68,7 @@ function loadRoutes(prisma) {
     "../utils/bountyActivity": { logActivity: noOp },
     "../helpers/validateBounty": require("../../helpers/validateBounty"),
     "../helpers/teamRoles": require("../../helpers/teamRoles"),
+    "../helpers/teamBoardAccess": require("../../helpers/teamBoardAccess"),
     "../helpers/zcash/walletConnection": require("../../helpers/zcash/walletConnection"),
     "path": path,
     "multer": require("multer"),

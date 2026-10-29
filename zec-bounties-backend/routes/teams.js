@@ -8,6 +8,7 @@ const {
   AUTH_USER_SELECT,
 } = require("../middleware/auth");
 const { isSettableMemberRole } = require("../helpers/teamRoles");
+const { canAccessTeamBoard } = require("../helpers/teamBoardAccess");
 const {
   validateWalletConnection,
 } = require("../helpers/zcash/walletConnection");
@@ -439,14 +440,6 @@ async function getTeamDonationAddress(teamId) {
   }
 }
 
-async function isCommunityMember(teamId, userId) {
-  const fav = await prisma.teamFavorite.findUnique({
-    where: { userId_teamId: { userId, teamId } },
-    select: { userId: true },
-  });
-  return Boolean(fav);
-}
-
 // ─── Team CRUD ───────────────────────────────────────────────────────────────
 
 router.post("/", authenticate, async (req, res) => {
@@ -740,13 +733,11 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
         return res.json({ data: [], total: 0, page, limit });
       }
 
+      // Private teams are members-only. A favourite ("community") must NOT
+      // grant access: POST /:teamId/favorite has no membership/privacy gate, so
+      // honouring it here let any hunter read any private team's board.
       const member = await getTeamMember(teamId, userId);
-      const community =
-        !member &&
-        req.user.role === "HUNTER" &&
-        (await isCommunityMember(teamId, userId));
-
-      if (!member && !community) {
+      if (!canAccessTeamBoard({ isPrivate: true, isAdmin, isMember: !!member })) {
         return res.json({ data: [], total: 0, page, limit });
       }
     }
@@ -1091,6 +1082,16 @@ router.post("/:teamId/favorite", authenticate, async (req, res) => {
       return res.status(404).json({
         error: "Team not found",
       });
+    }
+
+    // A private team is members-only, and a favourite is used as a community
+    // access signal — so a non-member must not be able to favourite one.
+    if (team.isPrivate) {
+      const member = await getTeamMember(teamId, req.user.id);
+      const isAdmin = req.user?.role === "ADMIN";
+      if (!canAccessTeamBoard({ isPrivate: true, isAdmin, isMember: !!member })) {
+        return res.status(403).json({ error: "This team is private" });
+      }
     }
 
     await prisma.teamFavorite.upsert({
