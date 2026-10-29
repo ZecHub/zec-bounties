@@ -15,6 +15,7 @@ const {
   getCache,
   setCache,
   delCache,
+  invalidateUserDirectory,
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
@@ -2310,7 +2311,7 @@ router.patch("/switch-role", authenticate, async (req, res) => {
         UA_address: true,
       },
     });
-    await delCache("users:all");
+    await invalidateUserDirectory();
     const token = signSessionToken(updated);
     res.json({ user: updated, token });
   } catch (error) {

@@ -41,6 +41,11 @@ const delCache = async (...keys) => {
   }
 };
 
+// The authenticated directory and its admin-only counterpart contain the
+// same public identity fields. Mutations to those fields must evict both.
+const invalidateUserDirectory = async () =>
+  delCache("users:all", "users:public");
+
 // SCAN-based pattern delete — never blocks Redis like KEYS does
 const deleteCacheByPattern = async (pattern) => {
   try {
@@ -98,6 +103,7 @@ module.exports = {
   getCache,
   setCache,
   delCache,
+  invalidateUserDirectory,
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
