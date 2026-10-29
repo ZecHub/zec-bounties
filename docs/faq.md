@@ -35,7 +35,7 @@ No. Team OWNER/ADMIN only manage that team. Platform Admin is a separate role. T
 
 ## How do I get my first bounty?
 
-First set a shielded UA in [Profile](https://bounties.zechub.wiki/profile). Then apply to an open bounty on the board, or suggest one with **New Bounty** and wait for it to be approved (by the team you aimed it at, or by platform admins). New bounties are usually posted on Mondays — only suggest work that is not already listed. See [Contributors](contributors.md).
+First set a shielded UA in [Profile](https://bounties.zechub.wiki/profile). Then apply to an open bounty on the board. Only suggest one with **New Bounty** if your account is allowed to, and wait for it to be approved (by the team you aimed it at, or by platform admins). Admins can close suggestions, open them to any onboarded hunter, or require a configured number of completed bounties (5 by default). See [Bounty suggestions](bounty-suggestions.md) for the limits. If you cannot suggest yet, open a PR and note that you'd like it considered for a contributor reward; payment requires an approved bounty. New bounties are usually posted on Mondays — only suggest work that is not already listed. See [Contributors](contributors.md).
 
 ## Why can't I apply to a Suggested task?
 
