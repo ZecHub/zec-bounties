@@ -2211,7 +2211,7 @@ function TreasuryTab({
     // Transactions/payment records refetch via the activeView effect.
     fetchTeamBounties(team.id).catch(() => {});
   };
-
+  // Vercel
   const handleFetchTransactions = async () => {
     setIsFetchingTxHashes(true);
     try {
