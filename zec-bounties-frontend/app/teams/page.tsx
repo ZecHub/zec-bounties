@@ -68,11 +68,20 @@ export function getUserRole(
 }
 
 export default function TeamsPage() {
-  const { currentUser, teams, teamsLoading, fetchTeams, bounties } =
-    useBounty();
+  const {
+    currentUser,
+    teams,
+    teamsLoading,
+    fetchTeams,
+    bounties,
+    zcashParams,
+    setDefaultWallet,
+  } = useBounty();
+
   const router = useRouter();
   const [showCreatePanel, setShowCreatePanel] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [openingTeamId, setOpeningTeamId] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser) fetchTeams();
@@ -87,6 +96,26 @@ export default function TeamsPage() {
     const withWallet = teams.filter((t) => !!t.wallet).length;
     return { totalMembers, totalActive, withWallet };
   }, [teams, bounties]);
+
+  // Make the team's wallet the active one before entering the team console,
+  // so the navbar loads the team balance instead of the personal wallet.
+  const handleOpenTeam = async (team: Team) => {
+    if (openingTeamId) return;
+    const teamWallet = zcashParams?.find(
+      (p) => p.isTeam && p.teamId === team.id,
+    );
+    if (teamWallet && !teamWallet.isDefault) {
+      setOpeningTeamId(team.id);
+      try {
+        await setDefaultWallet(teamWallet.accountName, team.id);
+      } catch {
+        // Still open the team; the navbar falls back to its own resolution.
+      } finally {
+        setOpeningTeamId(null);
+      }
+    }
+    router.push(`/teams/${team.id}`);
+  };
 
   if (!currentUser) {
     return (
@@ -213,7 +242,8 @@ export default function TeamsPage() {
                 <button
                   key={team.id}
                   type="button"
-                  onClick={() => router.push(`/teams/${team.id}`)}
+                  onClick={() => handleOpenTeam(team)}
+                  disabled={openingTeamId === team.id}
                   className="group flex flex-col overflow-hidden rounded-xl border bg-card text-left transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
                 >
                   <div
