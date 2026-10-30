@@ -619,6 +619,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     // ------------------------------------------------------------
     const userTerm = String(req.query.user || "").trim();
     let userFilter = {};
+    let isUserSearch = false;
 
     if (userTerm) {
       if (!isAdmin) {
@@ -628,20 +629,29 @@ router.get("/", optionalAuthenticate, async (req, res) => {
       const identity = userIdentityWhere(userTerm);
       const involves = bountyInvolvesUserWhere(identity);
 
-      if (involves) userFilter = involves;
+      if (involves) {
+        userFilter = involves;
+        isUserSearch = true;
+      }
     }
 
     // ------------------------------------------------------------
     // Audience
     //
-    // Team bounties belong to hunters (home feed) and the team
-    // console. The admin console lists platform bounties (no team)
-    // plus pending hunter suggestions awaiting review. Filtered in
-    // SQL so `take` returns a full page and `total` matches what
-    // is displayed.
+    // The unfiltered admin console lists platform bounties (no team)
+    // plus pending hunter suggestions awaiting review. A user-filtered
+    // admin search also includes team bounties so the user's history is
+    // complete; the user filter above keeps those results scoped. Filtered
+    // in SQL so `take` returns a full page and `total` matches what is shown.
     // ------------------------------------------------------------
     const audienceFilter = isAdmin
-      ? { OR: [{ teamId: null }, { suggestionReviewStatus: "PENDING" }] }
+      ? {
+          OR: [
+            { teamId: null },
+            { suggestionReviewStatus: "PENDING" },
+            ...(isUserSearch ? [{ teamId: { not: null } }] : []),
+          ],
+        }
       : {
           OR: [
             { suggestionReviewStatus: null },
@@ -674,7 +684,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
       chain: chainParam,
       viewer: isAdmin ? "admin" : (userId ?? "anon"),
       user: userTerm || "",
-      scope: isAdmin ? "platform" : "feed",
+      scope: isAdmin ? (isUserSearch ? "user-search" : "platform") : "feed",
     })}`;
 
     const cached = await getCache(cacheKey);
