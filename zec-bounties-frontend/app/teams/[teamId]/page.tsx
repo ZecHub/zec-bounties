@@ -98,7 +98,7 @@ import {
   SyncStatusMenu,
   RescanButton,
   useRescanCooldown,
-} from "@/components/layout/admin/navbar";
+} from "@/components/layout/nav-parts";
 
 type Tab =
   | "Overview"
@@ -2161,6 +2161,7 @@ function TreasuryTab({
 }) {
   const {
     deleteTeamWallet,
+    fetchTeamBounties,
     fetchTeamTransactionHashes,
     teamPaymentIDs,
     teamPaymentChain,
@@ -2183,6 +2184,9 @@ function TreasuryTab({
   const [treasuryView, setTreasuryView] = useState<
     "due" | "transactions" | "wallet"
   >("due");
+  // Optimistically hide bounties that were just paid, until the refetch lands.
+  const [paidBountyIds, setPaidBountyIds] = useState<Set<string>>(new Set());
+
   // No wallet → only the Wallet view makes sense (it holds the setup prompt).
   // Non-managers can't authorize payments, so they only get Transactions.
   const activeView = !team.wallet
@@ -2200,6 +2204,14 @@ function TreasuryTab({
     fetchTeamPaymentRecords(team.id);
   }, [team.id, team.wallet, activeView]);
 
+  const handlePaid = (bountyIds: string[]) => {
+    setPaidBountyIds((prev) => new Set([...prev, ...bountyIds]));
+    setTxSubTab("wallet");
+    setTreasuryView("transactions");
+    // Transactions/payment records refetch via the activeView effect.
+    fetchTeamBounties(team.id).catch(() => {});
+  };
+  // Vercel
   const handleFetchTransactions = async () => {
     setIsFetchingTxHashes(true);
     try {
@@ -2264,7 +2276,11 @@ function TreasuryTab({
       )}
 
       {activeView === "due" && (
-        <TeamAuthorizePaymentPanel team={team} teamBounties={teamBounties} />
+        <TeamAuthorizePaymentPanel
+          team={team}
+          teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
+          onPaid={handlePaid}
+        />
       )}
 
       {activeView === "transactions" && (

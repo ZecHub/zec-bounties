@@ -20,9 +20,11 @@ import type { Bounty, Team } from "@/lib/types";
 export function TeamAuthorizePaymentPanel({
   team,
   teamBounties,
+  onPaid,
 }: {
   team: Team;
   teamBounties: Bounty[];
+  onPaid?: (bountyIds: string[]) => void;
 }) {
   const { authorizeTeamDuePayment } = useBounty();
 
@@ -124,6 +126,15 @@ export function TeamAuthorizePaymentPanel({
       });
       attemptKey.current = null;
       setSelectedIds(new Set());
+
+      // Report only bounties that were actually paid. `skipped` entries are
+      // matched by title, since that's what the toast shows.
+      const skippedTitles = new Set(result.skipped.map((s) => s.title));
+      const paidIds = ids.filter((id) => {
+        const b = teamBounties.find((x) => x.id === id);
+        return !!b && !skippedTitles.has(b.title);
+      });
+      if (paidIds.length > 0) onPaid?.(paidIds);
     } catch (error: any) {
       const [title, ...rest] = error.message?.split(": ") ?? [];
       const description =
@@ -151,8 +162,8 @@ export function TeamAuthorizePaymentPanel({
         <h3 className="text-sm font-semibold">Payments due</h3>
         <p className="text-xs text-muted-foreground">
           {hasEligible
-            ? `${eligibleBounties.length} completed bounty${
-                eligibleBounties.length !== 1 ? "ies" : ""
+            ? `${eligibleBounties.length} completed ${
+                eligibleBounties.length !== 1 ? "bounties" : "bounty"
               } awaiting payout`
             : "Nothing ready to pay out right now"}
         </p>

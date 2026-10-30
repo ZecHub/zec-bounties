@@ -10,24 +10,8 @@ import {
   Wallet,
   Menu,
   LogIn,
-  ShieldCheck,
-  User,
-  Loader2,
   BarChart3,
-  RefreshCw,
-  Activity,
-  CheckCircle2,
-  AlertCircle,
-  Building2,
-  FolderSync,
-  ChevronDown,
-  Target,
-  Users,
-  Check,
 } from "lucide-react";
-import { Balance } from "@/lib/types";
-import type { SyncStatus } from "@/lib/bounty-context";
-import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -45,208 +29,23 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { ThemePicker } from "@/components/theme/theme-picker";
 import {
   NavDivider,
   WalletBalanceGroup,
   SyncStatusMenu,
   RescanButton,
-  SyncStatusSummary,
+  RoleToggleButton,
   useRescanCooldown,
   confirmedTotal,
   fmt,
-} from "@/components/layout/admin/navbar";
-
-// ── Role toggle button ────────────────────────────────────────────────────────
-const ROLE_OPTIONS = [
-  { value: "ADMIN", label: "Admin", icon: ShieldCheck, redirect: "/admin" },
-  { value: "CLIENT", label: "Client", icon: User, redirect: "/home" },
-  { value: "HUNTER", label: "Hunter", icon: Target, redirect: "/home" },
-  { value: "TEAM", label: "Team", icon: Users, redirect: "/home" },
-] as const;
-
-function RoleToggleButton({ compact = false }: { compact?: boolean }) {
-  const { currentUser, switchRole, isSwitchingRole } = useBounty();
-  const router = useRouter();
-  if (!currentUser?.isRobin) return null;
-
-  const current = ROLE_OPTIONS.find((r) => r.value === currentUser.role);
-  const CurrentIcon = current?.icon ?? ShieldCheck;
-
-  const handleSelect = async (role: (typeof ROLE_OPTIONS)[number]) => {
-    if (role.value === currentUser.role || isSwitchingRole) return;
-    await switchRole(role.value);
-    router.push(role.redirect);
-  };
-
-  if (compact) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            className="gap-2 justify-start"
-            disabled={isSwitchingRole}
-          >
-            {isSwitchingRole ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CurrentIcon className="h-4 w-4" />
-            )}
-            {isSwitchingRole
-              ? "Switching..."
-              : `Role: ${current?.label ?? currentUser.role}`}
-            <ChevronDown className="h-3.5 w-3.5 ml-auto opacity-60" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
-          <DropdownMenuLabel>Switch role</DropdownMenuLabel>
-          {ROLE_OPTIONS.map((role) => {
-            const Icon = role.icon;
-            const isActive = role.value === currentUser.role;
-            return (
-              <DropdownMenuItem
-                key={role.value}
-                className="gap-2"
-                onClick={() => handleSelect(role)}
-                disabled={isActive}
-              >
-                <Icon className="h-4 w-4" />
-                {role.label}
-                {isActive && <Check className="h-3.5 w-3.5 ml-auto" />}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 h-8 text-xs font-medium border-dashed"
-              disabled={isSwitchingRole}
-            >
-              {isSwitchingRole ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CurrentIcon className="h-3.5 w-3.5" />
-              )}
-              <span className="hidden xl:inline">
-                {isSwitchingRole ? "..." : (current?.label ?? currentUser.role)}
-              </span>
-              <ChevronDown className="h-3 w-3 opacity-60" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel>Switch role</DropdownMenuLabel>
-            {ROLE_OPTIONS.map((role) => {
-              const Icon = role.icon;
-              const isActive = role.value === currentUser.role;
-              return (
-                <DropdownMenuItem
-                  key={role.value}
-                  className="gap-2"
-                  onClick={() => handleSelect(role)}
-                  disabled={isActive}
-                >
-                  <Icon className="h-4 w-4" />
-                  {role.label}
-                  {isActive && <Check className="h-3.5 w-3.5 ml-auto" />}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
-        Switch role
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function ActiveWalletTypePill() {
-  const { zcashParams, currentTeam } = useBounty();
-  if (!zcashParams || zcashParams.length === 0) return null;
-  const active =
-    zcashParams.find((p) => p.isDefault) ?? zcashParams[zcashParams.length - 1];
-  if (!active) return null;
-  const isTeam = !!(active.isTeam && active.teamId);
-  const teamName = isTeam && currentTeam ? currentTeam.name : null;
-  const accountLabel = active.accountName || "Wallet";
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold cursor-default select-none transition-colors",
-            isTeam
-              ? "bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/50 dark:border-violet-800 dark:text-violet-300"
-              : "bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/50 dark:border-sky-800 dark:text-sky-300",
-          )}
-        >
-          {isTeam ? (
-            <Building2 className="h-3 w-3 shrink-0" />
-          ) : (
-            <User className="h-3 w-3 shrink-0" />
-          )}
-          <span className="hidden lg:inline">
-            {isTeam ? (teamName ?? "Team") : accountLabel}
-          </span>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs max-w-[200px]">
-        <p className="font-semibold mb-0.5">
-          {isTeam ? "Team wallet" : "Personal wallet"}
-        </p>
-        <p className="text-muted-foreground">{accountLabel}</p>
-        {teamName && <p className="text-muted-foreground">Team: {teamName}</p>}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function SyncStatusBadge({ status }: { status: SyncStatus | null }) {
-  if (!status) return null;
-  const pct =
-    status.percentage_total_blocks_scanned ||
-    status.percentage_total_outputs_scanned;
-  const done = pct === 100 || status.in_progress === false;
-  return (
-    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono">
-      {done ? (
-        <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-      ) : (
-        <Activity className="h-3 w-3 text-amber-400 animate-pulse shrink-0" />
-      )}
-      <span className={done ? "text-emerald-500" : "text-amber-400"}>
-        {pct != null
-          ? `${Number(pct).toFixed(2)}%`
-          : status.in_progress
-            ? "…"
-            : "—"}
-      </span>
-    </div>
-  );
-}
+} from "@/components/layout/nav-parts";
 
 export function TeamNavbar({
   isTeam = false,
@@ -259,12 +58,17 @@ export function TeamNavbar({
 }) {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  // The route is the source of truth on /teams/[id]/*. Handles either param name.
+  const routeParams = useParams<{ id?: string; teamId?: string }>();
+  const routeTeamId = routeParams?.teamId ?? routeParams?.id;
   const [topupOpen, setTopupOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const {
     currentUser,
     logout,
     currentTeam,
+    teams,
+    zcashParams,
     fetchTeamWalletBalance,
     teamBalances,
     teamRescanStatus,
@@ -275,12 +79,31 @@ export function TeamNavbar({
     rescanTeamWallet,
     teamRescanLoading,
   } = useBounty();
-  const teamBalance = currentTeam
-    ? (teamBalances[currentTeam.id] ?? null)
-    : null;
+
+  // Resolve the team whose wallet to show: route team first, then the
+  // context's current team, then the default/any team wallet param.
+  const teamWalletParam =
+    zcashParams?.find((p) => p.isDefault && p.isTeam && p.teamId) ??
+    zcashParams?.find((p) => p.isTeam && p.teamId);
+
+  const activeTeam =
+    (routeTeamId ? teams?.find((t) => t.id === routeTeamId) : undefined) ??
+    currentTeam ??
+    (teamWalletParam
+      ? teams?.find((t) => t.id === teamWalletParam.teamId)
+      : undefined) ??
+    null;
+
+  const hasTeamWallet =
+    !!activeTeam?.wallet ||
+    !!zcashParams?.some((p) => p.isTeam && p.teamId === activeTeam?.id);
+
+  const teamBalance = activeTeam ? (teamBalances[activeTeam.id] ?? null) : null;
+
   const rescanHidden = useRescanCooldown(
-    currentTeam ? `walletImportedAt:${currentTeam.id}` : undefined,
+    activeTeam ? `walletImportedAt:${activeTeam.id}` : undefined,
   );
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [teamAddresses, setTeamAddresses] = useState<string[]>([]);
@@ -288,25 +111,25 @@ export function TeamNavbar({
   // Auto-load the team wallet balance once a team with a wallet is known —
   // previously this stayed at 0.0000 ZEC until someone clicked Refresh.
   useEffect(() => {
-    if (!currentTeam?.wallet) return;
-    fetchTeamWalletBalance(currentTeam.id);
-  }, [currentTeam?.id, currentTeam?.wallet]);
+    if (!activeTeam || !hasTeamWallet) return;
+    fetchTeamWalletBalance(activeTeam.id);
+  }, [activeTeam?.id, hasTeamWallet]);
 
   const handleRefresh = async () => {
-    if (!currentTeam) return;
+    if (!activeTeam || !hasTeamWallet) return;
     setIsRefreshing(true);
     try {
-      const bal = await fetchTeamWalletBalance(currentTeam.id);
-      await fetchTeamWalletBalance(currentTeam.id);
+      await fetchTeamWalletBalance(activeTeam.id);
     } finally {
       setIsRefreshing(false);
     }
   };
+
   const handleSyncStatus = async () => {
-    if (!currentTeam) return;
+    if (!activeTeam) return;
     setIsSyncing(true);
     try {
-      await fetchTeamSyncStatus(currentTeam.id);
+      await fetchTeamSyncStatus(activeTeam.id);
     } finally {
       setIsSyncing(false);
     }
@@ -315,14 +138,14 @@ export function TeamNavbar({
   const handleOpenTopup = async () => {
     setTopupOpen(true);
     setMobileMenuOpen(false);
-    if (currentTeam) {
-      const addrs = await fetchTeamWalletAddresses(currentTeam.id);
+    if (activeTeam) {
+      const addrs = await fetchTeamWalletAddresses(activeTeam.id);
       setTeamAddresses(addrs);
     }
   };
 
-  const currentSyncStatus = currentTeam
-    ? (teamSyncStatus[currentTeam.id] ?? null)
+  const currentSyncStatus = activeTeam
+    ? (teamSyncStatus[activeTeam.id] ?? null)
     : null;
 
   return (
@@ -389,11 +212,13 @@ export function TeamNavbar({
               />
             </div>
 
-            {isTeam && currentUser && currentTeam?.wallet && (
+            {isTeam && currentUser && activeTeam && hasTeamWallet && (
               <TooltipProvider delayDuration={300}>
                 <NavDivider />
                 <WalletBalanceGroup
                   balance={teamBalance}
+                  label={activeTeam.name}
+                  isTeam
                   isRefreshing={isRefreshing}
                   onOpen={handleOpenTopup}
                   onRefresh={handleRefresh}
@@ -409,7 +234,7 @@ export function TeamNavbar({
                   rescanStatus={teamRescanStatus}
                   rescanLoading={teamRescanLoading}
                   rescanHidden={rescanHidden}
-                  onRescan={() => rescanTeamWallet(currentTeam.id)}
+                  onRescan={() => rescanTeamWallet(activeTeam.id)}
                 />
                 <NavDivider />
               </TooltipProvider>
