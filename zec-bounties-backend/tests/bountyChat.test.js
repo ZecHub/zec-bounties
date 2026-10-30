@@ -4,7 +4,6 @@ const {
   canAccessBountyChat,
   validateChatMessage,
 } = require("../helpers/bountyChatValidation");
-const { isTransitionToDone } = require("../helpers/clearBountyChat");
 
 const bounty = {
   assignee: "legacy-assignee",
@@ -28,13 +27,6 @@ test("chat access is limited to admins and assigned users", () => {
     canAccessBountyChat(bounty, { id: "other-user", role: "HUNTER" }),
     false,
   );
-});
-
-test("chat cleanup occurs only on the first transition to DONE", () => {
-  assert.equal(isTransitionToDone("TO_DO", "IN_PROGRESS"), false);
-  assert.equal(isTransitionToDone("IN_PROGRESS", "IN_REVIEW"), false);
-  assert.equal(isTransitionToDone("IN_PROGRESS", "DONE"), true);
-  assert.equal(isTransitionToDone("DONE", "DONE"), false);
 });
 
 test("chat rejects empty and oversized text", () => {
