@@ -5,6 +5,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useBounty } from "@/lib/bounty-context";
+import { parseDateInputValue, toDateInputValue } from "@/lib/utils";
 import type { BountyFormData } from "@/lib/types";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -125,7 +126,7 @@ export function TeamsNewBountyModal({
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
       ...prev,
-      timeToComplete: new Date(e.target.value),
+      timeToComplete: parseDateInputValue(e.target.value),
     }));
   };
 
@@ -246,13 +247,8 @@ export function TeamsNewBountyModal({
               <input
                 id="timeToComplete"
                 type="date"
-                min={new Date().toISOString().split("T")[0]}
-                value={
-                  formData.timeToComplete instanceof Date &&
-                  !isNaN(formData.timeToComplete.getTime())
-                    ? formData.timeToComplete.toISOString().split("T")[0]
-                    : ""
-                }
+                min={toDateInputValue(new Date())}
+                value={toDateInputValue(formData.timeToComplete)}
                 onChange={handleDateChange}
                 required
                 className={fieldInput}
