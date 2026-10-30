@@ -750,6 +750,11 @@ function HomeContent() {
                         className="h-8 w-8"
                         onClick={handleLoadMore}
                         disabled={isLoadingMore || bountiesLoading}
+                        aria-label={
+                          isLoadingMore || bountiesLoading
+                            ? "Loading more bounties"
+                            : "Load more bounties"
+                        }
                       >
                         {isLoadingMore || bountiesLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
