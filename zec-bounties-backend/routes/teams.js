@@ -108,18 +108,47 @@ async function syncWalletToMembers(teamId, wallet, userIds) {
 
   if (!teamParams) return;
 
+  // A platform admin's default wallet is the platform wallet: the admin
+  // balance, top-up address and payouts all read it. Any team owner can add
+  // an admin to their team, so joining must not swap that default for the
+  // team's wallet. Admins keep their default and get a non-default copy.
+  // isRobin users count too: they can switch to another role and back, and
+  // the admin dashboard and set-default already treat them as privileged.
+  const platformAdmins = new Set(
+    (
+      await prisma.user.findMany({
+        where: {
+          id: { in: userIds },
+          OR: [{ role: "ADMIN" }, { isRobin: true }],
+        },
+        select: { id: true },
+      })
+    ).map((u) => u.id),
+  );
+
   for (const userId of userIds) {
     await prisma.$transaction(
       async (tx) => {
-        await tx.zcashParams.updateMany({
-          where: {
-            ownerId: userId,
-            isDefault: true,
-          },
-          data: {
-            isDefault: false,
-          },
-        });
+        const keepDefault =
+          platformAdmins.has(userId) &&
+          Boolean(
+            await tx.zcashParams.findFirst({
+              where: { ownerId: userId, isDefault: true, teamId: null },
+              select: { id: true },
+            }),
+          );
+
+        if (!keepDefault) {
+          await tx.zcashParams.updateMany({
+            where: {
+              ownerId: userId,
+              isDefault: true,
+            },
+            data: {
+              isDefault: false,
+            },
+          });
+        }
 
         await tx.zcashParams.upsert({
           where: {
@@ -130,7 +159,7 @@ async function syncWalletToMembers(teamId, wallet, userIds) {
             },
           },
           update: {
-            isDefault: true,
+            isDefault: !keepDefault,
             isTeam: true,
             teamId,
             chain: wallet.chain,
@@ -142,7 +171,7 @@ async function syncWalletToMembers(teamId, wallet, userIds) {
             accountName: wallet.accountName,
             chain: wallet.chain,
             serverUrl: wallet.serverUrl,
-            isDefault: true,
+            isDefault: !keepDefault,
             isTeam: true,
             teamId,
             walletId: teamParams.walletId,
