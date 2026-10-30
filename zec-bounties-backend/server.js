@@ -78,6 +78,7 @@ const wss = new WebSocketServer({
       // 'connection' handler can trust it without re-parsing anything
       // the client sent.
       info.req.authenticatedUser = user;
+      info.req.tokenExp = decoded.exp;
       done(true);
     } catch (err) {
       done(false, 401, "Unauthorized");
@@ -86,7 +87,7 @@ const wss = new WebSocketServer({
 });
 
 wss.on("connection", (ws, req) => {
-  handleWebSocket(ws, prisma, req.authenticatedUser);
+  handleWebSocket(ws, prisma, req.authenticatedUser, req.tokenExp);
 });
 
 // Middleware to attach wss to request object
