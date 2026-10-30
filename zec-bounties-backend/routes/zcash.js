@@ -616,7 +616,10 @@ router.patch(
       const { teamId } = req.body;
 
       const existing = teamId
-        ? await prisma.zcashParams.findFirst({ where: { accountName, teamId } })
+        ? await prisma.zcashParams.findFirst({
+            // Every member holds an own copy of a team wallet: flip the caller's.
+            where: { accountName, teamId, ownerId: userId },
+          })
         : await prisma.zcashParams.findFirst({
             where: { accountName, ownerId: userId, teamId: null },
           });
