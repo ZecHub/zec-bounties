@@ -139,18 +139,30 @@ async function broadcastTeamEvent(
 async function getSubmissionRecipients(bountyId, submitterId) {
   const bounty = await prisma.bounty.findUnique({
     where: { id: bountyId },
-    select: { createdBy: true },
+    select: { createdBy: true, teamId: true },
   });
   if (!bounty) return [];
-  const admins = await prisma.user.findMany({
-    where: { role: "ADMIN" },
-    select: { id: true },
-  });
+  // A team bounty's OWNER and ADMIN members review its submissions.
+  const [admins, teamReviewers] = await Promise.all([
+    prisma.user.findMany({
+      where: { role: "ADMIN" },
+      select: { id: true },
+    }),
+    bounty.teamId
+      ? prisma.teamMember.findMany({
+          where: { teamId: bounty.teamId, role: { in: ["OWNER", "ADMIN"] } },
+          select: { userId: true },
+        })
+      : [],
+  ]);
   return [
     ...new Set(
-      [bounty.createdBy, submitterId, ...admins.map((a) => a.id)].filter(
-        Boolean,
-      ),
+      [
+        bounty.createdBy,
+        submitterId,
+        ...admins.map((a) => a.id),
+        ...teamReviewers.map((m) => m.userId),
+      ].filter(Boolean),
     ),
   ];
 }

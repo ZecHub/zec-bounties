@@ -396,6 +396,41 @@ test("submission bodies reach only the REST audience", async (t) => {
   }
 });
 
+test("submission events reach the team's OWNER and ADMIN members, who review them", async (t) => {
+  stubBountyLookups(
+    t,
+    { isPrivate: false, createdBy: "creator", teamId: "team1" },
+    { admins: ["admin"], favoriters: ["fan"] },
+  );
+  const roles = { teamOwner: "OWNER", teamAdmin: "ADMIN", teamMember: "MEMBER" };
+  prisma.teamMember.findMany = async ({ where }) =>
+    Object.entries(roles)
+      .filter(([, role]) => where.teamId === "team1" && (!where.role || where.role.in.includes(role)))
+      .map(([userId]) => ({ userId }));
+  const sockets = Object.fromEntries(
+    ["creator", "admin", "submitter", "teamOwner", "teamAdmin", "teamMember", "fan"].map((id) => [id, connect(id)]),
+  );
+  t.after(() => Object.values(sockets).forEach((ws) => ws.disconnect()));
+
+  const audience = await getSubmissionRecipients("b1", "submitter");
+  assert.deepEqual(audience.sort(), ["admin", "creator", "submitter", "teamAdmin", "teamOwner"]);
+
+  await broadcastBountyEvent(
+    "submission_reviewed",
+    { id: "s1", bountyId: "b1", description: "secret deliverable", submittedBy: "submitter" },
+    "b1",
+    null,
+    audience,
+  );
+
+  for (const id of ["creator", "admin", "submitter", "teamOwner", "teamAdmin"]) {
+    assert.equal(eventsOf(sockets[id], "submission_reviewed").length, 1, `${id} should receive it`);
+  }
+  for (const id of ["teamMember", "fan"]) {
+    assert.equal(eventsOf(sockets[id], "submission_reviewed").length, 0, `${id} should not receive it`);
+  }
+});
+
 test("wide bounty updates drop submission bodies", () => {
   const bounty = {
     id: "b1",
