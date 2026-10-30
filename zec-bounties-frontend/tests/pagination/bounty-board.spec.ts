@@ -16,7 +16,6 @@ function bounty(index: number) {
     createdByUser: {
       id: "fixture-creator",
       name: "Fixture Creator",
-      role: "ADMIN",
     },
     bountyAmount: 0.01,
     dateCreated: new Date(Date.UTC(2026, 8, 29, 12, -index)).toISOString(),
@@ -37,6 +36,7 @@ async function openBoard(
   options: {
     rows?: ReturnType<typeof bounty>[];
     teams?: Array<{ id: string; name: string }>;
+    users?: Array<Record<string, unknown>>;
     path?: string;
   } = {},
 ) {
@@ -69,6 +69,7 @@ async function openBoard(
     if (url.pathname === "/api/teams/public") {
       json = options.teams ?? [];
     }
+    if (url.pathname === "/api/bounties/users") json = options.users ?? [];
     if (url.pathname === "/api/notifications") {
       json = { notifications: [], unreadCount: 0 };
     }
@@ -309,4 +310,127 @@ test("a live insertion and overlapping page do not duplicate cards or hide the f
   await expect(loadMore(page)).toHaveCount(0);
   expect(new Set(await cards(page).allTextContents()).size).toBe(21);
   expect(fixture.requestedPages).toEqual([2, 3]);
+});
+
+// The creator's row in the users list, as /api/bounties/users returns it.
+const creator = () => ({
+  id: "fixture-creator",
+  name: "Fixture Creator",
+  nickname: null,
+  avatar: null,
+  role: "HUNTER",
+});
+
+const nextFrames = (page: Page) =>
+  page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+
+const usersRequest = (page: Page) =>
+  page.waitForRequest((request) => new URL(request.url()).pathname === "/api/bounties/users");
+
+// Sends another user's public profile, as the server does to every other
+// socket, and waits until the board has handled it: the client always
+// refreshes its users list in response.
+async function sendUserUpdated(
+  page: Page,
+  fixture: Awaited<ReturnType<typeof openBoard>>,
+  payload: Record<string, unknown>,
+) {
+  const handled = usersRequest(page);
+  fixture.send("user_updated", payload);
+  await handled;
+  await nextFrames(page);
+}
+
+test("another user's profile change keeps the loaded pages", async ({ page }) => {
+  const fixture = await openBoard(page, 25, { users: [creator()] });
+  await expect(cards(page)).toHaveCount(10);
+  await scrollForMore(page);
+  await expect(cards(page)).toHaveCount(20);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  fixture.requestedPages.length = 0;
+
+  await sendUserUpdated(page, fixture, { ...creator(), nickname: "Renamed Creator" });
+  await expect(cards(page)).toHaveCount(20);
+  // The board must not mark the creator's bounties as hunter suggestions.
+  await expect(page.getByTitle(/^Suggested by a hunter/)).toHaveCount(0);
+  expect(fixture.requestedPages).toEqual([]);
+});
+
+test("a searched board stays complete after a profile change and reloads completely after a visibility change", async ({ page }) => {
+  const fixture = await openBoard(page, 25, {
+    path: "/home?q=Pagination",
+    users: [creator()],
+  });
+  await expect(cards(page)).toHaveCount(25);
+  await expect(page.getByText("25 matching bounties")).toBeVisible();
+  fixture.requestedPages.length = 0;
+
+  await sendUserUpdated(page, fixture, { ...creator(), nickname: "Renamed Creator" });
+  await expect(cards(page)).toHaveCount(25);
+  expect(fixture.requestedPages).toEqual([]);
+
+  // A visibility change resets the list; the search must load every page again.
+  fixture.send("team_bounties_privacy_changed", { teamId: "fixture-team" });
+  await expect.poll(() => fixture.requestedPages).toEqual([1, 1]);
+  await expect(cards(page)).toHaveCount(25);
+  await expect(page.getByText("25 matching bounties")).toBeVisible();
+});
+
+test("another user's role change reloads the board once, a profile change does not", async ({ page }) => {
+  const users = [
+    { ...creator(), role: "TEAM" },
+    { id: "newcomer", name: "Newcomer", nickname: null, avatar: null, role: "CLIENT" },
+  ];
+  const usersLoaded = usersRequest(page);
+  const fixture = await openBoard(page, 25, { users });
+  await usersLoaded;
+  await expect(cards(page)).toHaveCount(10);
+  await nextFrames(page);
+
+  await sendUserUpdated(page, fixture, { ...users[0], nickname: "Renamed Creator" });
+  // A new user's first role pick during onboarding.
+  users[1].role = "HUNTER";
+  await sendUserUpdated(page, fixture, users[1]);
+  expect(fixture.requestedPages).toEqual([]);
+
+  // An admin changes the creator's role.
+  users[0].role = "HUNTER";
+  await sendUserUpdated(page, fixture, users[0]);
+  await expect.poll(() => fixture.requestedPages).toEqual([1]);
+  await expect(cards(page)).toHaveCount(10);
+  await nextFrames(page);
+  expect(fixture.requestedPages).toEqual([1]);
+});
+
+test("a reset during a full load does not leave the could-not-load message", async ({ page }) => {
+  const fixture = await openBoard(page, 25, { path: "/home?q=Pagination" });
+  await expect(cards(page)).toHaveCount(25);
+
+  // Hold the next full load until a second reset has finished its own.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let fullLoads = 0;
+  await page.route(
+    (url) => url.pathname === "/api/bounties" && url.searchParams.get("limit") === "50",
+    async (route) => {
+      fullLoads += 1;
+      if (fullLoads === 1) await held;
+      await route.fallback();
+    },
+  );
+  fixture.send("team_bounties_privacy_changed", { teamId: "fixture-team" });
+  await expect.poll(() => fullLoads).toBe(1);
+  fixture.send("team_bounties_privacy_changed", { teamId: "fixture-team" });
+  await expect.poll(() => fullLoads).toBe(2);
+  await expect(page.getByText("25 matching bounties")).toBeVisible();
+
+  // The superseded full load answers last.
+  const superseded = page.waitForResponse((response) => response.url().includes("limit=50"));
+  release();
+  await superseded;
+  await nextFrames(page);
+  await expect(cards(page)).toHaveCount(25);
+  await expect(page.getByText("25 matching bounties")).toBeVisible();
 });

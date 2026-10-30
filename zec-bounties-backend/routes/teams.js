@@ -1616,37 +1616,42 @@ router.patch("/:teamId", authenticate, async (req, res) => {
         : [];
     }
 
-    const team = await prisma.team.update({
-      where: { id: teamId },
-      data,
-      include: { members: true, wallet: true },
-    });
+    // Cascade the team's privacy onto its bounties that differ from it, in
+    // the same transaction as the team update
+    const { team, affected } = await prisma.$transaction(async (tx) => {
+      const team = await tx.team.update({
+        where: { id: teamId },
+        data,
+        include: { members: true, wallet: true },
+      });
+      if (isPrivate === undefined) return { team, affected: [] };
 
-    // Cascade the flip onto every existing bounty owned by this team,
-    // and notify connected clients which bounties changed
-    if (isPrivate !== undefined) {
-      const affected = await prisma.bounty.findMany({
-        where: { teamId },
+      const differs = { teamId, isPrivate: { not: team.isPrivate } };
+      const affected = await tx.bounty.findMany({
+        where: differs,
         select: { id: true },
       });
-
-      await prisma.bounty.updateMany({
-        where: { teamId },
-        data: { isPrivate: !!isPrivate },
+      await tx.bounty.updateMany({
+        where: differs,
+        data: { isPrivate: team.isPrivate },
       });
+      return { team, affected };
+    });
 
+    // Every board reloads on this event, so send it only when bounties changed
+    if (affected.length > 0) {
       sendRealtimeUpdate(
         "team_bounties_privacy_changed",
         {
           teamId,
-          isPrivate: !!isPrivate,
+          isPrivate: team.isPrivate,
           bountyIds: affected.map((b) => b.id),
         },
         req.user.id,
       );
     }
 
-    if (name !== undefined || isPrivate !== undefined) {
+    if (name !== undefined || affected.length > 0) {
       await invalidateTeamBounties(teamId);
     }
 
