@@ -17,7 +17,11 @@ export default function GithubCallback() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const token = searchParams.get("token");
+    // The session token arrives in the URL fragment (#token=...), not the query
+    // string — a fragment is never sent to servers (so it can't be logged) and
+    // is not included in the Referer header. Read it from location.hash.
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const token = new URLSearchParams(hash.replace(/^#/, "")).get("token");
     const expectedState = readGithubLoginState();
 
     if (!token) {
@@ -28,6 +32,15 @@ export default function GithubCallback() {
     if (!expectedState || searchParams.get("state") !== expectedState) {
       router.push("/login?error=invalid_state");
       return;
+    }
+
+    // Strip the token from the address bar / history straight away.
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
     }
 
     localStorage.setItem("authToken", token);

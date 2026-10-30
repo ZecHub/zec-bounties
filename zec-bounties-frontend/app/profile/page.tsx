@@ -660,9 +660,13 @@ export default function ProfilePage() {
               ) : (
                 <Button
                   size="sm"
-                  onClick={() => {
+                  onClick={async () => {
                     const token = localStorage.getItem("authToken");
-                    window.location.href = `${backendUrl}/auth/discord?token=${encodeURIComponent(token ?? "")}`;
+                    const res = await fetch(`${backendUrl}/auth/discord`, {
+                      headers: { Authorization: `Bearer ${token ?? ""}` },
+                    });
+                    const data = await res.json().catch(() => null);
+                    if (data?.url) window.location.href = data.url;
                   }}
                 >
                   Connect Discord
