@@ -58,6 +58,10 @@ const {
   validateBountyChain,
 } = require("../utils/bountyHelpers");
 const { redactPublicUser } = require("../utils/privacy");
+const {
+  trackPayout,
+  markSentButUnrecorded,
+} = require("../utils/payoutRecovery");
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -2475,7 +2479,7 @@ router.get("/:teamId/wallet/sync-status", authenticate, async (req, res) => {
 });
 
 // Send payment from team wallet
-router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
+router.post("/:teamId/wallet/pay", authenticate, trackPayout(async (req, res) => {
   try {
     const { teamId } = req.params;
 
@@ -2550,7 +2554,7 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
       error: "Failed to send team payment",
     });
   }
-});
+}));
 
 // ─── Team Wallet Payments (bounty payouts) ───────────────────────────────
 
@@ -2561,7 +2565,7 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
 router.post(
   "/:teamId/wallet/authorize-payment",
   authenticate,
-  async (req, res) => {
+  trackPayout(async (req, res) => {
     try {
       const { teamId } = req.params;
       if (!(await requireTeamAdmin(teamId, req, res))) return;
@@ -2688,6 +2692,9 @@ router.post(
               toAddress: p.address,
               memo: p.memo,
               batchKey,
+              chain: p.chain,
+              initiatedBy: req.user.id,
+              walletAccount: wallet.accountName,
             })),
           });
         });
@@ -2708,20 +2715,13 @@ router.post(
       try {
         sendResult = await executeZingoQuickSend(paymentList, teamParams);
       } catch (err) {
-        console.error(
-          `⚠️ UNKNOWN team payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): ${err.message}`,
-        );
-        await prisma.transaction.updateMany({
-          where: { batchKey },
-          data: { status: "UNKNOWN" },
-        });
-        return res.status(502).json({
+        // quicksend only rejects before anything is written to the wallet,
+        // so nothing was sent: release the claim, as the admin route does.
+        await releaseTeamClaim(batchKey, payableIds, err.message);
+        return res.status(503).json({
           success: false,
-          outcome: "unknown",
-          error: "Payment outcome unknown — the send may have completed",
-          details:
-            "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the team wallet's transaction history before taking further action.",
-          batchKey,
+          error: "Payment failed before sending",
+          details: err.message,
         });
       }
 
@@ -2731,7 +2731,11 @@ router.post(
         );
         await prisma.transaction.updateMany({
           where: { batchKey },
-          data: { status: "UNKNOWN" },
+          data: {
+            status: "UNKNOWN",
+            errorDetail:
+              "Timed out waiting for zingo output; the transaction may still have been broadcast",
+          },
         });
         return res.status(502).json({
           success: false,
@@ -2766,21 +2770,40 @@ router.post(
       const txid = sendResult.txids?.[0] ?? txResult?.txid ?? null;
       const paidAt = new Date();
 
-      await prisma.$transaction([
-        prisma.transaction.updateMany({
-          where: { batchKey },
-          data: { status: "BROADCAST", txid, settledAt: paidAt },
-        }),
-        prisma.bounty.updateMany({
-          where: { id: { in: payableIds } },
-          data: {
-            isPaid: true,
-            paymentAuthorized: true,
-            paidAt,
-            paymentInFlight: false,
-          },
-        }),
-      ]);
+      try {
+        await prisma.$transaction([
+          prisma.transaction.updateMany({
+            where: { batchKey },
+            data: { status: "BROADCAST", txid, settledAt: paidAt },
+          }),
+          prisma.bounty.updateMany({
+            where: { id: { in: payableIds } },
+            data: {
+              isPaid: true,
+              paymentAuthorized: true,
+              paidAt,
+              paymentInFlight: false,
+            },
+          }),
+        ]);
+      } catch (err) {
+        console.error(
+          `⚠️ Team batch ${batchKey} sent (txid ${txid}) but not recorded:`,
+          err,
+        );
+        await markSentButUnrecorded(batchKey, txid).catch((e) =>
+          console.error(`Team batch ${batchKey} left PENDING:`, e.message),
+        );
+        await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+        return res.status(502).json({
+          success: false,
+          outcome: "unknown",
+          error: "Payment sent but not recorded",
+          details: `The team wallet sent it (txid ${txid}), but saving the result failed. These bounties stay locked; resolve their payment records as broadcast with this txid.`,
+          txids: sendResult.txids,
+          batchKey,
+        });
+      }
       await Promise.all(payableIds.map((id) => invalidateBounty(id)));
 
       // teamId in the payload lets the frontend WS handler distinguish this
@@ -2813,7 +2836,7 @@ router.post(
       console.error("Error in team authorize-payment:", error);
       res.status(500).json({ error: error.message });
     }
-  },
+  }),
 );
 
 // Durable payout records (DB) for this team's bounties — any team member may

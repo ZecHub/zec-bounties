@@ -120,6 +120,10 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
     "../utils/constants": {}, "../helpers/db-query": {},
     "../zcash/init": {}, "../helpers/zcash/zcashHelper": {},
     "../helpers/zcash/resolvePayingWallet": {},
+    "../utils/payoutRecovery": load("utils/payoutRecovery.js", {
+      "../prisma/client": db,
+      "./zingo/sendTimeout": require("../../utils/zingo/sendTimeout"),
+    }),
     axios: { post: forbidden }, crypto: require("node:crypto"), path,
   };
   for (const name of ["", "QuickSend", "Transactions", "CheckBalance", "Addresses", "ParseAddress", "Sync", "Rescan", "RecoveryInfo", "Quit", "Balance", "Info"]) {
