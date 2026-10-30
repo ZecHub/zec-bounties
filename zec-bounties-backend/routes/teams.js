@@ -2595,6 +2595,7 @@ router.post(
           isPaid: false,
           isApproved: true,
           paymentInFlight: false,
+          exportedAt: null, // paid outside the app (Export Completed)
         },
         include: {
           assigneeUser: {
@@ -2620,7 +2621,7 @@ router.post(
       if (bounties.length === 0) {
         return res.status(400).json({
           error:
-            "None of the selected bounties are eligible for payment (must belong to this team, be DONE, approved, and unpaid)",
+            "None of the selected bounties are eligible for payment (must belong to this team, be DONE, approved, unpaid, and not exported)",
         });
       }
 
@@ -2675,6 +2676,7 @@ router.post(
               isApproved: true,
               isPaid: false,
               paymentInFlight: false,
+              exportedAt: null,
             },
             data: { paymentInFlight: true },
           });
@@ -2695,7 +2697,7 @@ router.post(
         if (err !== claimConflict) throw err;
         return res.status(409).json({
           error:
-            "Some of the selected bounties are already being paid by another request. Refresh and try again.",
+            "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
         });
       }
 
