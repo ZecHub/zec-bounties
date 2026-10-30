@@ -7,6 +7,7 @@ const { rawAddressFields } = require("../helpers/publicProfileAddress");
 const { receiversForUser } = require("../helpers/addressReceivers");
 const {
   assignedDoneWhere,
+  earnedDoneWhere,
   recentCompletedWhere,
   recentCreatedWhere,
 } = require("../utils/profileBounties");
@@ -88,7 +89,7 @@ async function loadChainStats(userId, chain, includePrivate) {
     }),
     prisma.bounty.aggregate({
       where: {
-        ...assignedDoneWhere(userId, chain),
+        ...earnedDoneWhere(userId, chain),
         completedAt: { not: null },
       },
       _sum: { bountyAmount: true },
