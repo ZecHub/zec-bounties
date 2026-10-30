@@ -197,6 +197,39 @@ async function removeWalletFromMembers(teamId, wallet, userIds) {
   }
 }
 
+// A team payout that is PENDING (still sending) or UNKNOWN (may have gone
+// out) can only be settled by checking the team wallet's own history, so the
+// wallet must stay until it is resolved. Teams without a wallet are skipped.
+async function hasUnresolvedTeamPayouts(teamIds) {
+  const count = await prisma.transaction.count({
+    where: {
+      status: { in: ["PENDING", "UNKNOWN"] },
+      bounty: { teamId: { in: teamIds }, team: { wallet: { isNot: null } } },
+    },
+  });
+  return count > 0;
+}
+
+const UNRESOLVED_TEAM_PAYOUTS =
+  "The team wallet has payouts whose outcome is not settled yet. Wait for them to finish or resolve them in the team's payment records, then try again.";
+
+// No route returns a team wallet's seed, so deleting its directory would lose
+// any funds still in it. Move it to wallets/.retired instead, where an
+// operator can recover or remove it.
+async function retireWalletDir(dataDir) {
+  const retiredDir = path.join(
+    path.dirname(dataDir),
+    ".retired",
+    `${path.basename(dataDir)}-${Date.now()}`,
+  );
+  await fs.mkdir(path.dirname(retiredDir), { recursive: true });
+  try {
+    await fs.rename(dataDir, retiredDir);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+}
+
 // Full teardown of a team wallet. Order matters: resolve the params row
 // BEFORE removeWalletFromMembers deletes rows, or the directory is orphaned.
 async function teardownTeamWallet(teamId, wallet) {
@@ -221,7 +254,7 @@ async function teardownTeamWallet(teamId, wallet) {
       serverUrl: wallet.serverUrl,
       dataDir,
     });
-    await fs.rm(dataDir, { recursive: true, force: true });
+    await retireWalletDir(dataDir);
   }
 
   // Sweeps rows owned by non-members (e.g. a global admin who created it)
@@ -381,7 +414,7 @@ async function deleteTeamCascade(teamId) {
         dataDir,
       });
 
-      await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
+      await retireWalletDir(dataDir).catch(() => {});
     }
   }
 
@@ -660,6 +693,9 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
 
       if (!user.isRobin && ownedTeams.length > 0) {
         deletedTeamIds = ownedTeams.map((m) => m.teamId);
+        if (await hasUnresolvedTeamPayouts(deletedTeamIds)) {
+          return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+        }
         for (const teamId of deletedTeamIds) {
           await deleteTeamCascade(teamId);
         }
@@ -1444,6 +1480,9 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
 
     if (!user.isRobin && ownedTeams.length > 0) {
       deletedTeamIds = ownedTeams.map((m) => m.teamId);
+      if (await hasUnresolvedTeamPayouts(deletedTeamIds)) {
+        return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+      }
 
       for (const teamId of deletedTeamIds) {
         await deleteTeamCascade(teamId);
@@ -1690,6 +1729,10 @@ router.delete("/:teamId", authenticate, async (req, res) => {
     });
 
     if (team?.wallet) {
+      if (await hasUnresolvedTeamPayouts([teamId])) {
+        return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+      }
+
       const params = await prisma.zcashParams.findFirst({
         where: {
           teamId,
@@ -1710,10 +1753,7 @@ router.delete("/:teamId", authenticate, async (req, res) => {
           dataDir,
         });
 
-        await fs.rm(dataDir, {
-          recursive: true,
-          force: true,
-        });
+        await retireWalletDir(dataDir);
       }
     }
 
@@ -2183,45 +2223,69 @@ router.post("/:teamId/wallet/import", authenticate, async (req, res) => {
           .status(403)
           .json({ error: "Only the team owner can replace the wallet" });
       }
-      await teardownTeamWallet(teamId, existing);
+      if (await hasUnresolvedTeamPayouts([teamId])) {
+        return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+      }
     }
 
+    // Restore into a new directory first, so a seed that fails to restore
+    // leaves the current wallet untouched. Only then retire the old one.
+    const walletId = randomUUID();
+    const dataDir = getWalletDataDir(walletId);
     let wallet = null;
-    let zcashParams = null;
+    let replacing = false;
 
     try {
+      await fs.mkdir(dataDir, { recursive: true });
+      await executeZingoCliSeed(
+        { chain, serverUrl, dataDir },
+        seedPhrase,
+        birthdayHeight,
+      );
+
+      if (existing) {
+        // A payout may have started from the old wallet during the restore.
+        if (await hasUnresolvedTeamPayouts([teamId])) {
+          await fs
+            .rm(dataDir, { recursive: true, force: true })
+            .catch(() => {});
+          return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+        }
+        replacing = true;
+        await teardownTeamWallet(teamId, existing);
+      }
+
       wallet = await prisma.teamWallet.create({
         data: { teamId, accountName: accountName.trim(), chain, serverUrl },
       });
-
-      zcashParams = await initZcashOnce(
-        req.user.id,
-        wallet.accountName,
-        wallet.chain,
-        teamId,
-      );
-      zcashParams = await prisma.zcashParams.update({
-        where: { id: zcashParams.id },
-        data: { isTeam: true, teamId },
+      await prisma.zcashParams.create({
+        data: {
+          walletId,
+          ownerId: req.user.id,
+          accountName: wallet.accountName,
+          chain: wallet.chain,
+          isTeam: true,
+          teamId,
+        },
       });
-
-      const params = await buildTeamParams(teamId, wallet);
-      await executeZingoCliSeed(params, seedPhrase, birthdayHeight);
     } catch (err) {
       // Same cleanup order as the admin import: invalidate, rm, delete rows.
-      if (zcashParams?.walletId) {
-        const dir = getWalletDataDir(zcashParams.walletId);
-        invalidateZingo({
-          chain: wallet?.chain ?? chain,
-          serverUrl: wallet?.serverUrl ?? serverUrl,
-          dataDir: dir,
-        });
-        await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+      // Once the old wallet is being torn down, keep the restored directory
+      // too: move it aside like the old one instead of deleting it.
+      invalidateZingo({ chain, serverUrl, dataDir });
+      if (replacing) {
+        await retireWalletDir(dataDir).catch(() => {});
+      } else {
+        await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
       }
-      await prisma.zcashParams
-        .deleteMany({ where: { teamId } })
-        .catch(() => {});
-      await prisma.teamWallet.deleteMany({ where: { teamId } }).catch(() => {});
+      if (wallet) {
+        await prisma.zcashParams
+          .deleteMany({ where: { teamId } })
+          .catch(() => {});
+        await prisma.teamWallet
+          .deleteMany({ where: { teamId } })
+          .catch(() => {});
+      }
       throw err;
     }
 
@@ -2960,6 +3024,10 @@ router.delete("/:teamId/wallet", authenticate, async (req, res) => {
 
     const wallet = await prisma.teamWallet.findUnique({ where: { teamId } });
     if (!wallet) return res.status(404).json({ error: "Wallet not found" });
+
+    if (await hasUnresolvedTeamPayouts([teamId])) {
+      return res.status(409).json({ error: UNRESOLVED_TEAM_PAYOUTS });
+    }
 
     await teardownTeamWallet(teamId, wallet);
 
