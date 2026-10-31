@@ -445,6 +445,7 @@ export function FilterSelect({
                     onClick={() => {
                       onChange(o.value);
                       setOpen(false);
+                      triggerRef.current?.focus();
                     }}
                     className={`flex w-full items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-sm transition ${
                       isSelected
