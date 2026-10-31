@@ -106,6 +106,7 @@ export function TeamAuthorizePaymentPanel({
     setIsProcessing(true);
     setNymSending(true);
     const ids = Array.from(selectedIds);
+    const startedAt = Date.now();
     try {
       const result = await authorizeTeamDuePayment(
         team.id,
@@ -115,7 +116,7 @@ export function TeamAuthorizePaymentPanel({
       const txid = result.txids[0];
       toast.success("Payment sent", {
         description:
-          `${result.paidCount} bounty payment(s) sent` +
+          `${result.paidCount} bounty payment(s) sent in ${Math.round((Date.now() - startedAt) / 1000)}s` +
           (txid ? ` — tx ${txid.slice(0, 12)}…` : "") +
           (result.skipped.length > 0
             ? ` ${result.skipped.length} skipped: ${result.skipped
