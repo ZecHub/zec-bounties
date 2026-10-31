@@ -44,6 +44,8 @@ const {
 } = require("../helpers/validateBounty");
 const { bountyUserSelects } = require("../utils/userSelects");
 const { notifyNewBounty } = require("../utils/discord/discordNotify");
+// Discord bot state notice, sent when a payment is confirmed
+const { notifyBountyState } = require("../utils/discord/discordAssignWebhook");
 const {
   sendMailIfEnabled,
   sendPushToOptedIn,
@@ -2782,6 +2784,8 @@ router.post(
         }),
       ]);
       await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+      // Paid bounties can have their Discord channels closed
+      payableIds.forEach((id) => notifyBountyState(prisma, id));
 
       // teamId in the payload lets the frontend WS handler distinguish this
       // from an admin (non-team) payout and refetch the right team's data.
@@ -2940,6 +2944,8 @@ router.post(
 
       await invalidateBounty(record.bountyId);
       res.json({ success: true });
+      // Only a confirmed payment (broadcast) is sent to the bot; failed or unknown outcomes are not
+      if (outcome === "broadcast") notifyBountyState(prisma, record.bountyId);
     } catch (error) {
       console.error("Error resolving team payment record:", error);
       res.status(500).json({ error: error.message });

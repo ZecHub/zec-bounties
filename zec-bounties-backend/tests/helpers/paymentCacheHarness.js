@@ -116,7 +116,7 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
     },
     "../helpers/clearBountyChat": { clearBountyChat: forbidden, isTransitionToDone: () => false },
     "../utils/sendMail": forbidden, "../utils/notifyUser": forbidden,
-    "../utils/discord/discordNotify": {}, "../utils/discord/discordAssignWebhook": {},
+    "../utils/discord/discordNotify": {}, "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: noOp, notifyBountyState: noOp },
     "../utils/constants": {}, "../helpers/db-query": {},
     "../zcash/init": {}, "../helpers/zcash/zcashHelper": {},
     "../helpers/zcash/resolvePayingWallet": {},

@@ -66,7 +66,7 @@ function loadSubmissionRoute(prisma) {
     "../utils/sendMail": noOp,
     "../utils/notifyUser": noOp,
     "../utils/discord/discordNotify": {},
-    "../utils/discord/discordAssignWebhook": {},
+    "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: noOp, notifyBountyState: noOp },
     "../utils/constants": {},
     "../helpers/validateBounty": {},
     "../utils/bountySuggestionReview": require("../../utils/bountySuggestionReview"),
