@@ -2811,12 +2811,17 @@ router.post("/apply", authenticate, async (req, res) => {
         createdBy: true,
         isPrivate: true,
         teamId: true,
+        status: true,
       },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
     if (!(await canViewPrivateBounty(bounty, req.user))) {
       return res.status(404).json({ error: "Bounty not found" });
     }
+    if (bounty.status !== "TO_DO")
+      return res
+        .status(400)
+        .json({ error: "Bounty is not accepting applications" });
     if (bounty.assignee)
       return res.status(400).json({ error: "Bounty already assigned" });
     if (bounty.createdBy === applicantId)
