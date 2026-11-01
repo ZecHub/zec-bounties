@@ -158,7 +158,7 @@ export function BountyDetailModal({
         return {
           type: "info",
           title: "Applications closed",
-          message: "Only bounties in To Do accept applications.",
+          message: "Only bounties in Todo accept applications.",
         };
       }
       if (!currentUser) {
