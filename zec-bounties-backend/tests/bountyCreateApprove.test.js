@@ -87,3 +87,56 @@ test("approving a bounty returns the approved bounty", async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.isApproved, true);
 });
+
+test("applying to a non-TO_DO bounty is rejected", async () => {
+  const applicant = { id: "hunter1", role: "HUNTER" };
+  for (const status of ["IN_PROGRESS", "IN_REVIEW", "DONE", "CANCELLED"]) {
+    prisma.bounty.findUnique = async () => ({
+      id: "b1",
+      createdBy: "owner",
+      assignee: null,
+      isPrivate: false,
+      teamId: null,
+      status,
+    });
+    const res = mockRes();
+    await handler("post", "/apply")(
+      {
+        user: applicant,
+        body: { bountyId: "b1", message: "I want to work on this." },
+      },
+      res,
+    );
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error, "Bounty is not accepting applications");
+  }
+});
+
+test("applying to a TO_DO bounty proceeds past the status check", async () => {
+  const applicant = { id: "hunter1", role: "HUNTER" };
+  prisma.bounty.findUnique = async () => ({
+    id: "b1",
+    createdBy: "owner",
+    assignee: null,
+    isPrivate: false,
+    teamId: null,
+    status: "TO_DO",
+  });
+  prisma.bountyApplication.findUnique = async () => null;
+  prisma.bountyApplication.create = async ({ data }) => ({
+    id: "app1",
+    ...data,
+    bounty: { id: "b1", title: "B1", bountyAmount: 1 },
+    applicantUser: { id: applicant.id, name: "Hunter" },
+  });
+  const res = mockRes();
+  await handler("post", "/apply")(
+    {
+      user: applicant,
+      body: { bountyId: "b1", message: "I want to work on this." },
+    },
+    res,
+  );
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.id, "app1");
+});
