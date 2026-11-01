@@ -171,11 +171,28 @@ async function canAdministerBounty(bounty, user, db = prisma) {
   return false;
 }
 
+// Legacy `assignee` column or a bountyAssignee row. Callers pass the bounty's
+// `id` and `assignee`; an already-loaded `assignees` roster saves a query.
+async function isBountyAssignee(bounty, userId) {
+  if (bounty.assignee === userId) return true;
+  if (Array.isArray(bounty.assignees)) {
+    return bounty.assignees.some((a) => a.userId === userId);
+  }
+  const row = await prisma.bountyAssignee.findUnique({
+    where: { bountyId_userId: { bountyId: bounty.id, userId } },
+    select: { id: true },
+  });
+  return !!row;
+}
+
 async function canViewPrivateBounty(bounty, user) {
   if (!bounty.isPrivate) return true;
   if (!user) return false;
   if (user.role === "ADMIN") return true;
   if (bounty.createdBy === user.id) return true;
+  // POST /:id/assignees does not require team membership and POST /:id/submit
+  // accepts an assignee's work, so assignees must be able to see the bounty.
+  if (await isBountyAssignee(bounty, user.id)) return true;
   if (!bounty.teamId) return false;
 
   const teamMember = await prisma.teamMember.findUnique({
@@ -590,21 +607,11 @@ router.get("/", optionalAuthenticate, async (req, res) => {
             // Creators can see their own individually private bounties.
             ...(userId
               ? [
-                  {
-                    isPrivate: true,
-                    createdBy: userId,
-                  },
-
-                  // Members can see bounties owned by their private team.
-                  {
-                    team: {
-                      isPrivate: true,
-                      members: { some: { userId } },
-                    },
-                  },
-
-                  // Preserve existing hunter access to favorited teams.
-                  ...(req.user?.role === "HUNTER"
+                  { isPrivate: true, createdBy: userId },
+                  { isPrivate: true, assignee: userId },
+                  { isPrivate: true, assignees: { some: { userId } } },
+                  { isPrivate: true, team: { members: { some: { userId } } } },
+                  ...(req.user.role === "HUNTER"
                     ? [
                         {
                           team: {
@@ -1151,7 +1158,13 @@ router.get("/:id/assignees", authenticate, async (req, res) => {
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { id: true, isPrivate: true, createdBy: true, teamId: true },
+      select: {
+        id: true,
+        isPrivate: true,
+        createdBy: true,
+        teamId: true,
+        assignee: true,
+      },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
     if (!(await canViewPrivateBounty(bounty, req.user))) {
