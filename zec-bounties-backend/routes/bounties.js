@@ -183,14 +183,9 @@ async function canViewPrivateBounty(bounty, user) {
   });
   if (teamMember) return true;
 
-  // Community membership = favorited the team (hunters only)
-  if (user.role === "HUNTER") {
-    const fav = await prisma.teamFavorite.findUnique({
-      where: { userId_teamId: { userId: user.id, teamId: bounty.teamId } },
-      select: { userId: true },
-    });
-    return !!fav;
-  }
+  // A favourite is NOT access to a private team's bounties. The team board
+  // (GET /teams/:id/bounties) and POST /teams/:id/favorite no longer treat a
+  // favourite as membership, so neither can this.
   return false;
 }
 
@@ -602,18 +597,6 @@ router.get("/", optionalAuthenticate, async (req, res) => {
                       members: { some: { userId } },
                     },
                   },
-
-                  // Preserve existing hunter access to favorited teams.
-                  ...(req.user?.role === "HUNTER"
-                    ? [
-                        {
-                          team: {
-                            isPrivate: true,
-                            favoritedBy: { some: { userId } },
-                          },
-                        },
-                      ]
-                    : []),
                 ]
               : []),
           ],
