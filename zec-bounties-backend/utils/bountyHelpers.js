@@ -55,13 +55,31 @@ const sendPushToOptedIn = async (userIds, payload) => {
 async function getBroadcastRecipients(bounty) {
   if (!bounty.isPrivate) return null;
 
-  const recipients = new Set([bounty.createdBy]);
+  const recipients = new Set();
+  if (bounty.createdBy) recipients.add(bounty.createdBy);
 
   const admins = await prisma.user.findMany({
     where: { role: "ADMIN" },
     select: { id: true },
   });
   admins.forEach((a) => recipients.add(a.id));
+
+  if (bounty.assignee) {
+    recipients.add(bounty.assignee);
+  }
+
+  if (Array.isArray(bounty.assignees)) {
+    bounty.assignees.forEach((a) => {
+      const uid = a.userId || a.user?.id;
+      if (uid) recipients.add(uid);
+    });
+  } else if (bounty.id && prisma.bountyAssignee) {
+    const bountyAssignees = await prisma.bountyAssignee.findMany({
+      where: { bountyId: bounty.id },
+      select: { userId: true },
+    });
+    bountyAssignees.forEach((a) => recipients.add(a.userId));
+  }
 
   if (bounty.teamId) {
     const [members, favorites] = await Promise.all([
@@ -182,7 +200,7 @@ async function broadcastBountyEvent(
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { isPrivate: true, createdBy: true, teamId: true },
+      select: { id: true, isPrivate: true, createdBy: true, teamId: true, assignee: true },
     });
     if (!bounty) return;
     const recipients =
