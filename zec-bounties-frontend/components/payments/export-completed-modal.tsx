@@ -92,6 +92,7 @@ export function ExportCompletedModal({
   const [loaded, setLoaded] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -205,6 +206,7 @@ export function ExportCompletedModal({
   const load = async () => {
     setLoading(true);
     setSelectedIds(new Set());
+    setExportNote(null);
     try {
       const data = await fetchExportCompleted();
       setRows(
@@ -275,63 +277,92 @@ export function ExportCompletedModal({
     return val;
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportRows =
       selectedIds.size > 0
         ? sortedRows.filter((r) => selectedIds.has(r.id))
         : sortedRows;
+    if (exportRows.length === 0) return;
 
-    const headers = [
-      "Date Created",
-      "Date Completed",
-      "OFAC Status",
-      "Recipient",
-      "Contact",
-      "Reason for Payment",
-      "Bounty URL",
-      "ZEC Amount",
-      "Network",
-      "Payout Address",
-      "Transaction ID",
-    ];
-    const csvRows = exportRows.map((row) => {
-      const recipient = getPrimaryRecipient(row);
-      return [
-        row.dateCreated
-          ? new Date(row.dateCreated).toLocaleDateString("en-US")
-          : "",
-        row.completedAt
-          ? new Date(row.completedAt).toLocaleDateString("en-US")
-          : "",
-        recipient?.ofacVerified ? "Completed" : "Pending",
-        recipient?.name ?? "",
-        recipient?.email ?? "",
-        row.title,
-        `${baseUrl}/${row.id}`,
-        row.bountyAmount.toString(),
-        row.chain === "MAIN" ? "Mainnet" : "Testnet",
-        getPayoutAddress(row) ?? "",
-        row.paymentTxId ?? "",
-      ]
-        .map(escapeCsv)
-        .join(",");
-    });
-    const csv = [headers.join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setExportNote(null);
+    try {
+      // Stamp first. The CSV only includes rows the server accepted, so a
+      // concurrent in-app payment cannot leave a double-pay candidate in the file.
+      const { acceptedIds } = await markBountiesExported(
+        exportRows.map((r) => r.id),
+      );
+      const accepted = new Set(acceptedIds);
+      const attempted = new Set(exportRows.map((r) => r.id));
+      const toCsv = exportRows.filter((r) => accepted.has(r.id));
+      const skipped = exportRows.length - toCsv.length;
 
-    const exportedIds = exportRows.map((r) => r.id);
-    markBountiesExported(exportedIds)
-      .then(() => {
-        setRows((prev) => prev.filter((r) => !exportedIds.includes(r.id)));
-        setSelectedIds(new Set());
-      })
-      .catch((err) => console.error("Failed to mark bounties exported:", err));
+      // Drop everything we tried: accepted ones are stamped, the rest were
+      // claimed by the other channel and are no longer exportable.
+      setRows((prev) => prev.filter((r) => !attempted.has(r.id)));
+      setSelectedIds(new Set());
+
+      if (toCsv.length === 0) {
+        setExportNote(
+          skipped === 1
+            ? "That bounty was paid in the app before it could be exported. Nothing was written to the CSV."
+            : `${skipped} bounties were paid in the app before they could be exported. Nothing was written to the CSV.`,
+        );
+        return;
+      }
+
+      const headers = [
+        "Date Created",
+        "Date Completed",
+        "OFAC Status",
+        "Recipient",
+        "Contact",
+        "Reason for Payment",
+        "Bounty URL",
+        "ZEC Amount",
+        "Network",
+        "Payout Address",
+        "Transaction ID",
+      ];
+      const csvRows = toCsv.map((row) => {
+        const recipient = getPrimaryRecipient(row);
+        return [
+          row.dateCreated
+            ? new Date(row.dateCreated).toLocaleDateString("en-US")
+            : "",
+          row.completedAt
+            ? new Date(row.completedAt).toLocaleDateString("en-US")
+            : "",
+          recipient?.ofacVerified ? "Completed" : "Pending",
+          recipient?.name ?? "",
+          recipient?.email ?? "",
+          row.title,
+          `${baseUrl}/${row.id}`,
+          row.bountyAmount.toString(),
+          row.chain === "MAIN" ? "Mainnet" : "Testnet",
+          getPayoutAddress(row) ?? "",
+          row.paymentTxId ?? "",
+        ]
+          .map(escapeCsv)
+          .join(",");
+      });
+      const csv = [headers.join(","), ...csvRows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      if (skipped > 0) {
+        setExportNote(
+          `${skipped} of ${exportRows.length} were paid in the app before export and were left out of the CSV.`,
+        );
+      }
+    } catch (err) {
+      console.error("Failed to mark bounties exported:", err);
+      setExportNote("Export failed. Nothing was marked or written.");
+    }
   };
 
   const ofacCount = rows.filter(
@@ -375,6 +406,11 @@ export function ExportCompletedModal({
           </div>
 
           {/* Stats */}
+          {exportNote && (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              {exportNote}
+            </p>
+          )}
           {loaded && (
             <div className="flex items-center gap-5 mt-2 text-xs text-muted-foreground">
               <span>{rows.length} completed bounties</span>

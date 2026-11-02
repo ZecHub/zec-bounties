@@ -320,7 +320,7 @@ interface BountyContextType {
   fetchExportCompleted: () => Promise<any[]>;
   markBountiesExported: (
     bountyIds: string[],
-  ) => Promise<{ exportedAt: string }>;
+  ) => Promise<{ exportedAt: string; acceptedIds: string[] }>;
   updateUserOfac: (userId: string, ofacVerified: boolean) => Promise<void>;
 
   // Admin: move selected teamless bounties onto a chosen team
@@ -3778,7 +3778,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const markBountiesExported = async (
     bountyIds: string[],
-  ): Promise<{ exportedAt: string }> => {
+  ): Promise<{ exportedAt: string; acceptedIds: string[] }> => {
     if (!currentUser || currentUser.role !== "ADMIN") {
       throw new Error("Unauthorized");
     }
@@ -3795,7 +3795,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       throw new Error(json.error || "Failed to mark bounties exported");
     }
     await fetchTotalStats();
-    return { exportedAt: json.exportedAt };
+    return {
+      exportedAt: json.exportedAt,
+      acceptedIds: Array.isArray(json.acceptedIds) ? json.acceptedIds : [],
+    };
   };
 
   const updateUserOfac = async (

@@ -2896,6 +2896,7 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
 const EXPORTABLE_BOUNTY = {
   status: "DONE",
   chain: "MAIN",
+  isApproved: true,
   isPaid: false,
   paymentInFlight: false,
 };
@@ -3081,6 +3082,19 @@ router.patch(
         data: { exportedAt, exportedBy: req.user.id },
       });
 
+      // Re-read what this request actually stamped. A concurrent in-app
+      // payment (or a second export) can drop rows between the list and
+      // this update; the CSV must only contain the ones we accepted.
+      const stamped = await prisma.bounty.findMany({
+        where: {
+          id: { in: bountyIds },
+          exportedAt,
+          exportedBy: req.user.id,
+        },
+        select: { id: true },
+      });
+      const acceptedIds = stamped.map((b) => b.id);
+
       // exportedAt now feeds unpaidDoneCount in /stats/totals, so that cache
       // is stale the moment this commits — not just the versioned bounty
       // list/detail caches.
@@ -3088,7 +3102,7 @@ router.patch(
 
       sendRealtimeUpdate(
         "bounties_exported",
-        { bountyIds, exportedAt },
+        { bountyIds: acceptedIds, exportedAt },
         req.user.id,
       );
 
@@ -3096,6 +3110,7 @@ router.patch(
         message: "Marked as exported",
         newlyMarked: result.count,
         exportedAt,
+        acceptedIds,
       });
     } catch (error) {
       console.error("Error marking bounties exported:", error);
@@ -3201,6 +3216,7 @@ router.put("/:id", authenticate, async (req, res) => {
         isPaid: true,
         paymentAuthorized: true,
         paymentInFlight: true,
+        exportedAt: true,
         dateCreated: true,
         title: true,
         description: true,
@@ -3260,11 +3276,12 @@ router.put("/:id", authenticate, async (req, res) => {
       if (
         existing.isPaid ||
         existing.paymentInFlight ||
-        existing.paymentAuthorized
+        existing.paymentAuthorized ||
+        existing.exportedAt
       ) {
         return res.status(409).json({
           error:
-            "Assignee and reward cannot be changed once payment is authorised or in progress",
+            "Assignee and reward cannot be changed once payment is authorised, in progress, or exported",
         });
       }
     }
