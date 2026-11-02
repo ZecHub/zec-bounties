@@ -16,6 +16,8 @@ export interface User {
   nickname?: string;
   z_address?: string; // Orchard Wallet
   UA_address?: string | null;
+  hasUnifiedAddress?: boolean;
+  hasShieldedAddress?: boolean;
   avatar?: string; // GitHub avatar URL
   githubId?: string; // GitHub username/ID
   isRobin: Boolean;

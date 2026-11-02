@@ -2247,17 +2247,17 @@ router.get("/users/full", authenticate, isAdmin, async (req, res) => {
 
 router.get("/users/teams", authenticate, isTeamOrAdmin, async (req, res) => {
   try {
-    const cacheKey = "users:teams";
+    // Directory only. No raw addresses. Cache key changed so old leaky entries are ignored.
+    const cacheKey = "users:teams:directory";
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
-    const users = await prisma.user.findMany({
+    const rows = await prisma.user.findMany({
       where: { role: { not: "ADMIN" } },
       select: {
         id: true,
         name: true,
         nickname: true,
-        email: true,
         role: true,
         avatar: true,
         z_address: true,
@@ -2265,12 +2265,47 @@ router.get("/users/teams", authenticate, isTeamOrAdmin, async (req, res) => {
       },
     });
 
+    const users = rows.map(({ z_address, UA_address, ...rest }) => ({
+      ...rest,
+      hasUnifiedAddress:
+        typeof UA_address === "string" && UA_address.startsWith("u1"),
+      hasShieldedAddress: !!z_address,
+    }));
+
     await setCache(cacheKey, users, TTL.USERS);
     res.json(users);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("users/teams error:", err);
+    res.status(500).json({ error: "Failed to load users" });
   }
 });
+
+// On-demand: raw payout address for a single user. TEAM/ADMIN only.
+// Call only for people you are actually assigning.
+router.get(
+  "/users/:id/payout-address",
+  authenticate,
+  isTeamOrAdmin,
+  async (req, res) => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: req.params.id },
+        select: { id: true, role: true, z_address: true, UA_address: true },
+      });
+      if (!user || user.role === "ADMIN") {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({
+        id: user.id,
+        z_address: user.z_address,
+        UA_address: user.UA_address,
+      });
+    } catch (err) {
+      console.error("payout-address error:", err);
+      res.status(500).json({ error: "Failed to load address" });
+    }
+  },
+);
 
 router.patch(
   "/users/:id/task-access",

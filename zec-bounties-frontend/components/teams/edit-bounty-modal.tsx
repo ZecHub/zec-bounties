@@ -52,6 +52,11 @@ export function TeamsEditBountyModal({
 }: EditBountyModalProps) {
   const { updateBounty, nonAdminUsers } = useBounty();
 
+  const hasUA = (u: { hasUnifiedAddress?: boolean; UA_address?: string | null }) =>
+    u.hasUnifiedAddress ?? !!u.UA_address;
+  const hasZ = (u: { hasShieldedAddress?: boolean; z_address?: string }) =>
+    u.hasShieldedAddress ?? !!u.z_address;
+
   const [isSaving, setIsSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<"details" | "assignees">(
     defaultSection,
@@ -109,8 +114,8 @@ export function TeamsEditBountyModal({
       const bSelected = selectedUserIds.includes(b.id);
       if (aSelected !== bSelected) return aSelected ? -1 : 1;
 
-      const aHasUA = !!a.UA_address;
-      const bHasUA = !!b.UA_address;
+      const aHasUA = hasUA(a);
+      const bHasUA = hasUA(b);
       if (aHasUA !== bHasUA) return aHasUA ? -1 : 1;
 
       return 0;
@@ -156,7 +161,7 @@ export function TeamsEditBountyModal({
   );
 
   const selectedUsersWithoutAddress = selectedUsers.filter((u) =>
-    chain === "MAIN" ? !u.UA_address : !u.z_address,
+    chain === "MAIN" ? !hasUA(u) : !hasZ(u),
   );
   const hasAddressWarning = selectedUsersWithoutAddress.length > 0;
 
@@ -415,7 +420,7 @@ export function TeamsEditBountyModal({
                             {user.email}
                           </p>
                           {chain === "MAIN" ? (
-                            user.UA_address ? (
+                            hasUA(user) ? (
                               <span className="text-green-600 flex items-center gap-0.5 shrink-0 text-xs">
                                 <CheckCircle2 className="h-3 w-3" /> UA set
                               </span>
@@ -424,7 +429,7 @@ export function TeamsEditBountyModal({
                                 <AlertTriangle className="h-3 w-3" /> No UA
                               </span>
                             )
-                          ) : user.z_address ? (
+                          ) : hasZ(user) ? (
                             <span className="text-blue-600 flex items-center gap-0.5 shrink-0 text-xs">
                               <CheckCircle2 className="h-3 w-3" /> TA set
                             </span>
