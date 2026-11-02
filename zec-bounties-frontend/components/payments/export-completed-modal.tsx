@@ -390,7 +390,7 @@ export function ExportCompletedModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="imd:max-w-5xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="imd:max-w-6xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-semibold">
