@@ -214,6 +214,7 @@ test("marking an export does not stamp bounties paid or being paid in the app", 
   assert.equal(res.body.newlyMarked, 1);
   const stamped = db.bounties.filter((b) => b.exportedAt).map((b) => b.id);
   assert.deepEqual(stamped, ["due"]);
+  assert.deepEqual(res.body.acceptedIds, ["due"]);
 });
 
 test("marking an export stamps only bounties the export list offers", async () => {
@@ -233,4 +234,5 @@ test("marking an export stamps only bounties the export list offers", async () =
   const stamped = db.bounties.filter((b) => b.exportedAt).map((b) => b.id);
   assert.deepEqual(stamped, listed);
   assert.deepEqual(stamped, ["due"]);
+  assert.deepEqual(res.body.acceptedIds, ["due"]);
 });
