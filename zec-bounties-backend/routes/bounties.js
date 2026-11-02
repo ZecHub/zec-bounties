@@ -878,6 +878,28 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       });
     }
 
+    if (userIds.length > 0) {
+      const where = {
+        id: { in: userIds },
+        role: { not: "ADMIN" },
+        ...(bounty.teamId && {
+          OR: [
+            { favoriteTeams: { some: { teamId: bounty.teamId } } },
+            { teamMembers: { some: { teamId: bounty.teamId } } },
+          ],
+        }),
+      };
+      const found = await prisma.user.findMany({
+        where,
+        select: { id: true, z_address: true, UA_address: true },
+      });
+      if (found.length !== new Set(userIds).size) {
+        return res.status(400).json({
+          error: "Assignees must belong to this team or its community",
+        });
+      }
+    }
+
     const [freshBounty, assignees, existingAssignees] =
       await prisma.$transaction(async (tx) => {
         // Lock the stable parent before replacing children, including an empty roster.

@@ -416,6 +416,7 @@ interface BountyContextType {
   fetchTeamApplications: (teamId: string) => Promise<BountyApplication[]>;
   fetchTeamSubmissions: (teamId: string) => Promise<WorkSubmission[]>;
   fetchTeamCommunity: (teamId: string) => Promise<TeamFavorite[]>;
+  fetchTeamDirectory: (teamId: string) => Promise<User[]>;
   uploadTeamLogo: (teamId: string, file: File) => Promise<Team>;
   removeTeamLogo: (teamId: string) => Promise<void>;
   fetchTeamTransactionHashes: (teamId: string) => Promise<void>;
@@ -1449,9 +1450,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const endpoint =
         currentUser?.role === "ADMIN"
           ? `${backendUrl}/api/bounties/users/full`
-          : currentUser?.role === "TEAM"
-            ? `${backendUrl}/api/bounties/users/teams`
-            : `${backendUrl}/api/bounties/users`;
+          : `${backendUrl}/api/bounties/users`;
       const res = await fetch(endpoint, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch users");
       const data = await res.json();
@@ -3259,6 +3258,22 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return data.community ?? [];
   };
 
+  const fetchTeamDirectory = async (teamId: string): Promise<User[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/community/directory`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.members ?? []) as User[];
+    } catch (error) {
+      console.error("Failed to fetch team directory:", error);
+      return [];
+    }
+  };
+
   const fetchBountyQuota = async () => {
     if (!currentUser) return;
     if (currentUser.role === "ADMIN") {
@@ -4336,6 +4351,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchTeamApplications,
         fetchTeamSubmissions,
         fetchTeamCommunity,
+        fetchTeamDirectory,
         favoriteTeamIds,
         favoriteTeamsLoading,
         fetchFavoriteTeams,
