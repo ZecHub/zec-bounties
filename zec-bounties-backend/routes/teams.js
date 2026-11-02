@@ -1378,6 +1378,51 @@ router.get("/:teamId/community/members", authenticate, async (req, res) => {
   }
 });
 
+router.get("/:teamId/community/directory", authenticate, async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    if (!(await requireTeamAdmin(teamId, req, res))) return;
+
+    const favs = await prisma.teamFavorite.findMany({
+      where: { teamId, user: { role: { not: "ADMIN" } } },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      select: {
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            nickname: true,
+            email: true,
+            avatar: true,
+            role: true,
+            z_address: true,
+            UA_address: true,
+          },
+        },
+      },
+    });
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      members: favs.map(
+        ({ createdAt, user: { z_address, UA_address, ...u } }) => ({
+          joinedAt: createdAt,
+          ...u,
+          hasUnifiedAddress:
+            typeof UA_address === "string" && /^u(test)?1/i.test(UA_address),
+          hasShieldedAddress: !!z_address,
+        }),
+      ),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load community directory" });
+  }
+});
+
 router.get("/:teamId/community", authenticate, async (req, res) => {
   try {
     const { teamId } = req.params;

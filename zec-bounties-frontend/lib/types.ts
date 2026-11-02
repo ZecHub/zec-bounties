@@ -24,6 +24,8 @@ export interface User {
   discordUsername?: string;
   discordGlobalName?: string;
   canCreateTasks?: boolean;
+  hasUnifiedAddress?: boolean;
+  hasShieldedAddress?: boolean;
 }
 
 /** Privacy-first profile visibility. Missing keys treated as false except avatar/displayName. */
