@@ -72,6 +72,7 @@ import {
   Activity,
   AlertCircle,
   XIcon,
+  Download,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { FaXTwitter } from "react-icons/fa6";
@@ -94,6 +95,7 @@ import {
 } from "@/components/ui/select";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { TeamAuthorizePaymentPanel } from "@/components/payments/teams/authorize-payment-panel";
+import { ExportCompletedModal } from "@/components/payments/export-completed-modal";
 import {
   SyncStatusMenu,
   RescanButton,
@@ -2177,6 +2179,7 @@ function TreasuryTab({
     fetchTeamSyncStatus,
   } = useBounty();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [deletingWallet, setDeletingWallet] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -2275,11 +2278,36 @@ function TreasuryTab({
       )}
 
       {activeView === "due" && (
-        <TeamAuthorizePaymentPanel
-          team={team}
-          teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
-          onPaid={handlePaid}
-        />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Payments due</h2>
+              <p className="text-xs text-muted-foreground">
+                Completed bounties awaiting payout
+              </p>
+            </div>
+            {team.payoutBy === "TEAM" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowExportModal(true)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Completed
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Payouts for this team are handled by an admin.
+              </p>
+            )}
+          </div>
+          <TeamAuthorizePaymentPanel
+            team={team}
+            teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
+            onPaid={handlePaid}
+          />
+        </div>
       )}
 
       {activeView === "transactions" && (
@@ -2419,11 +2447,13 @@ function TreasuryTab({
           </div>
         ))}
 
-      <TeamWalletModal
-        open={walletModalOpen}
-        onOpenChange={setWalletModalOpen}
-        team={team}
-      />
+      {team.payoutBy === "TEAM" && (
+        <ExportCompletedModal
+          open={showExportModal}
+          onOpenChange={setShowExportModal}
+          teamId={team.id}
+        />
+      )}
     </div>
   );
 }
@@ -2450,6 +2480,10 @@ function SettingsTab({
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description || "");
   const [isPrivate, setIsPrivate] = useState(team.isPrivate);
+  const [payoutBy, setPayoutBy] = useState<"ADMIN" | "TEAM">(
+    team.payoutBy ?? "ADMIN",
+  );
+  const [payoutError, setPayoutError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2597,6 +2631,19 @@ function SettingsTab({
       if (!confirm(`Leave ${team.name}?`)) return;
       await removeTeamMember(team.id, currentUserId);
       router.push("/teams");
+    }
+  };
+
+  const handlePayoutChange = async (next: "ADMIN" | "TEAM") => {
+    if (next === payoutBy) return;
+    const prev = payoutBy;
+    setPayoutBy(next);
+    setPayoutError(null);
+    try {
+      await updateTeam(team.id, { payoutBy: next });
+    } catch (err: any) {
+      setPayoutBy(prev);
+      setPayoutError(err.message ?? "Failed to update payout setting");
     }
   };
 
@@ -2962,6 +3009,55 @@ function SettingsTab({
                 Save
               </Button>
             </div>
+          )}
+        </section>
+      )}
+
+      {canManage && (
+        <section className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Payouts
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Choose who pays out completed bounties for {team.name}.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              [
+                [
+                  "ADMIN",
+                  "Paid by admin",
+                  "Platform admins export and pay completed bounties.",
+                ],
+                [
+                  "TEAM",
+                  "Paid by our team",
+                  "Your team exports completed bounties and pays them itself.",
+                ],
+              ] as const
+            ).map(([value, title, desc]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => handlePayoutChange(value)}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  payoutBy === value
+                    ? "border-primary bg-primary/5"
+                    : "hover:bg-muted/40"
+                }`}
+              >
+                <div className="text-sm font-medium">{title}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {desc}
+                </div>
+              </button>
+            ))}
+          </div>
+          {payoutError && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <XCircle className="h-3.5 w-3.5" />
+              {payoutError}
+            </p>
           )}
         </section>
       )}

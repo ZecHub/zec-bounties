@@ -316,6 +316,7 @@ export interface Team {
   logo?: string | null;
   banner?: string | null;
   isPrivate: boolean;
+  payoutBy: "ADMIN" | "TEAM";
 }
 
 export interface TeamVerificationStatus {

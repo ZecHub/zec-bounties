@@ -71,6 +71,10 @@ const {
 } = require("../utils/userIdentity");
 const { logActivity, publishActivity } = require("../utils/bountyActivity");
 const { redactPublicUser } = require("../utils/privacy");
+const {
+  ADMIN_EXPORTABLE_BOUNTY,
+  ADMIN_PAYOUT_SCOPE,
+} = require("../utils/exportableBounty");
 
 // ─── Email settings ───────────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -2890,6 +2894,7 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
     const bounties = await prisma.bounty.findMany({
       where: { isPaid: true, ...(from || to ? { paidAt: dateFilter } : {}) },
       include: {
+        team: { select: { id: true, name: true } },
         assigneeUser: {
           select: USER_SELECT_EXPORT,
         },
@@ -2913,20 +2918,10 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// The Export Completed list: completed mainnet bounties that are not paid or
-// being paid in the app. Mark-exported stamps only rows that match it.
-const EXPORTABLE_BOUNTY = {
-  status: "DONE",
-  chain: "MAIN",
-  isApproved: true,
-  isPaid: false,
-  paymentInFlight: false,
-};
-
 router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
   try {
     const bounties = await prisma.bounty.findMany({
-      where: EXPORTABLE_BOUNTY,
+      where: ADMIN_EXPORTABLE_BOUNTY,
       include: {
         assigneeUser: {
           select: USER_SELECT_EXPORT,
@@ -3050,6 +3045,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
             status: "DONE",
             isPaid: false,
             exportedAt: null,
+            ...ADMIN_PAYOUT_SCOPE,
           },
         }),
       ],
@@ -3097,7 +3093,7 @@ router.patch(
       const exportedAt = new Date();
       const result = await prisma.bounty.updateMany({
         where: {
-          ...EXPORTABLE_BOUNTY,
+          ...ADMIN_EXPORTABLE_BOUNTY,
           id: { in: bountyIds },
           exportedAt: null,
         },

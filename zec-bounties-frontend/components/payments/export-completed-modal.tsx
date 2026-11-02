@@ -42,6 +42,8 @@ interface ExportRow {
   chain: "MAIN" | "TEST";
   exportedAt?: string | null;
   exportedBy?: string | null;
+  teamId?: string | null;
+  team?: { id: string; name: string } | null;
   assigneeUser?: {
     id: string;
     name?: string;
@@ -65,6 +67,7 @@ interface ExportRow {
 interface ExportCompletedModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  teamId?: string;
 }
 
 type SortKey =
@@ -76,16 +79,23 @@ type SortKey =
   | "amount"
   | "network"
   | "address"
-  | "ofac";
+  | "ofac"
+  | "team";
 
 type SortDirection = "asc" | "desc";
 
 export function ExportCompletedModal({
   open,
   onOpenChange,
+  teamId,
 }: ExportCompletedModalProps) {
-  const { fetchExportCompleted, markBountiesExported, updateUserOfac } =
-    useBounty();
+  const {
+    fetchExportCompleted,
+    markBountiesExported,
+    fetchTeamExportCompleted,
+    markTeamBountiesExported,
+    updateUserOfac,
+  } = useBounty();
 
   const [rows, setRows] = useState<ExportRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -146,6 +156,8 @@ export function ExportCompletedModal({
         return (getPayoutAddress(row) ?? "").toLowerCase();
       case "ofac":
         return recipient?.ofacVerified ? 1 : 0;
+      case "team":
+        return (row.team?.name ?? "").toLowerCase();
       default:
         return "";
     }
@@ -208,7 +220,9 @@ export function ExportCompletedModal({
     setSelectedIds(new Set());
     setExportNote(null);
     try {
-      const data = await fetchExportCompleted();
+      const data = teamId
+        ? await fetchTeamExportCompleted(teamId)
+        : await fetchExportCompleted();
       setRows(
         data.filter((r: ExportRow) => r.chain === "MAIN" && !r.exportedAt),
       );
@@ -288,9 +302,10 @@ export function ExportCompletedModal({
     try {
       // Stamp first. The CSV only includes rows the server accepted, so a
       // concurrent in-app payment cannot leave a double-pay candidate in the file.
-      const { acceptedIds } = await markBountiesExported(
-        exportRows.map((r) => r.id),
-      );
+      const ids = exportRows.map((r) => r.id);
+      const { acceptedIds } = teamId
+        ? await markTeamBountiesExported(teamId, ids)
+        : await markBountiesExported(ids);
       const accepted = new Set(acceptedIds);
       const attempted = new Set(exportRows.map((r) => r.id));
       const toCsv = exportRows.filter((r) => accepted.has(r.id));
@@ -317,6 +332,7 @@ export function ExportCompletedModal({
         "Recipient",
         "Contact",
         "Reason for Payment",
+        ...(teamId ? [] : ["Team"]),
         "Bounty URL",
         "ZEC Amount",
         "Network",
@@ -336,6 +352,7 @@ export function ExportCompletedModal({
           recipient?.name ?? "",
           recipient?.email ?? "",
           row.title,
+          ...(teamId ? [] : [row.team?.name ?? "Platform"]),
           `${baseUrl}/${row.id}`,
           row.bountyAmount.toString(),
           row.chain === "MAIN" ? "Mainnet" : "Testnet",
@@ -350,7 +367,7 @@ export function ExportCompletedModal({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
+      a.download = `${teamId ? "team-" : ""}completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -361,7 +378,9 @@ export function ExportCompletedModal({
       }
     } catch (err) {
       console.error("Failed to mark bounties exported:", err);
-      setExportNote("Export failed. Nothing was marked or written.");
+      setExportNote(
+        `Export failed: ${err instanceof Error ? err.message : "unknown error"}. Nothing was written.`,
+      );
     }
   };
 
@@ -457,6 +476,7 @@ export function ExportCompletedModal({
                   <SortableHead column="recipient">Recipient</SortableHead>
                   <SortableHead column="contact">Contact</SortableHead>
                   <SortableHead column="title">Bounty</SortableHead>
+                  {!teamId && <SortableHead column="team">Type</SortableHead>}
                   <SortableHead column="amount">Amount</SortableHead>
                   <SortableHead column="network">Network</SortableHead>
                   <SortableHead column="address">Payout Address</SortableHead>
@@ -515,6 +535,23 @@ export function ExportCompletedModal({
                           </a>
                         </div>
                       </TableCell>
+                      {!teamId && (
+                        <TableCell>
+                          {row.team || row.teamId ? (
+                            <Badge
+                              variant="outline"
+                              className="max-w-[140px] truncate text-[10px] border-blue-300 text-blue-700 dark:text-blue-400"
+                              title={row.team?.name}
+                            >
+                              {row.team?.name ?? "Team"}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px]">
+                              Platform
+                            </Badge>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-xs font-mono whitespace-nowrap">
                         {row.bountyAmount} ZEC
                       </TableCell>
@@ -538,7 +575,7 @@ export function ExportCompletedModal({
                           <Switch
                             checked={recipient?.ofacVerified ?? false}
                             onCheckedChange={(v) => handleOfacToggle(row, v)}
-                            disabled={isToggling || !recipient?.id}
+                            disabled={isToggling || !recipient?.id || !!teamId}
                           />
                           <Badge
                             variant={

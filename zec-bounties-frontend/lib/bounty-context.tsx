@@ -321,6 +321,11 @@ interface BountyContextType {
   markBountiesExported: (
     bountyIds: string[],
   ) => Promise<{ exportedAt: string; acceptedIds: string[] }>;
+  fetchTeamExportCompleted: (teamId: string) => Promise<any[]>;
+  markTeamBountiesExported: (
+    teamId: string,
+    bountyIds: string[],
+  ) => Promise<{ exportedAt: string; acceptedIds: string[] }>;
   updateUserOfac: (userId: string, ofacVerified: boolean) => Promise<void>;
 
   // Admin: move selected teamless bounties onto a chosen team
@@ -354,6 +359,7 @@ interface BountyContextType {
       name?: string;
       description?: string;
       isPrivate?: boolean;
+      payoutBy?: "ADMIN" | "TEAM";
       twitterUrl?: string;
       discordUrl?: string;
       additionalLinks?: string[];
@@ -2166,7 +2172,15 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const updateTeam = async (
     id: string,
-    data: { name?: string; description?: string; isPrivate?: boolean },
+    data: {
+      name?: string;
+      description?: string;
+      isPrivate?: boolean;
+      payoutBy?: "ADMIN" | "TEAM";
+      twitterUrl?: string;
+      discordUrl?: string;
+      additionalLinks?: string[];
+    },
   ): Promise<Team> => {
     if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${id}`, {
@@ -2687,6 +2701,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           case "bounties_exported":
             fetchTotalStats();
             fetchMyBounties();
+            if (msg.payload?.teamId) fetchTeamBounties(msg.payload.teamId);
             break;
 
           case "bounty_assignees_updated":
@@ -2703,6 +2718,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             setTeams((prev) =>
               prev.map((t) => (t.id === msg.payload.id ? msg.payload : t)),
             );
+            fetchTotalStats();
 
             // Bounties embed a lightweight { id, name, logo } snapshot of
             // their team — keep it in sync so cards/modals update live
@@ -3816,6 +3832,50 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
+  // Team-scoped twins of the admin export. Role is enforced by the backend
+  // (team OWNER/ADMIN or platform ADMIN), same as the other /api/teams/:id
+  // wallet routes, so no client-side role gate here.
+  const fetchTeamExportCompleted = async (teamId: string): Promise<any[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/export-completed`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch completed team bounties");
+      const data = await res.json();
+      return data.data || [];
+    } catch (error) {
+      console.error("Failed to fetch completed team bounties:", error);
+      return [];
+    }
+  };
+
+  const markTeamBountiesExported = async (
+    teamId: string,
+    bountyIds: string[],
+  ): Promise<{ exportedAt: string; acceptedIds: string[] }> => {
+    if (!currentUser) throw new Error("Unauthorized");
+    const res = await fetch(
+      `${backendUrl}/api/teams/${teamId}/export-completed/mark-exported`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ bountyIds }),
+      },
+    );
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Failed to mark bounties exported");
+    }
+    // Exported bounties must drop out of the team's payable list.
+    await fetchTeamBounties(teamId);
+    return {
+      exportedAt: json.exportedAt,
+      acceptedIds: Array.isArray(json.acceptedIds) ? json.acceptedIds : [],
+    };
+  };
+
   const updateUserOfac = async (
     userId: string,
     ofacVerified: boolean,
@@ -4314,6 +4374,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchExportPayments,
         fetchExportCompleted,
         markBountiesExported,
+        fetchTeamExportCompleted,
+        markTeamBountiesExported,
         updateUserOfac,
         unassignedBounties,
         unassignedBountiesLoading,
