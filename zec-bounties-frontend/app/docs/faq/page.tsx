@@ -100,11 +100,21 @@ const FAQS = [
         <Link href="/profile" className="text-primary hover:underline">
           Profile
         </Link>
-        . Then apply to an open bounty on the board, or suggest one with{" "}
-        <strong>New Bounty</strong> and wait for it to be approved (by the team
-        you aimed it at, or by platform admins). New
-        bounties are usually posted on Mondays — only suggest work that is not
-        already listed. See{" "}
+        . Then apply to an open bounty on the board. Only suggest one with{" "}
+        <strong>New Bounty</strong> if your account is allowed to, and wait for
+        it to be approved (by the team you aimed it at, or by platform admins).
+        Admins can close suggestions, open them to any onboarded hunter, or
+        require a configured number of completed bounties (5 by default). See{" "}
+        <Link
+          href="/docs/bounty-suggestions"
+          className="text-primary hover:underline"
+        >
+          Bounty suggestions
+        </Link>{" "}
+        for the limits. If you cannot suggest yet, open a PR and note that
+        you&apos;d like it considered for a contributor reward; payment requires
+        an approved bounty. New bounties are usually posted on Mondays — only
+        suggest work that is not already listed. See{" "}
         <Link
           href="/docs/contributors"
           className="text-primary hover:underline"
