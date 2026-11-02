@@ -190,10 +190,10 @@ test("private team bounty visibility for assignees with isolated real PostgreSQL
       const f = await seed("control");
       const b = await f.bounty({ teamId: f.team.id, isPrivate: true, assignees: { create: { userId: f.outsider.id } } });
       const routes = loadRoutes(db);
-      for (const viewer of [f.admin, f.owner, f.member]) {
-        assert.equal(await routes.detail(viewer, b.id), 200);
-        assert.ok((await routes.feed(viewer)).includes(b.id));
-      }
+      for (const viewer of [f.admin, f.owner, f.member]) assert.equal(await routes.detail(viewer, b.id), 200);
+      // The admin feed lists platform bounties only; team bounties live on the team console.
+      for (const viewer of [f.owner, f.member]) assert.ok((await routes.feed(viewer)).includes(b.id));
+      assert.ok(!(await routes.feed(f.admin)).includes(b.id));
       const recipients = await routes.helpers.getBroadcastRecipients(b);
       for (const viewer of [f.admin, f.owner, f.member]) assert.ok(recipients.includes(viewer.id));
       assert.equal(await routes.helpers.getBroadcastRecipients({ ...b, isPrivate: false }), null);
