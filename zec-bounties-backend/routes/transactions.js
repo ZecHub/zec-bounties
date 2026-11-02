@@ -200,7 +200,8 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       adminWallet.chain === "mainnet" ? "MAIN" : "TEST";
 
     // Fetch the selected bounties with their assignees. Team bounties are
-    // paid from the team wallet (POST /api/teams/:teamId/wallet/authorize-payment).
+    // paid from the team wallet (POST /api/teams/:teamId/wallet/authorize-payment),
+    // and exported bounties outside the app (Export Completed).
     const bounties = await prisma.bounty.findMany({
       where: {
         id: { in: bountyIds },
@@ -209,6 +210,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         isPaid: false,
         isApproved: true,
         paymentInFlight: false,
+        exportedAt: null,
       },
       include: {
         assigneeUser: {
@@ -234,7 +236,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     if (bounties.length === 0) {
       return res.status(400).json({
         error:
-          "None of the selected bounties are eligible for payment (must be DONE, approved, and unpaid)",
+          "None of the selected bounties are eligible for payment (must be DONE, approved, unpaid, and not exported)",
       });
     }
 
@@ -295,6 +297,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
             isApproved: true,
             isPaid: false,
             paymentInFlight: false,
+            exportedAt: null,
           },
           data: { paymentInFlight: true },
         });
@@ -315,7 +318,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       if (err !== claimConflict) throw err;
       return res.status(409).json({
         error:
-          "Some of the selected bounties are already being paid by another request. Refresh and try again.",
+          "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
       });
     }
 
