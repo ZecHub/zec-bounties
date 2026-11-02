@@ -2454,6 +2454,12 @@ function TreasuryTab({
           teamId={team.id}
         />
       )}
+
+      <TeamWalletModal
+        open={walletModalOpen}
+        onOpenChange={setWalletModalOpen}
+        team={team}
+      />
     </div>
   );
 }
