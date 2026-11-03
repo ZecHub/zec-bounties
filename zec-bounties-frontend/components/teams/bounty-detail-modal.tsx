@@ -139,7 +139,8 @@ export function BountyDetailModal({
     !userApplication &&
     !isAssignedToCurrentUser &&
     !isMissingUAForMainnet &&
-    !isSuggestedTask;
+    !isSuggestedTask &&
+    bounty.status === "TO_DO";
 
   const hasApplied = !!userApplication;
 
@@ -153,6 +154,13 @@ export function BountyDetailModal({
       };
     }
     if (!isAssignedToCurrentUser && !hasApplied) {
+      if (bounty.status !== "TO_DO") {
+        return {
+          type: "info",
+          title: "Applications closed",
+          message: "Only bounties in Todo accept applications.",
+        };
+      }
       if (!currentUser) {
         return {
           type: "info",
@@ -181,13 +189,6 @@ export function BountyDetailModal({
           message:
             "This bounty pays out on mainnet. You need a Unified Address (UA) set on your profile before you can apply.",
           action: { label: "Click here to set your UA", href: "/profile" },
-        };
-      }
-      if (bounty.status === "DONE" || bounty.status === "CANCELLED") {
-        return {
-          type: "info",
-          title: "Bounty closed",
-          message: "This bounty is no longer accepting applications.",
         };
       }
     }
