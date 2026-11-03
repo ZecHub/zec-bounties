@@ -242,6 +242,15 @@ export function BountyDetailModal({
 
   const isSuggestedTask = bounty.createdByUser?.role === "HUNTER";
 
+  const isTeamMember =
+    !!currentUser &&
+    bounty.teamId != null &&
+    teams.some(
+      (t) =>
+        t.id === bounty.teamId &&
+        t.members.some((m) => m.userId === currentUser.id),
+    );
+
   // Matches both "Design and Videos" and a slug like "design-and-videos"
   const isDesignCategory =
     bounty.categoryId?.toLowerCase().replace(/[^a-z]+/g, "-") ===
@@ -430,7 +439,8 @@ export function BountyDetailModal({
     !userApplication &&
     !isAssignedToCurrentUser &&
     !isMissingUAForMainnet &&
-    !isSuggestedTask;
+    !isSuggestedTask &&
+    !isTeamMember;
 
   const hasApplied = !!userApplication;
 
@@ -459,6 +469,14 @@ export function BountyDetailModal({
           type: "info",
           title: "Your bounty",
           message: "You cannot apply to your own bounty.",
+        };
+      }
+      if (isTeamMember) {
+        return {
+          type: "info",
+          title: "Team bounty",
+          message:
+            "You're a member of this team, so you can't apply to its bounties.",
         };
       }
       if (!canViewPrivate) {
