@@ -12,6 +12,8 @@ function load(relativePath, dependencies) {
       if (Object.hasOwn(dependencies, name)) return dependencies[name];
       // Newer upstream routes import this helper; older branch bases do not.
       if (name === "../utils/userIdentity") return require("../../utils/userIdentity");
+      // Pure constants module imported by the bounty and team routes.
+      if (name === "../utils/exportableBounty") return require("../../utils/exportableBounty");
       throw new Error(`Unexpected dependency: ${name}`);
     },
     process: { env: { NODE_ENV: "test" } },
