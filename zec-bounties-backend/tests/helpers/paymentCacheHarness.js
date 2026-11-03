@@ -11,6 +11,8 @@ function load(relativePath, dependencies) {
     require(name) {
       const key = name.replace(/\.js$/, "");
       if (Object.hasOwn(dependencies, key)) return dependencies[key];
+      // Pure constants module imported by the bounty and team routes.
+      if (name === "../utils/exportableBounty") return require("../../utils/exportableBounty");
       throw new Error(`Unexpected dependency: ${name}`);
     },
     process: { env: { NODE_ENV: "production" } },
