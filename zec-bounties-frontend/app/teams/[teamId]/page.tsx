@@ -12,10 +12,11 @@ import type {
   TeamFavorite,
   TeamVerificationStatus,
   SyncStatus,
+  BountyStatus,
 } from "@/lib/types";
 import { getUserRole } from "../page";
 import { TeamsNewBountyModal } from "@/components/teams/new-bounty-modal";
-import { BountyDetailModal } from "@/components/teams/bounty-detail-modal";
+import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { TeamNavbar } from "@/components/layout/teams/navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +102,8 @@ import {
   RescanButton,
   useRescanCooldown,
 } from "@/components/layout/nav-parts";
+import { toast } from "sonner";
+import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
 
 type Tab =
   | "Overview"
@@ -537,6 +540,132 @@ function CountPill({
   );
 }
 
+function TeamBountyActionsMenu({
+  bounty,
+  pendingApps,
+  pendingSubs,
+  showApproval,
+  onView,
+  onEdit,
+  onReviewSuggestion,
+  onStatusChange,
+  onApprovalChange,
+  onViewApplications,
+  onViewSubmissions,
+  onCancel,
+}: {
+  bounty: Bounty;
+  pendingApps: number;
+  pendingSubs: number;
+  showApproval: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onReviewSuggestion: () => void;
+  onStatusChange: (status: BountyStatus) => void;
+  onApprovalChange: (approved: boolean) => void;
+  onViewApplications: () => void;
+  onViewSubmissions: () => void;
+  onCancel: () => void;
+}) {
+  const statusItems: { status: BountyStatus; label: string }[] = [
+    { status: "TO_DO", label: "Set To Do" },
+    { status: "IN_PROGRESS", label: "Set In Progress" },
+    { status: "IN_REVIEW", label: "Set In Review" },
+    { status: "DONE", label: "Mark as Done" },
+  ];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label={`Actions for ${bounty.title}`}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem onClick={onView}>
+          <Eye className="mr-2 h-4 w-4" />
+          View Details
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onEdit}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Edit Bounty
+        </DropdownMenuItem>
+        {bounty.suggestionReviewStatus === "PENDING" && (
+          <DropdownMenuItem onClick={onReviewSuggestion}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Review Suggestion
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+        {statusItems.map(({ status, label }) => (
+          <DropdownMenuItem key={status} onClick={() => onStatusChange(status)}>
+            <span
+              className={`mr-2 h-2 w-2 rounded-full ${statusDotColor(status)}`}
+            />
+            {label}
+          </DropdownMenuItem>
+        ))}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Manage</DropdownMenuLabel>
+        <DropdownMenuItem onClick={onViewApplications}>
+          <Users className="mr-2 h-4 w-4" />
+          View Applications
+          {pendingApps > 0 && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {pendingApps}
+            </span>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onViewSubmissions}>
+          <Upload className="mr-2 h-4 w-4" />
+          Review Submissions
+          {pendingSubs > 0 && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {pendingSubs}
+            </span>
+          )}
+        </DropdownMenuItem>
+
+        {showApproval && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Approval</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => onApprovalChange(true)}
+              disabled={bounty.isApproved}
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Approve Bounty
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onApprovalChange(false)}
+              disabled={!bounty.isApproved}
+              className="text-destructive"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              Reject Bounty
+            </DropdownMenuItem>
+          </>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onCancel} className="text-destructive">
+          <XCircle className="mr-2 h-4 w-4" />
+          Cancel Bounty
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function ReviewStatusNote({
   status,
 }: {
@@ -594,6 +723,9 @@ function OverviewTab({
     reviewWorkSubmission,
     rejectOtherSubmissions,
     teamActivityVersion,
+    updateBountyStatus,
+    updateBounty,
+    approveBounty,
   } = useBounty();
 
   const [applications, setApplications] = useState<BountyApplication[]>([]);
@@ -606,6 +738,8 @@ function OverviewTab({
   const [reviewingSuggestion, setReviewingSuggestion] = useState<Bounty | null>(
     null,
   );
+  const [viewingBounty, setViewingBounty] = useState<Bounty | null>(null);
+  const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
 
@@ -705,6 +839,65 @@ function OverviewTab({
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleStatusChange = async (
+    bountyId: string,
+    newStatus: BountyStatus,
+  ) => {
+    if (newStatus !== "DONE") {
+      updateBountyStatus(bountyId, newStatus);
+      return;
+    }
+
+    const bounty = teamBounties.find((b) => b.id === bountyId);
+    if (!bounty) return;
+
+    const assigneeCount = bounty.assignees?.length ?? 0;
+
+    if (assigneeCount === 0) {
+      const hasLegacyAssignee = !!bounty.assigneeUser;
+      const createdByHunter = bounty.createdByUser?.role === "HUNTER";
+
+      if (hasLegacyAssignee && createdByHunter) {
+        try {
+          await updateBountyStatus(bountyId, "DONE");
+        } catch (err) {
+          console.error(err);
+        }
+        return;
+      }
+
+      toast.error("Cannot mark as done", {
+        description:
+          "This bounty has no assignees. Assign at least one person before marking it done.",
+      });
+      return;
+    }
+
+    if (assigneeCount === 1) {
+      try {
+        await updateBountyStatus(bountyId, "DONE");
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setWinnerBounty(bounty);
+    }
+  };
+
+  const handleWinnerConfirm = async (bountyId: string, winnerId: string) => {
+    await updateBountyStatus(bountyId, "DONE", winnerId);
+    try {
+      await updateBounty(bountyId, { userIds: [winnerId] } as any);
+    } catch (err) {
+      console.error("Failed to trim assignees to winner:", err);
+    }
+    setWinnerBounty(null);
+  };
+
+  const handleApprovalChange = (bountyId: string, approved: boolean) => {
+    approveBounty(bountyId, approved);
   };
 
   return (
@@ -947,47 +1140,28 @@ function OverviewTab({
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right pr-4 sm:pr-6">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Manage</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => setEditingBounty(bounty)}
-                            >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit bounty
-                            </DropdownMenuItem>
-                            {bounty.suggestionReviewStatus === "PENDING" && (
-                              <DropdownMenuItem
-                                onClick={() => setReviewingSuggestion(bounty)}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                Review suggestion
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() => openApplications(bounty.id)}
-                            >
-                              <Users className="h-4 w-4 mr-2" />
-                              View applications
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => openSubmissions(bounty.id)}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Review submissions
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <TeamBountyActionsMenu
+                          bounty={bounty}
+                          pendingApps={pendingApps}
+                          pendingSubs={pendingSubs}
+                          showApproval={currentUser?.role === "ADMIN"}
+                          onView={() => setViewingBounty(bounty)}
+                          onEdit={() => setEditingBounty(bounty)}
+                          onReviewSuggestion={() =>
+                            setReviewingSuggestion(bounty)
+                          }
+                          onStatusChange={(status) =>
+                            handleStatusChange(bounty.id, status)
+                          }
+                          onApprovalChange={(approved) =>
+                            handleApprovalChange(bounty.id, approved)
+                          }
+                          onViewApplications={() => openApplications(bounty.id)}
+                          onViewSubmissions={() => openSubmissions(bounty.id)}
+                          onCancel={() =>
+                            handleStatusChange(bounty.id, "CANCELLED")
+                          }
+                        />
                       </TableCell>
                     )}
                   </TableRow>
@@ -1022,6 +1196,23 @@ function OverviewTab({
         onOpenChange={(open) => {
           if (!open) setReviewingSuggestion(null);
         }}
+      />
+
+      <BountyDetailModal
+        bounty={viewingBounty}
+        open={!!viewingBounty}
+        onOpenChange={(open) => {
+          if (!open) setViewingBounty(null);
+        }}
+      />
+
+      <SelectWinnerModal
+        bounty={winnerBounty}
+        open={!!winnerBounty}
+        onOpenChange={(open) => {
+          if (!open) setWinnerBounty(null);
+        }}
+        onConfirm={handleWinnerConfirm}
       />
 
       {/* ── Applications dialog ── */}
