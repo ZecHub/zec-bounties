@@ -105,9 +105,6 @@ function useFakeDb(assigneeIds, status = "IN_PROGRESS") {
   // admin) before replacing the roster, so return one row per requested id.
   prisma.user.findMany = async ({ where } = {}) =>
     (where?.id?.in ?? []).map((id) => ({ id, z_address: null, UA_address: null }));
-
-
-
   prisma.$queryRaw = async () => [{ id: "b1" }];
   prisma.$transaction = async (arg) =>
     typeof arg === "function" ? arg(prisma) : Promise.all(arg);
