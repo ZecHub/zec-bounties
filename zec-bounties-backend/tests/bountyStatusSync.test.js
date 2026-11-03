@@ -119,6 +119,7 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     "../utils/userSelects": require("../utils/userSelects"),
     "../utils/privacy": require("../utils/privacy"),
     "../utils/userIdentity": {},
+    "../utils/exportableBounty": require("../utils/exportableBounty"),
     "../utils/bountyActivity": {
       logActivity: (tx, data) => tx.bountyActivity.create({ data }),
       publishActivity: payload => trace.push({ type: "bounty_activity", payload }),
