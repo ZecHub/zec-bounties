@@ -72,6 +72,7 @@ function loadRoutes(prisma) {
     "../utils/userSelects": require("../../utils/userSelects"),
     "../utils/privacy": require("../../utils/privacy"),
     "../utils/userIdentity": require("../../utils/userIdentity"),
+    "../utils/exportableBounty": require("../../utils/exportableBounty"),
     "../utils/bountyHelpers": helpers,
     "../helpers/validateBounty": require("../../helpers/validateBounty"),
     "../helpers/teamRoles": require("../../helpers/teamRoles"),

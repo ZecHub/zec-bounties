@@ -19,6 +19,7 @@ function loadTs(relative, requireFixture) {
   const module = { exports: {} };
   vm.runInNewContext(result.outputText, {
     module, exports: module.exports, require: requireFixture, Date, console,
+    window: { addEventListener() {}, removeEventListener() {} },
   }, { filename });
   return module.exports;
 }
@@ -27,14 +28,16 @@ function mount(kind) {
   const bounty = {
     id: "b1", title: "Expired fixture", description: "A valid expired bounty fixture.",
     bountyAmount: 1, timeToComplete: "2000-01-02T03:45:12.000Z",
-    createdBy: "owner", teamId: null, status: "TO_DO", chain: "MAIN", assignees: [],
+    createdBy: "owner", teamId: kind === "teams" ? "team1" : null, status: "TO_DO", chain: "MAIN", assignees: [],
   };
   const h = loadRoutes({ bounty: {
     findUnique: async () => ({ ...bounty }),
     update: async ({ data }) => { Object.assign(bounty, data); return { ...bounty }; },
   } });
   const state = [];
-  let cursor = 0, initialized = false, effect, payload, response;
+  const effectRecs = [];
+  const NODEPS = Symbol("nodeps");
+  let cursor = 0, effCursor = 0, payload, response;
   const components = new Proxy({}, { get: (_, name) => name });
   const utils = loadTs("lib/utils.ts", id => {
     if (id === "clsx") return { clsx: () => "" };
@@ -48,8 +51,14 @@ function mount(kind) {
         if (!(i in state)) state[i] = initial;
         return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
       },
-      // The first effect copies the bounty into the form; later ones load activity.
-      useEffect(fn) { if (!initialized && !effect) effect = fn; },
+      // Minimal effect model: run each effect, then re-run it when its deps
+      // change (e.g. switching to the Assignees tab loads the team directory).
+      useEffect(fn, deps) {
+        const i = effCursor++;
+        const rec = effectRecs[i] || (effectRecs[i] = { deps: NODEPS });
+        rec.fn = fn; rec.nextDeps = deps;
+      },
+      useMemo(factory) { return factory(); },
     };
     if (id === "react/jsx-runtime") {
       const jsx = (type, props) => ({ type, props });
@@ -62,6 +71,12 @@ function mount(kind) {
       currentUser: { id: "admin", role: "ADMIN" },
       fetchBountyActivity: async () => [],
       nonAdminUsers: [{ id: "hunter", name: "Hunter", UA_address: "fixture", z_address: "fixture" }],
+      // The teams modal loads its picker from the team directory. Return a
+      // synchronous thenable so the harness resolves it without awaiting.
+      fetchTeamDirectory: () => {
+        const members = [{ id: "hunter", name: "Hunter", hasUnifiedAddress: true, hasShieldedAddress: true }];
+        return { then(cb) { cb(members); return this; }, finally(cb) { cb(); return this; } };
+      },
       updateBounty: async (_id, body) => {
         // Match the HTTP JSON boundary: omit undefined, serialize Date values.
         payload = JSON.parse(JSON.stringify(body));
@@ -78,9 +93,27 @@ function mount(kind) {
   });
   const Component = kind === "admin" ? exports.EditBountyModal : exports.TeamsEditBountyModal;
   function render() {
-    cursor = 0;
-    const tree = Component({ bounty, open: true, onOpenChange() {} });
-    if (!initialized) { initialized = true; effect(); return render(); }
+    let tree;
+    for (let pass = 0; pass < 20; pass++) {
+      cursor = 0;
+      effCursor = 0;
+      tree = Component({ bounty, open: true, onOpenChange() {} });
+      let ran = false;
+      for (const rec of effectRecs) {
+        const next = rec.nextDeps;
+        const prev = rec.deps;
+        const changed =
+          prev === NODEPS || !next || !prev ||
+          next.length !== prev.length || next.some((x, j) => !Object.is(x, prev[j]));
+        if (changed) {
+          if (typeof rec.cleanup === "function") rec.cleanup();
+          rec.cleanup = rec.fn();
+          rec.deps = next;
+          ran = true;
+        }
+      }
+      if (!ran) break;
+    }
     return tree;
   }
   function find(predicate, node = render()) {
