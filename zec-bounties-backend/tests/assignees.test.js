@@ -101,7 +101,13 @@ function useFakeDb(assigneeIds, status = "IN_PROGRESS") {
     db.rows.push(...data);
   };
   prisma.bountyActivity.create = async () => null;
-  prisma.user.findMany = async () => [];
+  // The route checks that every requested assignee exists (and is not an
+  // admin) before replacing the roster, so return one row per requested id.
+  prisma.user.findMany = async ({ where } = {}) =>
+    (where?.id?.in ?? []).map((id) => ({ id, z_address: null, UA_address: null }));
+
+
+
   prisma.$queryRaw = async () => [{ id: "b1" }];
   prisma.$transaction = async (arg) =>
     typeof arg === "function" ? arg(prisma) : Promise.all(arg);
