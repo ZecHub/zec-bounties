@@ -67,6 +67,10 @@ jobs:
         if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
         run: yarn install --frozen-lockfile
 
+      - name: Run team status menu test
+        if: steps.changes.outputs.skip != 'true'
+        run: node --test tests/team-status-menu.test.cjs
+
       - name: Run bounty edit form test
         if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
         run: node --test tests/bounty-edit-validation.test.cjs

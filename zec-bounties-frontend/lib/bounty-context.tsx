@@ -3457,7 +3457,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     status: Bounty["status"],
     winnerId?: string,
   ) => {
-    if (!currentUser || currentUser.role !== "ADMIN") return;
+    // The team page offers status changes to team OWNER/ADMIN members, and
+    // PATCH /:id/status authorises them (canAdministerBounty). A client-side
+    // global-admin check turned those clicks into silent no-ops, so let the
+    // backend decide.
+    if (!currentUser) return;
 
     try {
       const res = await fetch(`${backendUrl}/api/bounties/${id}/status`, {
