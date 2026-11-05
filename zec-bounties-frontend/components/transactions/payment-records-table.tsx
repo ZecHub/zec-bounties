@@ -28,11 +28,19 @@ const STATUS_STYLES: Record<PaymentRecord["status"], string> = {
   FAILED: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
 
+const STALE_MS = 10 * 60 * 1000;
+
 // The durable, bounty-linked payout ledger. The wallet-history table below it
 // on the Transactions tab shows what the wallet saw; this shows what the app
 // did and to whom. UNKNOWN/PENDING rows carry a Resolve action.
-export function PaymentRecordsTable({ records }: { records: PaymentRecord[] }) {
-  const { resolvePaymentRecord } = useBounty();
+export function PaymentRecordsTable({
+  records,
+  teamId,
+}: {
+  records: PaymentRecord[];
+  teamId?: string;
+}) {
+  const { resolvePaymentRecord, resolveTeamPaymentRecord } = useBounty();
   const [resolving, setResolving] = useState<PaymentRecord | null>(null);
   const [resolveTxid, setResolveTxid] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -46,11 +54,12 @@ export function PaymentRecordsTable({ records }: { records: PaymentRecord[] }) {
     if (!resolving) return;
     setIsSubmitting(true);
     try {
-      await resolvePaymentRecord(
-        resolving.id,
-        outcome,
-        outcome === "broadcast" ? resolveTxid.trim() : undefined,
-      );
+      const txid = outcome === "broadcast" ? resolveTxid.trim() : undefined;
+      if (teamId) {
+        await resolveTeamPaymentRecord(teamId, resolving.id, outcome, txid);
+      } else {
+        await resolvePaymentRecord(resolving.id, outcome, txid);
+      }
       toast.success(
         outcome === "broadcast"
           ? "Recorded as broadcast — bounty marked paid"
@@ -92,78 +101,84 @@ export function PaymentRecordsTable({ records }: { records: PaymentRecord[] }) {
             </tr>
           </thead>
           <tbody>
-            {records.map((record) => (
-              <tr key={record.id} className="border-b last:border-0">
-                <td className="px-3 py-2 max-w-[200px]">
-                  <span className="block truncate font-medium">
-                    {record.bounty?.title ?? record.bountyId}
-                  </span>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {record.bounty?.assigneeUser?.nickname ??
-                    record.bounty?.assigneeUser?.name ??
-                    "—"}
-                </td>
-                <td className="px-3 py-2 font-mono whitespace-nowrap">
-                  {(record.amountZat / 1e8).toFixed(4)} ZEC
-                </td>
-                <td className="px-3 py-2">
-                  <Badge className={STATUS_STYLES[record.status]}>
-                    {record.status}
-                  </Badge>
-                </td>
-                <td className="px-3 py-2 font-mono whitespace-nowrap">
-                  {record.txid ? (
-                    <span className="inline-flex items-center gap-1">
-                      {record.txid.slice(0, 8)}…{record.txid.slice(-8)}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => copy(record.txid!)}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() =>
-                          window.open(
-                            getExplorerUrl(record.txid!, {
-                              chain: record.chain,
-                            }),
-                            "_blank",
-                            "noopener,noreferrer",
-                          )
-                        }
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
+            {records.map((record) => {
+              const canResolve =
+                record.status === "UNKNOWN" ||
+                (record.status === "PENDING" &&
+                  Date.now() - new Date(record.createdAt).getTime() > STALE_MS);
+
+              return (
+                <tr key={record.id} className="border-b last:border-0">
+                  <td className="px-3 py-2 max-w-[200px]">
+                    <span className="block truncate font-medium">
+                      {record.bounty?.title ?? record.bountyId}
                     </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                  {new Date(record.createdAt).toLocaleString()}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {(record.status === "UNKNOWN" ||
-                    record.status === "PENDING") && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      onClick={() => setResolving(record)}
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                      Resolve
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {record.bounty?.assigneeUser?.nickname ??
+                      record.bounty?.assigneeUser?.name ??
+                      "—"}
+                  </td>
+                  <td className="px-3 py-2 font-mono whitespace-nowrap">
+                    {(record.amountZat / 1e8).toFixed(4)} ZEC
+                  </td>
+                  <td className="px-3 py-2">
+                    <Badge className={STATUS_STYLES[record.status]}>
+                      {record.status}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-2 font-mono whitespace-nowrap">
+                    {record.txid ? (
+                      <span className="inline-flex items-center gap-1">
+                        {record.txid.slice(0, 8)}…{record.txid.slice(-8)}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => copy(record.txid!)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() =>
+                            window.open(
+                              getExplorerUrl(record.txid!, {
+                                chain: record.chain,
+                              }),
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </Button>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                    {new Date(record.createdAt).toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {canResolve && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => setResolving(record)}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                        Resolve
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -181,7 +196,8 @@ export function PaymentRecordsTable({ records }: { records: PaymentRecord[] }) {
               <span className="font-mono">
                 {resolving ? (resolving.amountZat / 1e8).toFixed(4) : ""} ZEC
               </span>{" "}
-              around {resolving && new Date(resolving.createdAt).toLocaleString()},
+              around{" "}
+              {resolving && new Date(resolving.createdAt).toLocaleString()},
               then record what you found.
             </DialogDescription>
           </DialogHeader>
