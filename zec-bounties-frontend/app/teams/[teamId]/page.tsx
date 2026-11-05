@@ -2596,7 +2596,10 @@ function TreasuryTab({
               </div>
             )
           ) : teamPaymentRecords.length > 0 ? (
-            <PaymentRecordsTable records={teamPaymentRecords} />
+            <PaymentRecordsTable
+              records={teamPaymentRecords}
+              teamId={team.id}
+            />
           ) : (
             <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center text-sm text-muted-foreground">
               No payout records yet.
