@@ -88,7 +88,7 @@ export default function RootLayout({
         {/* Optional: Meta robots */}
         <meta name="robots" content="index, follow" />
         <meta name="theme-color" content="#0a0a0a" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/apple-icon.png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
