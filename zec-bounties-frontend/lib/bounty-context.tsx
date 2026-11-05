@@ -32,6 +32,7 @@ import type {
 import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
 import { bountyUpdatedAt, mergeBounty } from "./bounty-merge";
+import { signPayoutVote } from "./payout-passkeys";
 
 interface BountyCategory {
   id: number;
@@ -83,6 +84,49 @@ export interface SyncStatus {
   total_blocks_scanned: number;
   total_orchard_outputs_scanned: number;
   total_sapling_outputs_scanned: number;
+}
+
+export interface PayoutRound {
+  id: string;
+  teamId: string | null;
+  chain: "MAIN" | "TEST";
+  bountyIds: string[];
+  items: {
+    bountyId: string;
+    payeeId: string;
+    recipient: string;
+    amountZat: string;
+  }[];
+  totalZat: number;
+  status: "OPEN" | "DECIDED" | "EXECUTED" | "CANCELLED" | "EXPIRED";
+  threshold: number;
+  executorId: string | null;
+  executableAt: string | null;
+  canVote: boolean;
+  approverIds: string[];
+  candidates: {
+    id: string;
+    name?: string;
+    nickname?: string;
+    avatar?: string;
+  }[];
+  expiresAt: string;
+  createdById: string;
+  tally: { candidateId: string; votes: number }[];
+  myVote: string | null;
+}
+
+// Moves the caller's vote locally so the UI updates before the server answers.
+function withMyVote(round: PayoutRound, candidateId: string): PayoutRound {
+  const counts = new Map(round.tally.map((t) => [t.candidateId, t.votes]));
+  if (round.myVote)
+    counts.set(round.myVote, Math.max(0, (counts.get(round.myVote) ?? 1) - 1));
+  counts.set(candidateId, (counts.get(candidateId) ?? 0) + 1);
+  return {
+    ...round,
+    myVote: candidateId,
+    tally: [...counts].map(([id, votes]) => ({ candidateId: id, votes })),
+  };
 }
 
 interface BountyContextType {
@@ -472,6 +516,13 @@ interface BountyContextType {
     batchKey?: string;
     skipped: Array<{ id: string; title: string; reason: string }>;
   }>;
+  payoutRounds: Record<string, PayoutRound>; // keyed by id
+  fetchPayoutRounds: (bountyIds: string[]) => Promise<void>;
+  openPayoutRound: (
+    bountyIds: string[],
+  ) => Promise<{ skipped: { id: string; title?: string; reason: string }[] }>;
+  votePayoutRound: (roundId: string, candidateId: string) => Promise<void>;
+  cancelPayoutRound: (roundId: string) => Promise<void>;
 
   // Favorites
   favoriteTeamIds: Set<string>;
@@ -638,6 +689,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   );
   const [teamPaymentRecords, setTeamPaymentRecords] = useState<PaymentRecord[]>(
     [],
+  );
+  const [payoutRounds, setPayoutRounds] = useState<Record<string, PayoutRound>>(
+    {},
   );
   const [teamBalances, setTeamBalances] = useState<
     Record<string, Balance | null>
@@ -1348,6 +1402,120 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to authorize team payment:", error);
       throw error;
     }
+  };
+
+  const fetchPayoutRounds = async (bountyIds: string[]) => {
+    if (!currentUser || bountyIds.length === 0) return;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/payout-proposals?bountyIds=${bountyIds.join(",")}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch payout rounds");
+      const rounds: PayoutRound[] = await res.json();
+      setPayoutRounds((prev) => {
+        const asked = new Set(bountyIds);
+        const next: Record<string, PayoutRound> = {};
+        // keep rounds unrelated to this fetch; cancelled/expired ones drop out
+        for (const r of Object.values(prev))
+          if (!r.bountyIds.some((id) => asked.has(id))) next[r.id] = r;
+        rounds.forEach((r) => (next[r.id] = r));
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to fetch payout rounds:", error);
+    }
+  };
+
+  const openPayoutRound = async (bountyIds: string[]) => {
+    if (!currentUser) throw new Error("Unauthorized");
+    const res = await fetch(`${backendUrl}/api/payout-proposals`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ bountyIds }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok)
+      throw Object.assign(
+        new Error(json.error || "Failed to open payout round"),
+        {
+          skipped: json.skipped,
+        },
+      );
+    await fetchPayoutRounds(bountyIds);
+    return { skipped: json.skipped ?? [] };
+  };
+
+  const votePayoutRound = async (roundId: string, candidateId: string) => {
+    const prev = payoutRounds[roundId];
+    if (!currentUser || !prev) throw new Error("No open payout round");
+    if (prev.myVote === candidateId) return;
+
+    const executor = prev.candidates.find((c) => c.id === candidateId);
+    const { challengeId, assertion } = await signPayoutVote(
+      prev.id,
+      candidateId,
+      (m) => {
+        const lines = m.items
+          .slice(0, 8)
+          .map(
+            (i) =>
+              `• ${(Number(i.amountZat) / 1e8).toFixed(4)} ZEC → ${i.recipient}`,
+          )
+          .join("\n");
+        return window.confirm(
+          `Approve ${executor ? displayName(executor as any) : "this approver"} to process a batch payout ` +
+            `of ${m.items.length} bount${m.items.length === 1 ? "y" : "ies"} totalling ` +
+            `${(Number(m.totalZat) / 1e8).toFixed(4)} ZEC (${m.chain}):\n\n${lines}` +
+            `${m.items.length > 8 ? `\n…and ${m.items.length - 8} more` : ""}\n\nYour passkey will sign the full list.`,
+        );
+      },
+    );
+
+    setPayoutRounds((p) => ({
+      ...p,
+      [roundId]: withMyVote(prev, candidateId),
+    }));
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/payout-proposals/${roundId}/vote`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ challengeId, assertion }),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to vote");
+      setPayoutRounds((p) => ({
+        ...p,
+        [roundId]: {
+          ...(p[roundId] ?? prev),
+          status: json.status,
+          tally: json.tally,
+          myVote: candidateId,
+        },
+      }));
+      if (json.status !== "OPEN") await fetchPayoutRounds(prev.bountyIds);
+    } catch (error) {
+      setPayoutRounds((p) => ({ ...p, [roundId]: prev })); // rollback
+      throw error;
+    }
+  };
+
+  const cancelPayoutRound = async (roundId: string) => {
+    const round = payoutRounds[roundId];
+    if (!currentUser || !round) throw new Error("No payout round");
+    const res = await fetch(
+      `${backendUrl}/api/payout-proposals/${roundId}/cancel`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      },
+    );
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Failed to cancel round");
+    await fetchPayoutRounds(round.bountyIds);
   };
 
   // Fetch all categories (PUBLIC - no auth required)
@@ -2464,6 +2632,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setSyncStatus(null);
       setSyncStatusError(null);
       setBountyQuota(null);
+      setPayoutRounds({});
     }
   }, [currentUser]);
 
@@ -2844,6 +3013,20 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             }));
             setTeamSyncStatusError(null);
             break;
+
+          case "payout_proposal_updated": {
+            const { id, bountyIds, status, tally } = msg.payload;
+            if (status === "OPEN" && tally) {
+              // Someone else voted: patch counts in place, keep my own vote
+              setPayoutRounds((prev) =>
+                prev[id] ? { ...prev, [id]: { ...prev[id], tally } } : prev,
+              );
+            } else {
+              // Opened, decided, cancelled or expired: need the full round
+              fetchPayoutRounds([bountyIds]);
+            }
+            break;
+          }
 
           case "user_task_access_changed":
             if (msg.payload.userId === currentUser?.id) {
@@ -4443,6 +4626,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         convertUserToHunter,
         convertUserRole,
         authorizeTeamDuePayment,
+        payoutRounds,
+        fetchPayoutRounds,
+        openPayoutRound,
+        votePayoutRound,
+        cancelPayoutRound,
         fetchTeamPaymentRecords,
         teamPaymentRecords,
         leaderboard,

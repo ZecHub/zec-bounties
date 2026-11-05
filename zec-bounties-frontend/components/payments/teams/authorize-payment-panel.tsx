@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,9 +12,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, CheckCircle2, Coins, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { setNymSending } from "@/components/nym-sending-indicator";
+import { PayoutKeysCard } from "@/components/payout-keys-card";
+import { PayoutOpenCard, PayoutRoundCard } from "@/components/payout-round-row";
 import type { Bounty, Team } from "@/lib/types";
 
 export function TeamAuthorizePaymentPanel({
@@ -26,11 +28,26 @@ export function TeamAuthorizePaymentPanel({
   teamBounties: Bounty[];
   onPaid?: (bountyIds: string[]) => void;
 }) {
-  const { authorizeTeamDuePayment } = useBounty();
+  const {
+    authorizeTeamDuePayment,
+    payoutRounds = {},
+    fetchPayoutRounds,
+    isLoading,
+    currentUser,
+  } = useBounty();
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // A round is a batch, so the selection is by round, not by bounty.
+  const [selectedRoundIds, setSelectedRoundIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   // Same stable-key-per-selection pattern as the admin panel, so a double
   // submit of the same payout is caught by the backend's replay guard.
@@ -60,7 +77,7 @@ export function TeamAuthorizePaymentPanel({
   const activeChain = walletChainToBountyChain(team.wallet?.chain);
 
   // Exported bounties are paid outside the app (Export Completed).
-  const eligibleBounties = teamBounties.filter(
+  const payableBounties = teamBounties.filter(
     (b) =>
       b.status === "DONE" &&
       b.isApproved &&
@@ -84,25 +101,57 @@ export function TeamAuthorizePaymentPanel({
     (b) => b.status === "DONE" && !b.isPaid && b.paymentInFlight,
   );
 
-  const toggleOne = (id: string) => {
-    setSelectedIds((prev) => {
+  // isLoading from context is the auth guard; no timeouts
+  const payableKey = payableBounties
+    .map((b) => b.id)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (isLoading || !currentUser || !payableKey) return;
+    fetchPayoutRounds(payableKey.split(","));
+  }, [isLoading, currentUser?.id, payableKey]);
+
+  const bountyById = new Map(teamBounties.map((b) => [b.id, b]));
+  const bountiesOf = (r: { bountyIds: string[] }) =>
+    r.bountyIds.map((id) => bountyById.get(id)).filter((b): b is Bounty => !!b);
+
+  const payableIds = new Set(payableBounties.map((b) => b.id));
+  const rounds = Object.values(payoutRounds).filter((r) =>
+    r.bountyIds.some((id) => payableIds.has(id)),
+  );
+  const coveredIds = new Set(rounds.flatMap((r) => r.bountyIds));
+  const uncovered = payableBounties.filter((b) => !coveredIds.has(b.id));
+
+  // Ready: decided for ME as the executor, and past the lock delay.
+  const isReady = (r: (typeof rounds)[number]) =>
+    r.status === "DECIDED" &&
+    r.executorId === currentUser?.id &&
+    (!r.executableAt || new Date(r.executableAt).getTime() <= now);
+  const readyRounds = rounds.filter(isReady);
+  const waitingRounds = rounds.filter((r) => !isReady(r));
+
+  const selectedRounds = readyRounds.filter((r) => selectedRoundIds.has(r.id));
+  const selectedIds = new Set(selectedRounds.flatMap((r) => r.bountyIds));
+  const totalSelected = selectedRounds.reduce(
+    (sum, r) => sum + r.totalZat / 1e8,
+    0,
+  );
+
+  const toggleOne = (roundId: string) => {
+    setSelectedRoundIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(roundId) ? next.delete(roundId) : next.add(roundId);
       return next;
     });
   };
 
   const toggleAll = () => {
-    if (selectedIds.size === eligibleBounties.length) {
-      setSelectedIds(new Set());
+    if (selectedRoundIds.size === readyRounds.length) {
+      setSelectedRoundIds(new Set());
     } else {
-      setSelectedIds(new Set(eligibleBounties.map((b) => b.id)));
+      setSelectedRoundIds(new Set(readyRounds.map((r) => r.id)));
     }
   };
-
-  const totalSelected = teamBounties
-    .filter((b) => selectedIds.has(b.id))
-    .reduce((sum, b) => sum + b.bountyAmount, 0);
 
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
@@ -129,13 +178,13 @@ export function TeamAuthorizePaymentPanel({
         duration: 12000,
       });
       attemptKey.current = null;
-      setSelectedIds(new Set());
+      setSelectedRoundIds(new Set());
 
       // Report only bounties that were actually paid. `skipped` entries are
       // matched by title, since that's what the toast shows.
       const skippedTitles = new Set(result.skipped.map((s) => s.title));
       const paidIds = ids.filter((id) => {
-        const b = teamBounties.find((x) => x.id === id);
+        const b = bountyById.get(id);
         return !!b && !skippedTitles.has(b.title);
       });
       if (paidIds.length > 0) onPaid?.(paidIds);
@@ -150,9 +199,13 @@ export function TeamAuthorizePaymentPanel({
     }
   };
 
-  const hasEligible = eligibleBounties.length > 0;
+  const hasReady = readyRounds.length > 0;
+  const hasAwaiting = uncovered.length > 0 || waitingRounds.length > 0;
   const hasActivity =
-    hasEligible || blockedBounties.length > 0 || inFlightBounties.length > 0;
+    hasReady ||
+    hasAwaiting ||
+    blockedBounties.length > 0 ||
+    inFlightBounties.length > 0;
 
   // Nothing due, nothing blocked, nothing stuck — don't clutter the
   // Treasury tab with an empty card at all.
@@ -165,11 +218,11 @@ export function TeamAuthorizePaymentPanel({
       <div>
         <h3 className="text-sm font-semibold">Payments due</h3>
         <p className="text-xs text-muted-foreground">
-          {hasEligible
-            ? `${eligibleBounties.length} completed ${
-                eligibleBounties.length !== 1 ? "bounties" : "bounty"
-              } awaiting payout`
-            : "Nothing ready to pay out right now"}
+          {hasReady
+            ? `${readyRounds.length} approved ${readyRounds.length !== 1 ? "batches" : "batch"} ready for you to pay`
+            : hasAwaiting
+              ? `${payableBounties.length} completed ${payableBounties.length !== 1 ? "bounties" : "bounty"} awaiting a payout round`
+              : "Nothing ready to pay out right now"}
         </p>
       </div>
 
@@ -222,12 +275,25 @@ export function TeamAuthorizePaymentPanel({
         </div>
       )}
 
-      {hasEligible && (
+      {hasAwaiting && (
+        <div className="space-y-2">
+          <PayoutKeysCard />
+          <p className="text-xs font-medium text-muted-foreground">
+            Awaiting approval
+          </p>
+          {uncovered.length > 0 && <PayoutOpenCard bounties={uncovered} />}
+          {waitingRounds.map((r) => (
+            <PayoutRoundCard key={r.id} round={r} bounties={bountiesOf(r)} />
+          ))}
+        </div>
+      )}
+
+      {hasReady && (
         <>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Checkbox
-                checked={selectedIds.size === eligibleBounties.length}
+                checked={selectedRoundIds.size === readyRounds.length}
                 onCheckedChange={toggleAll}
                 id="team-select-all"
               />
@@ -235,43 +301,50 @@ export function TeamAuthorizePaymentPanel({
                 htmlFor="team-select-all"
                 className="text-sm font-medium cursor-pointer"
               >
-                Select all ({eligibleBounties.length})
+                Select all ({readyRounds.length})
               </label>
             </div>
             {selectedIds.size > 0 && (
               <span className="text-sm text-muted-foreground">
-                {selectedIds.size} selected · {totalSelected.toFixed(4)} ZEC
+                {selectedIds.size} bount{selectedIds.size === 1 ? "y" : "ies"} ·{" "}
+                {totalSelected.toFixed(4)} ZEC
               </span>
             )}
           </div>
 
           <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-            {eligibleBounties.map((bounty) => (
-              <div
-                key={bounty.id}
-                onClick={() => toggleOne(bounty.id)}
-                className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                  selectedIds.has(bounty.id)
-                    ? "border-primary bg-primary/5"
-                    : "hover:bg-muted/50"
-                }`}
-              >
-                <Checkbox
-                  checked={selectedIds.has(bounty.id)}
-                  onCheckedChange={() => toggleOne(bounty.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{bounty.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {bounty.assigneeUser?.name ?? "Unknown assignee"}
-                  </p>
+            {readyRounds.map((round) => {
+              const list = bountiesOf(round);
+              return (
+                <div
+                  key={round.id}
+                  onClick={() => toggleOne(round.id)}
+                  className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                    selectedRoundIds.has(round.id)
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  <Checkbox
+                    checked={selectedRoundIds.has(round.id)}
+                    onCheckedChange={() => toggleOne(round.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      Batch of {round.bountyIds.length} bount
+                      {round.bountyIds.length === 1 ? "y" : "ies"}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {list.map((b) => b.title).join(", ")}
+                    </p>
+                  </div>
+                  <span className="text-sm font-mono font-medium shrink-0">
+                    {(round.totalZat / 1e8).toFixed(4)} ZEC
+                  </span>
                 </div>
-                <span className="text-sm font-mono font-medium shrink-0">
-                  {bounty.bountyAmount.toFixed(4)} ZEC
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <Button
