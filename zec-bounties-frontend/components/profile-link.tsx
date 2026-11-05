@@ -27,11 +27,7 @@ export function ProfileLink({
 
   return (
     <Link
-      href={profileHref({
-        id: user.id,
-        name: user.name,
-        nickname: user.nickname,
-      })}
+      href={profileHref({ id: user.id, nickname: user.nickname })}
       title="View profile"
       className={className ?? "hover:underline hover:text-primary"}
       onClick={(e) => e.stopPropagation()}
