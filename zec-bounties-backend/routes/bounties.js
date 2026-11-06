@@ -187,14 +187,9 @@ async function canViewPrivateBounty(bounty, user) {
   });
   if (teamMember) return true;
 
-  // Community membership = favorited the team (hunters only)
-  if (user.role === "HUNTER") {
-    const fav = await prisma.teamFavorite.findUnique({
-      where: { userId_teamId: { userId: user.id, teamId: bounty.teamId } },
-      select: { userId: true },
-    });
-    return !!fav;
-  }
+  // A favourite is NOT access to a private team's bounties. The team board
+  // (GET /teams/:id/bounties) and POST /teams/:id/favorite no longer treat a
+  // favourite as membership, so neither can this.
   return false;
 }
 
@@ -606,18 +601,6 @@ router.get("/", optionalAuthenticate, async (req, res) => {
                       members: { some: { userId } },
                     },
                   },
-
-                  // Preserve existing hunter access to favorited teams.
-                  ...(req.user?.role === "HUNTER"
-                    ? [
-                        {
-                          team: {
-                            isPrivate: true,
-                            favoritedBy: { some: { userId } },
-                          },
-                        },
-                      ]
-                    : []),
                 ]
               : []),
           ],
@@ -883,15 +866,29 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
     }
 
     if (userIds.length > 0) {
+      let teamEligibility;
+      if (bounty.teamId) {
+        const team = await prisma.team.findUnique({
+          where: { id: bounty.teamId },
+          select: { isPrivate: true },
+        });
+        // A private team is members-only: a favourite ("community") must NOT
+        // make someone eligible to be assigned, mirroring the board and
+        // POST /:teamId/favorite gating. Public teams still allow community
+        // members, matching how the assignee picker is populated.
+        teamEligibility = team?.isPrivate
+          ? { teamMembers: { some: { teamId: bounty.teamId } } }
+          : {
+              OR: [
+                { favoriteTeams: { some: { teamId: bounty.teamId } } },
+                { teamMembers: { some: { teamId: bounty.teamId } } },
+              ],
+            };
+      }
       const where = {
         id: { in: userIds },
         role: { not: "ADMIN" },
-        ...(bounty.teamId && {
-          OR: [
-            { favoriteTeams: { some: { teamId: bounty.teamId } } },
-            { teamMembers: { some: { teamId: bounty.teamId } } },
-          ],
-        }),
+        ...teamEligibility,
       };
       const found = await prisma.user.findMany({
         where,
