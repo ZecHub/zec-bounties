@@ -39,4 +39,68 @@ async function notifyAssignment({ discordUsername, bountyId, bountyTitle }) {
   }
 }
 
-module.exports = { notifyAssignment };
+// Sends notifyAssignment for every current assignee. Used when a bounty reaches IN_PROGRESS
+// outside the assignee routes (e.g. an approved suggestion); the bot ignores repeats.
+async function notifyBountyAssignees(prisma, bountyId) {
+  const bounty = await prisma.bounty.findUnique({
+    where: { id: bountyId },
+    select: {
+      title: true,
+      assignees: { select: { user: { select: { discordUsername: true } } } },
+    },
+  });
+  if (!bounty) return;
+  await Promise.all(
+    bounty.assignees.map((a) =>
+      notifyAssignment({
+        discordUsername: a.user?.discordUsername,
+        bountyId,
+        bountyTitle: bounty.title,
+      }),
+    ),
+  );
+}
+
+// Sends the bot the bounty's status, payment and assignees so it can close channels that
+// are no longer needed.
+async function notifyBountyState(prisma, bountyId) {
+  if (!WEBHOOK_URL || !WEBHOOK_SECRET) return;
+  try {
+    const bounty = await prisma.bounty.findUnique({
+      where: { id: bountyId },
+      select: {
+        status: true,
+        isPaid: true,
+        assignees: {
+          select: { userId: true, user: { select: { discordUsername: true } } },
+        },
+      },
+    });
+    if (!bounty) return;
+    await axios.post(
+      WEBHOOK_URL,
+      {
+        event: "bounty_state",
+        bountyId,
+        status: bounty.status,
+        isPaid: bounty.isPaid === true,
+        assignees: bounty.assignees.map((a) => ({
+          userId: a.userId,
+          discordUsername: a.user?.discordUsername || null,
+        })),
+      },
+      { headers: { "X-Webhook-Secret": WEBHOOK_SECRET } },
+    );
+    console.log(
+      `[discord-notify] state sent (bounty ${bountyId}, ${bounty.status})`,
+    );
+  } catch (err) {
+    console.error(
+      "Discord state webhook call failed:",
+      err.response?.data || err.message,
+    );
+  }
+}
+
+// notifyBountyAssignees and notifyBountyState are used by the bounty, team and transaction routes.
+module.exports = { notifyAssignment, notifyBountyAssignees, notifyBountyState };

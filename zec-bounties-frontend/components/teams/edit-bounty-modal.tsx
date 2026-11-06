@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
-import { Bounty } from "@/lib/types";
+import { Bounty, User } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
+import { IS_DEV } from "@/lib/configENV";
 
 interface EditBountyModalProps {
   bounty: Bounty | null;
@@ -49,7 +50,7 @@ export function TeamsEditBountyModal({
   onOpenChange,
   defaultSection = "details",
 }: EditBountyModalProps) {
-  const { updateBounty, nonAdminUsers } = useBounty();
+  const { updateBounty, fetchTeamDirectory } = useBounty();
 
   const [isSaving, setIsSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<"details" | "assignees">(
@@ -61,12 +62,17 @@ export function TeamsEditBountyModal({
   const [description, setDescription] = useState("");
   const [bountyAmount, setBountyAmount] = useState("");
   const [timeToComplete, setTimeToComplete] = useState("");
-  const [chain, setChain] = useState<"MAIN" | "TEST">("TEST");
+  const [chain, setChain] = useState<"MAIN" | "TEST">("MAIN");
 
   // Assignee picker
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [notifyUsers, setNotifyUsers] = useState(false);
+
+  // This team's community, fetched only while the Assignees tab is open and
+  // cleared on close so it never outlives the modal.
+  const [teamUsers, setTeamUsers] = useState<User[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
 
   // Populate form when bounty changes; also respect defaultSection on re-open
   useEffect(() => {
@@ -79,7 +85,7 @@ export function TeamsEditBountyModal({
         ? new Date(bounty.timeToComplete).toISOString().slice(0, 10)
         : "",
     );
-    setChain(bounty.chain ?? "TEST");
+    setChain(bounty.chain ?? "MAIN");
     // Pre-select existing assignees
     const existingIds = bounty.assignees?.map((a) => a.userId) ?? [];
     setSelectedUserIds(existingIds);
@@ -89,6 +95,39 @@ export function TeamsEditBountyModal({
     setActiveSection(defaultSection);
   }, [bounty, open, defaultSection]);
 
+  // Load this team's community when the Assignees tab is shown.
+  useEffect(() => {
+    if (!open || activeSection !== "assignees" || !bounty?.teamId) return;
+    let cancelled = false;
+    setUsersLoading(true);
+    fetchTeamDirectory(bounty.teamId)
+      .then((list) => {
+        if (!cancelled) setTeamUsers(list);
+      })
+      .finally(() => {
+        if (!cancelled) setUsersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeSection, bounty?.teamId]);
+
+  useEffect(() => {
+    if (!open) setTeamUsers([]);
+  }, [open]);
+
+  // Existing assignees may not be in the community (for example an applicant
+  // who was accepted), so keep them known so their chips render and can be
+  // removed. The directory entry wins when both exist.
+  const knownUsers = useMemo(() => {
+    const map = new Map<string, User>();
+    bounty?.assignees?.forEach((a) =>
+      map.set(a.userId, a.user as unknown as User),
+    );
+    teamUsers.forEach((u) => map.set(u.id, u));
+    return map;
+  }, [bounty?.assignees, teamUsers]);
+
   const toggleUser = (userId: string) => {
     setSelectedUserIds((prev) =>
       prev.includes(userId)
@@ -97,20 +136,28 @@ export function TeamsEditBountyModal({
     );
   };
 
-  const filteredUsers = nonAdminUsers
-    .filter(
-      (u) =>
-        displayName(u).toLowerCase().includes(assigneeSearch.toLowerCase()) ||
-        u.email?.toLowerCase().includes(assigneeSearch.toLowerCase()),
+  // true / false when the server told us, undefined when we don't know.
+  // Unknown is never treated as "missing" so it can't block Save.
+  const hasAddress = (u: User): boolean | undefined => {
+    if (chain === "MAIN") {
+      return u.hasUnifiedAddress ?? (u.UA_address ? true : undefined);
+    }
+    return u.hasShieldedAddress ?? (u.z_address ? true : undefined);
+  };
+  const lacksAddress = (u: User) => hasAddress(u) === false;
+
+  const filteredUsers = teamUsers
+    .filter((u) =>
+      displayName(u).toLowerCase().includes(assigneeSearch.toLowerCase()),
     )
     .sort((a, b) => {
       const aSelected = selectedUserIds.includes(a.id);
       const bSelected = selectedUserIds.includes(b.id);
       if (aSelected !== bSelected) return aSelected ? -1 : 1;
 
-      const aHasUA = !!a.UA_address;
-      const bHasUA = !!b.UA_address;
-      if (aHasUA !== bHasUA) return aHasUA ? -1 : 1;
+      const aHas = hasAddress(a) === true;
+      const bHas = hasAddress(b) === true;
+      if (aHas !== bHas) return aHas ? -1 : 1;
 
       return 0;
     });
@@ -136,9 +183,8 @@ export function TeamsEditBountyModal({
           timeToComplete && timeToComplete !== originalDeadline
             ? new Date(timeToComplete).toISOString()
             : undefined,
-        chain,
+        ...(IS_DEV && chain !== (bounty.chain ?? "MAIN") && { chain }),
         notifyUsers,
-        // Pass userIds for assignees — handled in updateBounty
         ...(assigneesChanged && { userIds: selectedUserIds }),
       } as any);
       onOpenChange(false);
@@ -151,13 +197,11 @@ export function TeamsEditBountyModal({
 
   if (!bounty) return null;
 
-  const selectedUsers = nonAdminUsers.filter((u) =>
-    selectedUserIds.includes(u.id),
-  );
+  const selectedUsers = selectedUserIds
+    .map((id) => knownUsers.get(id))
+    .filter((u): u is User => Boolean(u));
 
-  const selectedUsersWithoutAddress = selectedUsers.filter((u) =>
-    chain === "MAIN" ? !u.UA_address : !u.z_address,
-  );
+  const selectedUsersWithoutAddress = selectedUsers.filter(lacksAddress);
   const hasAddressWarning = selectedUsersWithoutAddress.length > 0;
 
   return (
@@ -271,18 +315,26 @@ export function TeamsEditBountyModal({
                     <Coins className="h-3.5 w-3.5 text-muted-foreground" />
                     Network
                   </Label>
-                  <Select
-                    value={chain}
-                    onValueChange={(v) => setChain(v as "MAIN" | "TEST")}
-                  >
-                    <SelectTrigger id="edit-chain" className="w-full">
-                      <SelectValue placeholder="Select network" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="TEST">Testnet</SelectItem>
-                      <SelectItem value="MAIN">Mainnet</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {IS_DEV ? (
+                    <Select
+                      value={chain}
+                      onValueChange={(v) => setChain(v as "MAIN" | "TEST")}
+                    >
+                      <SelectTrigger id="edit-chain" className="w-full">
+                        <SelectValue placeholder="Select network" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MAIN">Mainnet</SelectItem>
+                        <SelectItem value="TEST">Testnet</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="edit-chain"
+                      value={chain === "MAIN" ? "Mainnet" : "Testnet"}
+                      disabled
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -343,7 +395,7 @@ export function TeamsEditBountyModal({
                       Missing{" "}
                       {chain === "MAIN"
                         ? "Unified Address (UA)"
-                        : "Transparent Address (TA)"}
+                        : "Shielded Address (z)"}
                     </p>
                     <p className="text-yellow-700 dark:text-yellow-300 text-xs">
                       {selectedUsersWithoutAddress
@@ -364,7 +416,7 @@ export function TeamsEditBountyModal({
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
-                  placeholder="Search by name or email..."
+                  placeholder="Search by name..."
                   value={assigneeSearch}
                   onChange={(e) => setAssigneeSearch(e.target.value)}
                   className="pl-9"
@@ -373,14 +425,21 @@ export function TeamsEditBountyModal({
 
               {/* User list */}
               <div className="border rounded-lg overflow-hidden divide-y">
-                {filteredUsers.length === 0 ? (
+                {usersLoading ? (
+                  <div className="py-10 flex justify-center text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : filteredUsers.length === 0 ? (
                   <div className="py-10 text-center text-sm text-muted-foreground">
                     <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    No users found
+                    {bounty.teamId
+                      ? "No community members found"
+                      : "This bounty isn't linked to a team"}
                   </div>
                 ) : (
                   filteredUsers.map((user) => {
                     const selected = selectedUserIds.includes(user.id);
+                    const addressOk = hasAddress(user);
                     return (
                       <button
                         key={user.id}
@@ -403,11 +462,8 @@ export function TeamsEditBountyModal({
                           <p className="text-sm font-medium truncate">
                             {displayName(user)}
                           </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {user.email}
-                          </p>
                           {chain === "MAIN" ? (
-                            user.UA_address ? (
+                            addressOk ? (
                               <span className="text-green-600 flex items-center gap-0.5 shrink-0 text-xs">
                                 <CheckCircle2 className="h-3 w-3" /> UA set
                               </span>
@@ -416,7 +472,7 @@ export function TeamsEditBountyModal({
                                 <AlertTriangle className="h-3 w-3" /> No UA
                               </span>
                             )
-                          ) : user.z_address ? (
+                          ) : addressOk ? (
                             <span className="text-blue-600 flex items-center gap-0.5 shrink-0 text-xs">
                               <CheckCircle2 className="h-3 w-3" /> TA set
                             </span>

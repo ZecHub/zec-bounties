@@ -9,10 +9,16 @@ export function setNymSending(open: boolean) {
   window.dispatchEvent(new CustomEvent(EVENT, { detail: open }));
 }
 
+function formatElapsed(totalSeconds: number) {
+  const m = Math.floor(totalSeconds / 60);
+  return `${m}:${String(totalSeconds % 60).padStart(2, "0")}`;
+}
+
 export function NymSendingBanner() {
   const [open, setOpen] = useState(false);
   const [slow, setSlow] = useState(false);
   const [showZec, setShowZec] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     const onEvent = (e: Event) => {
@@ -26,13 +32,20 @@ export function NymSendingBanner() {
     if (!open) {
       setSlow(false);
       setShowZec(false);
+      setElapsed(0);
       return;
     }
+    const startedAt = Date.now();
     const slowT = setTimeout(() => setSlow(true), 15_000);
     const flip = setInterval(() => setShowZec((v) => !v), 1100);
+    const tick = setInterval(
+      () => setElapsed(Math.floor((Date.now() - startedAt) / 1000)),
+      500,
+    );
     return () => {
       clearTimeout(slowT);
       clearInterval(flip);
+      clearInterval(tick);
     };
   }, [open]);
 
@@ -94,6 +107,17 @@ export function NymSendingBanner() {
       </span>
       <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>
         {slow ? "Still sending via Nym…" : "Sending via Nym…"}
+      </span>
+      <span
+        aria-hidden="true"
+        style={{
+          fontSize: 12,
+          color: "#aaa",
+          fontVariantNumeric: "tabular-nums",
+          minWidth: 32,
+        }}
+      >
+        {formatElapsed(elapsed)}
       </span>
       <span
         style={{

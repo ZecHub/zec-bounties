@@ -14,14 +14,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AlertTriangle, CheckCircle2, Coins, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { setNymSending } from "@/components/nym-sending-indicator";
 import type { Bounty, Team } from "@/lib/types";
 
 export function TeamAuthorizePaymentPanel({
   team,
   teamBounties,
+  onPaid,
 }: {
   team: Team;
   teamBounties: Bounty[];
+  onPaid?: (bountyIds: string[]) => void;
 }) {
   const { authorizeTeamDuePayment } = useBounty();
 
@@ -56,12 +59,14 @@ export function TeamAuthorizePaymentPanel({
 
   const activeChain = walletChainToBountyChain(team.wallet?.chain);
 
+  // Exported bounties are paid outside the app (Export Completed).
   const eligibleBounties = teamBounties.filter(
     (b) =>
       b.status === "DONE" &&
       b.isApproved &&
       !b.isPaid &&
       !b.paymentInFlight &&
+      !b.exportedAt &&
       b.chain === activeChain,
   );
 
@@ -71,6 +76,7 @@ export function TeamAuthorizePaymentPanel({
       b.isApproved &&
       !b.isPaid &&
       !b.paymentInFlight &&
+      !b.exportedAt &&
       b.chain !== activeChain,
   );
 
@@ -101,7 +107,9 @@ export function TeamAuthorizePaymentPanel({
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
     setIsProcessing(true);
+    setNymSending(true);
     const ids = Array.from(selectedIds);
+    const startedAt = Date.now();
     try {
       const result = await authorizeTeamDuePayment(
         team.id,
@@ -111,7 +119,7 @@ export function TeamAuthorizePaymentPanel({
       const txid = result.txids[0];
       toast.success("Payment sent", {
         description:
-          `${result.paidCount} bounty payment(s) sent` +
+          `${result.paidCount} bounty payment(s) sent in ${Math.round((Date.now() - startedAt) / 1000)}s` +
           (txid ? ` — tx ${txid.slice(0, 12)}…` : "") +
           (result.skipped.length > 0
             ? ` ${result.skipped.length} skipped: ${result.skipped
@@ -122,6 +130,15 @@ export function TeamAuthorizePaymentPanel({
       });
       attemptKey.current = null;
       setSelectedIds(new Set());
+
+      // Report only bounties that were actually paid. `skipped` entries are
+      // matched by title, since that's what the toast shows.
+      const skippedTitles = new Set(result.skipped.map((s) => s.title));
+      const paidIds = ids.filter((id) => {
+        const b = teamBounties.find((x) => x.id === id);
+        return !!b && !skippedTitles.has(b.title);
+      });
+      if (paidIds.length > 0) onPaid?.(paidIds);
     } catch (error: any) {
       const [title, ...rest] = error.message?.split(": ") ?? [];
       const description =
@@ -129,6 +146,7 @@ export function TeamAuthorizePaymentPanel({
       toast.error(title || "Payment failed", { description, duration: 8000 });
     } finally {
       setIsProcessing(false);
+      setNymSending(false);
     }
   };
 
@@ -148,8 +166,8 @@ export function TeamAuthorizePaymentPanel({
         <h3 className="text-sm font-semibold">Payments due</h3>
         <p className="text-xs text-muted-foreground">
           {hasEligible
-            ? `${eligibleBounties.length} completed bounty${
-                eligibleBounties.length !== 1 ? "ies" : ""
+            ? `${eligibleBounties.length} completed ${
+                eligibleBounties.length !== 1 ? "bounties" : "bounty"
               } awaiting payout`
             : "Nothing ready to pay out right now"}
         </p>

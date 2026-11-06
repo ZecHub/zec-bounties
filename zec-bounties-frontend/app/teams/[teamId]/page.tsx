@@ -12,10 +12,11 @@ import type {
   TeamFavorite,
   TeamVerificationStatus,
   SyncStatus,
+  BountyStatus,
 } from "@/lib/types";
 import { getUserRole } from "../page";
 import { TeamsNewBountyModal } from "@/components/teams/new-bounty-modal";
-import { BountyDetailModal } from "@/components/teams/bounty-detail-modal";
+import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { TeamNavbar } from "@/components/layout/teams/navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Plus, UserPlus, X } from "lucide-react";
 import { confirmedTotal, fmt } from "@/lib/utils";
 import { TeamBanner } from "@/components/teams/team-banner";
+import { NymSendingBanner } from "@/components/nym-sending-indicator";
 import {
   Table,
   TableBody,
@@ -71,6 +73,7 @@ import {
   Activity,
   AlertCircle,
   XIcon,
+  Download,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { FaXTwitter } from "react-icons/fa6";
@@ -93,6 +96,15 @@ import {
 } from "@/components/ui/select";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { TeamAuthorizePaymentPanel } from "@/components/payments/teams/authorize-payment-panel";
+import { ExportCompletedModal } from "@/components/payments/export-completed-modal";
+import {
+  SyncStatusMenu,
+  RescanButton,
+  useRescanCooldown,
+} from "@/components/layout/nav-parts";
+import { toast } from "sonner";
+import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
+import { ProfileLink } from "@/components/profile-link";
 
 type Tab =
   | "Overview"
@@ -309,6 +321,10 @@ export default function TeamConsolePage() {
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> All teams
         </Button>
 
+        <div className="mb-4 flex justify-center empty:hidden">
+          <NymSendingBanner />
+        </div>
+
         <TeamBanner
           teamId={team.id}
           bannerUrl={team.banner}
@@ -467,37 +483,6 @@ function statusDotColor(status: Bounty["status"]) {
   }
 }
 
-function EmptyTxState({
-  onRefresh,
-  loading,
-}: {
-  onRefresh: () => void;
-  loading: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
-      <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-      <p className="text-sm text-muted-foreground">
-        No transactions loaded yet.
-      </p>
-      <Button
-        size="sm"
-        variant="outline"
-        className="mt-3 gap-2"
-        onClick={onRefresh}
-        disabled={loading}
-      >
-        {loading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <RefreshCw className="h-3.5 w-3.5" />
-        )}
-        Refresh
-      </Button>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Overview tab — small local presentational helpers kept here so the table
 // and both dialogs render pending/approved/rejected state the same way
@@ -553,6 +538,132 @@ function CountPill({
         emptyLabel
       )}
     </button>
+  );
+}
+
+function TeamBountyActionsMenu({
+  bounty,
+  pendingApps,
+  pendingSubs,
+  showApproval,
+  onView,
+  onEdit,
+  onReviewSuggestion,
+  onStatusChange,
+  onApprovalChange,
+  onViewApplications,
+  onViewSubmissions,
+  onCancel,
+}: {
+  bounty: Bounty;
+  pendingApps: number;
+  pendingSubs: number;
+  showApproval: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onReviewSuggestion: () => void;
+  onStatusChange: (status: BountyStatus) => void;
+  onApprovalChange: (approved: boolean) => void;
+  onViewApplications: () => void;
+  onViewSubmissions: () => void;
+  onCancel: () => void;
+}) {
+  const statusItems: { status: BountyStatus; label: string }[] = [
+    { status: "TO_DO", label: "Set To Do" },
+    { status: "IN_PROGRESS", label: "Set In Progress" },
+    { status: "IN_REVIEW", label: "Set In Review" },
+    { status: "DONE", label: "Mark as Done" },
+  ];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label={`Actions for ${bounty.title}`}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem onClick={onView}>
+          <Eye className="mr-2 h-4 w-4" />
+          View Details
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onEdit}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Edit Bounty
+        </DropdownMenuItem>
+        {bounty.suggestionReviewStatus === "PENDING" && (
+          <DropdownMenuItem onClick={onReviewSuggestion}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Review Suggestion
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+        {statusItems.map(({ status, label }) => (
+          <DropdownMenuItem key={status} onClick={() => onStatusChange(status)}>
+            <span
+              className={`mr-2 h-2 w-2 rounded-full ${statusDotColor(status)}`}
+            />
+            {label}
+          </DropdownMenuItem>
+        ))}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Manage</DropdownMenuLabel>
+        <DropdownMenuItem onClick={onViewApplications}>
+          <Users className="mr-2 h-4 w-4" />
+          View Applications
+          {pendingApps > 0 && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {pendingApps}
+            </span>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onViewSubmissions}>
+          <Upload className="mr-2 h-4 w-4" />
+          Review Submissions
+          {pendingSubs > 0 && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {pendingSubs}
+            </span>
+          )}
+        </DropdownMenuItem>
+
+        {showApproval && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Approval</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => onApprovalChange(true)}
+              disabled={bounty.isApproved}
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Approve Bounty
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onApprovalChange(false)}
+              disabled={!bounty.isApproved}
+              className="text-destructive"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              Reject Bounty
+            </DropdownMenuItem>
+          </>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onCancel} className="text-destructive">
+          <XCircle className="mr-2 h-4 w-4" />
+          Cancel Bounty
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -613,6 +724,9 @@ function OverviewTab({
     reviewWorkSubmission,
     rejectOtherSubmissions,
     teamActivityVersion,
+    updateBountyStatus,
+    updateBounty,
+    approveBounty,
   } = useBounty();
 
   const [applications, setApplications] = useState<BountyApplication[]>([]);
@@ -622,7 +736,11 @@ function OverviewTab({
   const [isManagingSubmissions, setIsManagingSubmissions] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [editingBounty, setEditingBounty] = useState<Bounty | null>(null);
-  const [reviewingSuggestion, setReviewingSuggestion] = useState<Bounty | null>(null);
+  const [reviewingSuggestion, setReviewingSuggestion] = useState<Bounty | null>(
+    null,
+  );
+  const [viewingBounty, setViewingBounty] = useState<Bounty | null>(null);
+  const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
 
@@ -722,6 +840,65 @@ function OverviewTab({
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleStatusChange = async (
+    bountyId: string,
+    newStatus: BountyStatus,
+  ) => {
+    if (newStatus !== "DONE") {
+      updateBountyStatus(bountyId, newStatus);
+      return;
+    }
+
+    const bounty = teamBounties.find((b) => b.id === bountyId);
+    if (!bounty) return;
+
+    const assigneeCount = bounty.assignees?.length ?? 0;
+
+    if (assigneeCount === 0) {
+      const hasLegacyAssignee = !!bounty.assigneeUser;
+      const createdByHunter = bounty.createdByUser?.role === "HUNTER";
+
+      if (hasLegacyAssignee && createdByHunter) {
+        try {
+          await updateBountyStatus(bountyId, "DONE");
+        } catch (err) {
+          console.error(err);
+        }
+        return;
+      }
+
+      toast.error("Cannot mark as done", {
+        description:
+          "This bounty has no assignees. Assign at least one person before marking it done.",
+      });
+      return;
+    }
+
+    if (assigneeCount === 1) {
+      try {
+        await updateBountyStatus(bountyId, "DONE");
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setWinnerBounty(bounty);
+    }
+  };
+
+  const handleWinnerConfirm = async (bountyId: string, winnerId: string) => {
+    await updateBountyStatus(bountyId, "DONE", winnerId);
+    try {
+      await updateBounty(bountyId, { userIds: [winnerId] } as any);
+    } catch (err) {
+      console.error("Failed to trim assignees to winner:", err);
+    }
+    setWinnerBounty(null);
+  };
+
+  const handleApprovalChange = (bountyId: string, approved: boolean) => {
+    approveBounty(bountyId, approved);
   };
 
   return (
@@ -964,47 +1141,28 @@ function OverviewTab({
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right pr-4 sm:pr-6">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Manage</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => setEditingBounty(bounty)}
-                            >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit bounty
-                            </DropdownMenuItem>
-                            {bounty.suggestionReviewStatus === "PENDING" && (
-                              <DropdownMenuItem
-                                onClick={() => setReviewingSuggestion(bounty)}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                Review suggestion
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() => openApplications(bounty.id)}
-                            >
-                              <Users className="h-4 w-4 mr-2" />
-                              View applications
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => openSubmissions(bounty.id)}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Review submissions
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <TeamBountyActionsMenu
+                          bounty={bounty}
+                          pendingApps={pendingApps}
+                          pendingSubs={pendingSubs}
+                          showApproval={currentUser?.role === "ADMIN"}
+                          onView={() => setViewingBounty(bounty)}
+                          onEdit={() => setEditingBounty(bounty)}
+                          onReviewSuggestion={() =>
+                            setReviewingSuggestion(bounty)
+                          }
+                          onStatusChange={(status) =>
+                            handleStatusChange(bounty.id, status)
+                          }
+                          onApprovalChange={(approved) =>
+                            handleApprovalChange(bounty.id, approved)
+                          }
+                          onViewApplications={() => openApplications(bounty.id)}
+                          onViewSubmissions={() => openSubmissions(bounty.id)}
+                          onCancel={() =>
+                            handleStatusChange(bounty.id, "CANCELLED")
+                          }
+                        />
                       </TableCell>
                     )}
                   </TableRow>
@@ -1039,6 +1197,23 @@ function OverviewTab({
         onOpenChange={(open) => {
           if (!open) setReviewingSuggestion(null);
         }}
+      />
+
+      <BountyDetailModal
+        bounty={viewingBounty}
+        open={!!viewingBounty}
+        onOpenChange={(open) => {
+          if (!open) setViewingBounty(null);
+        }}
+      />
+
+      <SelectWinnerModal
+        bounty={winnerBounty}
+        open={!!winnerBounty}
+        onOpenChange={(open) => {
+          if (!open) setWinnerBounty(null);
+        }}
+        onConfirm={handleWinnerConfirm}
       />
 
       {/* ── Applications dialog ── */}
@@ -1079,23 +1254,35 @@ function OverviewTab({
                   className="border rounded-lg px-3.5 py-3"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <Avatar className="h-8 w-8 flex-shrink-0 border">
-                        <AvatarImage
-                          src={
-                            application.applicantUser?.avatar ||
-                            "/placeholder-user.jpg"
-                          }
-                        />
-                        <AvatarFallback className="text-[11px]">
-                          {displayName(application.applicantUser)[0]}
-                        </AvatarFallback>
-                      </Avatar>
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <ProfileLink
+                        user={application.applicantUser}
+                        className="inline-flex flex-shrink-0"
+                        newTab
+                      >
+                        <Avatar className="h-8 w-8 flex-shrink-0 border">
+                          <AvatarImage
+                            src={
+                              application.applicantUser?.avatar ||
+                              "/placeholder-user.jpg"
+                            }
+                          />
+                          <AvatarFallback className="text-[11px]">
+                            {displayName(application.applicantUser)[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                      </ProfileLink>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium leading-tight truncate">
-                          {displayName(application.applicantUser)}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <ProfileLink
+                          user={application.applicantUser}
+                          className="block min-w-0 hover:underline"
+                          newTab
+                        >
+                          <p className="truncate text-sm font-medium leading-tight">
+                            {displayName(application.applicantUser)}
+                          </p>
+                        </ProfileLink>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           Applied{" "}
                           {format(
                             new Date(application.appliedAt),
@@ -1203,23 +1390,35 @@ function OverviewTab({
                   className="border rounded-lg px-3.5 py-3 space-y-3"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <Avatar className="h-8 w-8 flex-shrink-0 border">
-                        <AvatarImage
-                          src={
-                            submission.submitterUser?.avatar ||
-                            "/placeholder-user.jpg"
-                          }
-                        />
-                        <AvatarFallback className="text-[11px]">
-                          {displayName(submission.submitterUser)[0]}
-                        </AvatarFallback>
-                      </Avatar>
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <ProfileLink
+                        user={submission.submitterUser}
+                        className="inline-flex flex-shrink-0"
+                        newTab
+                      >
+                        <Avatar className="h-8 w-8 flex-shrink-0 border">
+                          <AvatarImage
+                            src={
+                              submission.submitterUser?.avatar ||
+                              "/placeholder-user.jpg"
+                            }
+                          />
+                          <AvatarFallback className="text-[11px]">
+                            {displayName(submission.submitterUser)[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                      </ProfileLink>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium leading-tight truncate">
-                          {displayName(submission.submitterUser)}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <ProfileLink
+                          user={submission.submitterUser}
+                          className="block min-w-0 hover:underline"
+                          newTab
+                        >
+                          <p className="truncate text-sm font-medium leading-tight">
+                            {displayName(submission.submitterUser)}
+                          </p>
+                        </ProfileLink>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           {format(
                             new Date(submission.submittedAt),
                             "MMM d, yyyy",
@@ -1906,7 +2105,8 @@ function TeamWalletModal({
   onOpenChange: (v: boolean) => void;
   team: Team;
 }) {
-  const { createTeamWallet, importTeamWallet, deleteTeamWallet } = useBounty();
+  const { createTeamWallet, importTeamWallet, deleteTeamWallet, fetchTeams } =
+    useBounty();
   const [tab, setTab] = useState<"new" | "import">("new");
   const [accountName, setAccountName] = useState("");
   const [chain, setChain] = useState("mainnet");
@@ -1935,39 +2135,39 @@ function TeamWalletModal({
   const doSubmit = async () => {
     setLoading(true);
     setError(null);
-    try {
-      // Backend 409s creating/importing a wallet when one already exists —
-      // remove the current one first if we're replacing.
-      if (team.wallet) {
-        await deleteTeamWallet(team.id);
-      }
+    const replace = !!team.wallet;
 
+    try {
       if (tab === "import") {
         await importTeamWallet(team.id, {
           accountName: accountName.trim(),
           seedPhrase: seedPhrase.trim(),
           chain,
           serverUrl,
-          ...(birthdayHeight && { birthdayHeight: parseInt(birthdayHeight) }),
+          replace,
+          ...(birthdayHeight && {
+            birthdayHeight: parseInt(birthdayHeight, 10),
+          }),
         });
       } else {
         await createTeamWallet(team.id, {
           accountName: accountName.trim(),
           chain,
           serverUrl,
+          replace,
         });
       }
-
       onOpenChange(false);
+      try {
+        localStorage.setItem(`walletImportedAt:${team.id}`, String(Date.now()));
+      } catch {}
+      window.location.reload();
     } catch (err: any) {
-      // If we already deleted the old wallet but creation/import failed,
-      // the team is now walletless — say so plainly.
-      setError(
-        team.wallet
-          ? `${err.message}. The previous wallet was removed — try again.`
-          : err.message,
-      );
+      setError(err?.message || "Something went wrong");
     } finally {
+      // Re-sync with the server either way, so the UI shows whether the old
+      // wallet is still there after a failed replace.
+      await fetchTeams().catch(() => {});
       setLoading(false);
       setConfirmReplace(false);
     }
@@ -1980,6 +2180,10 @@ function TeamWalletModal({
     if (tab === "import") {
       const words = seedPhrase.trim().split(/\s+/).filter(Boolean);
       if (words.length !== 24) return setError("Seed phrase must be 24 words");
+
+      if (birthdayHeight && !/^\d+$/.test(birthdayHeight.trim())) {
+        return setError("Birthday height must be a whole number");
+      }
     }
 
     if (team.wallet && !confirmReplace) {
@@ -2008,7 +2212,8 @@ function TeamWalletModal({
                 This will permanently delete the current wallet (
                 <strong>{team.wallet.accountName}</strong>) and its transaction
                 data, then {tab === "import" ? "import" : "create"} the new one.
-                This can't be undone.
+                Make sure you have the old wallet's seed phrase backed up. This
+                can't be undone.
               </p>
             </div>
             {error && <p className="text-xs text-destructive">{error}</p>}
@@ -2019,6 +2224,7 @@ function TeamWalletModal({
               {(["new", "import"] as const).map((t) => (
                 <button
                   key={t}
+                  type="button"
                   onClick={() => setTab(t)}
                   className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     tab === t
@@ -2162,36 +2368,6 @@ function TeamWalletModal({
   );
 }
 
-function TeamSyncStatusBadge({ status }: { status: SyncStatus | null }) {
-  if (!status) return null;
-  const pct =
-    status.percentage_total_blocks_scanned ||
-    status.percentage_total_outputs_scanned;
-  const done = pct === 100 || status.in_progress === false;
-  return (
-    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono">
-      {done ? (
-        <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-      ) : (
-        <Activity className="h-3 w-3 text-amber-400 animate-pulse shrink-0" />
-      )}
-      <span className="text-muted-foreground">Sync</span>
-      <span className={done ? "text-emerald-500" : "text-amber-400"}>
-        {pct != null
-          ? `${Number(pct).toFixed(2)}%`
-          : status.in_progress
-            ? "…"
-            : "—"}
-      </span>
-      {status.synced_blocks != null && status.total_blocks != null && (
-        <span className="text-muted-foreground/60">
-          ({status.synced_blocks}/{status.total_blocks})
-        </span>
-      )}
-    </div>
-  );
-}
-
 function TreasuryTab({
   team,
   teamBounties,
@@ -2202,8 +2378,8 @@ function TreasuryTab({
   canManage: boolean;
 }) {
   const {
-    fetchTeamWalletBalance,
     deleteTeamWallet,
+    fetchTeamBounties,
     fetchTeamTransactionHashes,
     teamPaymentIDs,
     teamPaymentChain,
@@ -2218,36 +2394,42 @@ function TreasuryTab({
     teamSyncStatusError,
     fetchTeamSyncStatus,
   } = useBounty();
-  const [balance, setBalance] = useState<any>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [deletingWallet, setDeletingWallet] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
+  const [treasuryView, setTreasuryView] = useState<
+    "due" | "transactions" | "wallet"
+  >("due");
+  // Optimistically hide bounties that were just paid, until the refetch lands.
+  const [paidBountyIds, setPaidBountyIds] = useState<Set<string>>(new Set());
+
+  // No wallet → only the Wallet view makes sense (it holds the setup prompt).
+  // Non-managers can't authorize payments, so they only get Transactions.
+  const activeView = !team.wallet
+    ? "wallet"
+    : canManage
+      ? treasuryView
+      : "transactions";
 
   const syncStatus = teamSyncStatus[team.id] ?? null;
-
-  const loadBalance = () => {
-    if (!team.wallet) return;
-    setBalanceLoading(true);
-    fetchTeamWalletBalance(team.id)
-      .then(setBalance)
-      .finally(() => setBalanceLoading(false));
-  };
+  const rescanHidden = useRescanCooldown(`walletImportedAt:${team.id}`);
 
   useEffect(() => {
-    loadBalance();
-  }, [team.id, team.wallet]);
-
-  // Auto-load transaction history + payment records as soon as the Treasury
-  // tab is viewed with a wallet present — no more waiting on a manual click.
-  useEffect(() => {
-    if (!team.wallet) return;
+    if (!team.wallet || activeView !== "transactions") return;
     fetchTeamTransactionHashes(team.id);
     fetchTeamPaymentRecords(team.id);
-  }, [team.id, team.wallet]);
+  }, [team.id, team.wallet, activeView]);
 
+  const handlePaid = (bountyIds: string[]) => {
+    setPaidBountyIds((prev) => new Set([...prev, ...bountyIds]));
+    setTxSubTab("wallet");
+    setTreasuryView("transactions");
+    // Transactions/payment records refetch via the activeView effect.
+    fetchTeamBounties(team.id).catch(() => {});
+  };
   const handleFetchTransactions = async () => {
     setIsFetchingTxHashes(true);
     try {
@@ -2257,10 +2439,6 @@ function TreasuryTab({
     } finally {
       setIsFetchingTxHashes(false);
     }
-  };
-
-  const handleRescan = async () => {
-    await rescanTeamWallet(team.id);
   };
 
   const handleSyncStatus = async () => {
@@ -2282,192 +2460,219 @@ function TreasuryTab({
     setDeletingWallet(true);
     try {
       await deleteTeamWallet(team.id);
-      setBalance(null);
+      window.location.reload();
     } finally {
       setDeletingWallet(false);
     }
   };
 
-  if (!team.wallet) {
-    return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-muted/20 px-8 py-14 text-center">
-        <span className="text-sm font-medium text-muted-foreground">
-          No wallet set up
-        </span>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Set up a shared wallet so bounty payouts for this team can be
-          authorized on completion.
-        </p>
-        {canManage && (
-          <Button className="mt-1" onClick={() => setWalletModalOpen(true)}>
-            Set up wallet
-          </Button>
-        )}
-
-        <TeamWalletModal
-          open={walletModalOpen}
-          onOpenChange={setWalletModalOpen}
-          team={team}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {canManage && (
-        <TeamAuthorizePaymentPanel team={team} teamBounties={teamBounties} />
+        <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1 w-fit">
+          {(
+            [
+              ["due", "Due payments"],
+              ["transactions", "Transactions"],
+              ["wallet", "Wallet"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTreasuryView(key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                activeView === key
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       )}
-      <div className="rounded-xl border bg-card p-6">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <div className="text-xs text-muted-foreground">Account</div>
-            <div className="mt-1 text-sm font-medium">
-              {team.wallet.accountName}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className="text-[11px]">
-              {team.wallet.chain}
-            </Badge>
 
-            {syncStatus || teamSyncStatusError ? (
-              teamSyncStatusError ? (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/60 border text-xs font-mono text-destructive">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span>Error</span>
-                </div>
-              ) : (
-                <TeamSyncStatusBadge status={syncStatus} />
-              )
-            ) : null}
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={handleSyncStatus}
-              disabled={isSyncing}
-              title="Refresh sync status"
-            >
-              {isSyncing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Activity className="h-3.5 w-3.5" />
-              )}
-            </Button>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={loadBalance}
-              disabled={balanceLoading}
-              title="Refresh balance"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${balanceLoading ? "animate-spin" : ""}`}
-              />
-            </Button>
-            {canManage && (
-              <>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={handleRescan}
-                  disabled={teamRescanLoading}
-                  title="Rescan wallet"
-                >
-                  {teamRescanLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <FolderSync className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => setWalletModalOpen(true)}
-                >
-                  Replace
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
-                  onClick={handleDeleteWallet}
-                  disabled={deletingWallet}
-                >
-                  {deletingWallet ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    "Remove"
-                  )}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-6 text-3xl font-bold text-primary">
-          {balanceLoading ? "…" : balance ? fmt(confirmedTotal(balance)) : "—"}
-        </div>
-        {teamRescanStatus && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {teamRescanStatus}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <div className="mb-3 flex items-center gap-1 rounded-lg border bg-muted/40 p-1 w-fit">
-          <button
-            onClick={() => setTxSubTab("wallet")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-              txSubTab === "wallet"
-                ? "bg-background shadow-sm text-foreground"
-                : "text-muted-foreground"
-            }`}
-          >
-            Wallet history ({teamPaymentIDs?.length || 0})
-          </button>
-          <button
-            onClick={() => setTxSubTab("payouts")}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-              txSubTab === "payouts"
-                ? "bg-background shadow-sm text-foreground"
-                : "text-muted-foreground"
-            }`}
-          >
-            Bounty payouts ({teamPaymentRecords.length})
-          </button>
-        </div>
-
-        {txSubTab === "wallet" ? (
-          teamPaymentIDs && teamPaymentIDs.length > 0 ? (
-            <PaymentTxIdsTable
-              paymentIDs={teamPaymentIDs}
-              chain={teamPaymentChain}
-              serverUrl={teamPaymentServerUrl}
-            />
-          ) : (
-            <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
-              <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">
-                No transactions found for this wallet yet.
+      {activeView === "due" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Payments due</h2>
+              <p className="text-xs text-muted-foreground">
+                Completed bounties awaiting payout
               </p>
             </div>
-          )
-        ) : teamPaymentRecords.length > 0 ? (
-          <PaymentRecordsTable records={teamPaymentRecords} />
-        ) : (
-          <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center text-sm text-muted-foreground">
-            No payout records yet.
+            {team.payoutBy === "TEAM" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowExportModal(true)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Completed
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Payouts for this team are handled by an admin.
+              </p>
+            )}
           </div>
-        )}
-      </div>
+          <TeamAuthorizePaymentPanel
+            team={team}
+            teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
+            onPaid={handlePaid}
+          />
+        </div>
+      )}
+
+      {activeView === "transactions" && (
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1 w-fit">
+              <button
+                onClick={() => setTxSubTab("wallet")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                  txSubTab === "wallet"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground"
+                }`}
+              >
+                Wallet history ({teamPaymentIDs?.length || 0})
+              </button>
+              <button
+                onClick={() => setTxSubTab("payouts")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+                  txSubTab === "payouts"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground"
+                }`}
+              >
+                Bounty payouts ({teamPaymentRecords.length})
+              </button>
+            </div>
+
+            {txSubTab === "payouts" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                disabled={isFetchingTxHashes}
+                onClick={async () => {
+                  setIsFetchingTxHashes(true);
+                  try {
+                    await Promise.all([
+                      fetchTeamTransactionHashes(team.id),
+                      fetchTeamPaymentRecords(team.id),
+                    ]);
+                  } finally {
+                    setIsFetchingTxHashes(false);
+                  }
+                }}
+              >
+                {isFetchingTxHashes ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Refresh
+              </Button>
+            )}
+          </div>
+
+          {txSubTab === "wallet" ? (
+            teamPaymentIDs && teamPaymentIDs.length > 0 ? (
+              <PaymentTxIdsTable
+                paymentIDs={teamPaymentIDs}
+                chain={teamPaymentChain}
+                serverUrl={teamPaymentServerUrl}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center">
+                <RefreshCw className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">
+                  No transactions found for this wallet yet.
+                </p>
+              </div>
+            )
+          ) : teamPaymentRecords.length > 0 ? (
+            <PaymentRecordsTable
+              records={teamPaymentRecords}
+              teamId={team.id}
+            />
+          ) : (
+            <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center text-sm text-muted-foreground">
+              No payout records yet.
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeView === "wallet" &&
+        (team.wallet ? (
+          <div className="space-y-5 rounded-xl border bg-card p-5">
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Wallet details
+            </h3>
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs text-muted-foreground">Account name</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  {team.wallet.accountName}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Chain</dt>
+                <dd className="mt-0.5 text-sm font-medium capitalize">
+                  {team.wallet.chain || "—"}
+                </dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs text-muted-foreground">Server URL</dt>
+                <dd className="mt-0.5 break-all font-mono text-sm">
+                  {team.wallet.serverUrl || "—"}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex justify-end border-t pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDeleteWallet}
+                disabled={deletingWallet}
+                className="text-red-500 border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
+              >
+                {deletingWallet && (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                )}
+                Delete wallet
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-muted/20 px-8 py-14 text-center">
+            <span className="text-sm font-medium text-muted-foreground">
+              No wallet set up
+            </span>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Set up a shared wallet so bounty payouts for this team can be
+              authorized on completion.
+            </p>
+            {canManage && (
+              <Button className="mt-1" onClick={() => setWalletModalOpen(true)}>
+                Import or create wallet
+              </Button>
+            )}
+          </div>
+        ))}
+
+      {team.payoutBy === "TEAM" && (
+        <ExportCompletedModal
+          open={showExportModal}
+          onOpenChange={setShowExportModal}
+          teamId={team.id}
+        />
+      )}
 
       <TeamWalletModal
         open={walletModalOpen}
@@ -2500,6 +2705,10 @@ function SettingsTab({
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description || "");
   const [isPrivate, setIsPrivate] = useState(team.isPrivate);
+  const [payoutBy, setPayoutBy] = useState<"ADMIN" | "TEAM">(
+    team.payoutBy ?? "ADMIN",
+  );
+  const [payoutError, setPayoutError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2650,6 +2859,19 @@ function SettingsTab({
     }
   };
 
+  const handlePayoutChange = async (next: "ADMIN" | "TEAM") => {
+    if (next === payoutBy) return;
+    const prev = payoutBy;
+    setPayoutBy(next);
+    setPayoutError(null);
+    try {
+      await updateTeam(team.id, { payoutBy: next });
+    } catch (err: any) {
+      setPayoutBy(prev);
+      setPayoutError(err.message ?? "Failed to update payout setting");
+    }
+  };
+
   // Small helper for the inline status row under a link field
   const LinkStatus = ({
     error,
@@ -2685,7 +2907,7 @@ function SettingsTab({
           Identity
         </h3>
 
-        {canManage && (
+        {canManage && team.wallet && (
           <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16 border rounded-lg">
               {team.logo && (
@@ -3012,6 +3234,55 @@ function SettingsTab({
                 Save
               </Button>
             </div>
+          )}
+        </section>
+      )}
+
+      {canManage && (
+        <section className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Payouts
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Choose who pays out completed bounties for {team.name}.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              [
+                [
+                  "ADMIN",
+                  "Paid by admin",
+                  "Platform admins export and pay completed bounties.",
+                ],
+                [
+                  "TEAM",
+                  "Paid by our team",
+                  "Your team exports completed bounties and pays them itself.",
+                ],
+              ] as const
+            ).map(([value, title, desc]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => handlePayoutChange(value)}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  payoutBy === value
+                    ? "border-primary bg-primary/5"
+                    : "hover:bg-muted/40"
+                }`}
+              >
+                <div className="text-sm font-medium">{title}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {desc}
+                </div>
+              </button>
+            ))}
+          </div>
+          {payoutError && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <XCircle className="h-3.5 w-3.5" />
+              {payoutError}
+            </p>
           )}
         </section>
       )}
