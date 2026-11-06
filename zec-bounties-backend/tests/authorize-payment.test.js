@@ -126,6 +126,7 @@ beforeEach(() => {
       isApproved: true,
       isPaid: false,
       paymentInFlight: false,
+      exportedAt: null,
       assigneeUser: { id: "u1", UA_address: "u1recipient" },
     },
   ];
@@ -228,5 +229,46 @@ describe("POST /authorize-payment settlement", () => {
     assert.equal(bounties[0].isPaid, false);
     assert.equal(bounties[0].paymentInFlight, false);
     assert.equal(txRows[0].status, "FAILED");
+  });
+
+  it("does not pay a bounty exported for an off-platform payout", async () => {
+    bounties[0].exportedAt = new Date("2026-01-15T12:00:00Z");
+    let sent = false;
+    sendImpl = async () => {
+      sent = true;
+      return { txids: [TXID], error: null, timedOut: false, raw: "{}" };
+    };
+    const { status } = await pay();
+
+    assert.equal(status, 400);
+    assert.equal(sent, false);
+    assert.equal(bounties[0].isPaid, false);
+    assert.equal(bounties[0].paymentInFlight, false);
+  });
+
+  it("does not claim a bounty exported after it was read", async () => {
+    // The export is marked between the eligibility read and the claim.
+    const read = prisma.bounty.findMany;
+    prisma.bounty.findMany = async (args) => {
+      const rows = await read(args);
+      bounties[0].exportedAt = new Date();
+      return rows;
+    };
+    let sent = false;
+    sendImpl = async () => {
+      sent = true;
+      return { txids: [TXID], error: null, timedOut: false, raw: "{}" };
+    };
+    try {
+      const { status, body } = await pay();
+      assert.equal(status, 409);
+      assert.match(body.error, /no longer eligible/);
+    } finally {
+      prisma.bounty.findMany = read;
+    }
+    assert.equal(sent, false);
+    assert.equal(bounties[0].isPaid, false);
+    assert.equal(bounties[0].paymentInFlight, false);
+    assert.equal(txRows.length, 0);
   });
 });

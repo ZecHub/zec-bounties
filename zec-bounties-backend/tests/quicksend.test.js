@@ -133,7 +133,7 @@ describe("commands sharing one zingo process", () => {
     spawned.push(zingo);
 
     // balance rejects on its stderr line; its stdout is still on the way.
-    await assert.rejects(zingo.balance("balance"));
+    await assert.rejects(zingo.balance("balance", 100));
     assert.equal(zingo.tainted, true);
     await assert.rejects(zingo.quicksend([RECIPIENT]), /nothing was sent/);
 

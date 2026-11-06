@@ -5,6 +5,7 @@ const { escapeHtml, formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
   authenticate,
+  isTeamOrAdmin,
   isAdmin,
   optionalAuthenticate,
   signSessionToken,
@@ -14,6 +15,7 @@ const {
   getCache,
   setCache,
   delCache,
+  invalidateUserDirectory,
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
@@ -22,7 +24,12 @@ const {
 const sendMail = require("../utils/sendMail");
 const notifyUser = require("../utils/notifyUser");
 const { notifyNewBounty } = require("../utils/discord/discordNotify");
-const { notifyAssignment } = require("../utils/discord/discordAssignWebhook");
+// Bot notices for In-progress bounties and bounty state changes
+const {
+  notifyAssignment,
+  notifyBountyAssignees,
+  notifyBountyState,
+} = require("../utils/discord/discordAssignWebhook");
 const { REQUIRED_TEAM_VERIFICATIONS } = require("../utils/constants");
 const {
   validateBountyCreate,
@@ -57,6 +64,7 @@ const {
   createBountyWithQuota,
   WeeklyBountyQuotaError,
   requireTaskCreation,
+  validateBountyChain,
 } = require("../utils/bountyHelpers");
 const {
   userIdentityWhere,
@@ -64,6 +72,10 @@ const {
 } = require("../utils/userIdentity");
 const { logActivity, publishActivity } = require("../utils/bountyActivity");
 const { redactPublicUser } = require("../utils/privacy");
+const {
+  ADMIN_EXPORTABLE_BOUNTY,
+  ADMIN_PAYOUT_SCOPE,
+} = require("../utils/exportableBounty");
 
 // ─── Email settings ───────────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -395,8 +407,11 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
       return res.status(400).json({ error: "Invalid targetRepo" });
     }
 
-    if (chain && !["MAIN", "TEST"].includes(chain)) {
-      return res.status(400).json({ error: "Invalid chain value" });
+    const chainError = validateBountyChain(chain);
+    if (chainError) {
+      return res
+        .status(chain === "TEST" ? 403 : 400)
+        .json({ error: chainError });
     }
 
     let team = null;
@@ -851,6 +866,28 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       });
     }
 
+    if (userIds.length > 0) {
+      const where = {
+        id: { in: userIds },
+        role: { not: "ADMIN" },
+        ...(bounty.teamId && {
+          OR: [
+            { favoriteTeams: { some: { teamId: bounty.teamId } } },
+            { teamMembers: { some: { teamId: bounty.teamId } } },
+          ],
+        }),
+      };
+      const found = await prisma.user.findMany({
+        where,
+        select: { id: true, z_address: true, UA_address: true },
+      });
+      if (found.length !== new Set(userIds).size) {
+        return res.status(400).json({
+          error: "Assignees must belong to this team or its community",
+        });
+      }
+    }
+
     const [freshBounty, assignees, existingAssignees] =
       await prisma.$transaction(async (tx) => {
         // Lock the stable parent before replacing children, including an empty roster.
@@ -942,6 +979,9 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
     }
     await invalidateBounty(bountyId);
     res.status(200).json({ assignees });
+
+    // Fire-and-forget Discord state update; an empty roster cancels the bounty
+    notifyBountyState(prisma, bountyId);
 
     // Discord assignment webhook — fire-and-forget, only for newly added assignees
     (async () => {
@@ -1107,6 +1147,9 @@ router.delete("/:id/assignees/:userId", authenticate, async (req, res) => {
     );
     await invalidateBounty(bountyId);
     res.json({ message: "Assignee removed successfully" });
+
+    // The removed assignee's Discord channel can now be closed
+    notifyBountyState(prisma, bountyId);
   } catch (error) {
     console.error("Error removing assignee:", error);
     res.status(500).json({ error: "Failed to remove assignee" });
@@ -1306,6 +1349,12 @@ router.patch("/:id/suggestion-review", authenticate, async (req, res) => {
       bounty.id,
       req.user.id,
     );
+    // Approved suggestions reach IN_PROGRESS without the assignee routes, so notify the bot here
+    if (req.body.action === "approve") {
+      notifyBountyAssignees(prisma, bounty.id).catch((err) =>
+        console.error("Discord in-progress notify failed:", err.message),
+      );
+    }
     return res.json(updated);
   } catch (error) {
     console.error("Failed to review bounty suggestion:", error);
@@ -1413,6 +1462,13 @@ router.patch("/:id/status", authenticate, async (req, res) => {
       req.user.id,
     );
     res.json(updated);
+    // Fire-and-forget Discord notices: assignees on IN_PROGRESS, then the new bounty state
+    if (status === "IN_PROGRESS" && bounty.status !== "IN_PROGRESS") {
+      notifyBountyAssignees(prisma, bountyId).catch((err) =>
+        console.error("Discord in-progress notify failed:", err.message),
+      );
+    }
+    notifyBountyState(prisma, bountyId);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to update bounty status" });
@@ -1875,6 +1931,9 @@ router.patch(
         submission: updatedSubmission,
         bounty: updatedBounty,
       });
+
+      // Approving completes the bounty and rejecting drops the author; both change the bot's view
+      notifyBountyState(prisma, updatedBounty.id);
     } catch (error) {
       console.error("Error reviewing submission:", error);
       res.status(500).json({ error: "Failed to review submission" });
@@ -2196,6 +2255,33 @@ router.get("/users/full", authenticate, isAdmin, async (req, res) => {
   }
 });
 
+router.get("/users/teams", authenticate, isTeamOrAdmin, async (req, res) => {
+  try {
+    const cacheKey = "users:teams";
+    const cached = await getCache(cacheKey);
+    if (cached) return res.json(cached);
+
+    const users = await prisma.user.findMany({
+      where: { role: { not: "ADMIN" } },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        email: true,
+        role: true,
+        avatar: true,
+        z_address: true,
+        UA_address: true,
+      },
+    });
+
+    await setCache(cacheKey, users, TTL.USERS);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.patch(
   "/users/:id/task-access",
   authenticate,
@@ -2261,7 +2347,7 @@ router.patch("/switch-role", authenticate, async (req, res) => {
         UA_address: true,
       },
     });
-    await delCache("users:all");
+    await invalidateUserDirectory();
     const token = signSessionToken(updated);
     res.json({ user: updated, token });
   } catch (error) {
@@ -2792,6 +2878,7 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
     const bounties = await prisma.bounty.findMany({
       where: { isPaid: true, ...(from || to ? { paidAt: dateFilter } : {}) },
       include: {
+        team: { select: { id: true, name: true } },
         assigneeUser: {
           select: USER_SELECT_EXPORT,
         },
@@ -2818,7 +2905,7 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
 router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
   try {
     const bounties = await prisma.bounty.findMany({
-      where: { status: "DONE", chain: "MAIN" },
+      where: ADMIN_EXPORTABLE_BOUNTY,
       include: {
         assigneeUser: {
           select: USER_SELECT_EXPORT,
@@ -2942,6 +3029,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
             status: "DONE",
             isPaid: false,
             exportedAt: null,
+            ...ADMIN_PAYOUT_SCOPE,
           },
         }),
       ],
@@ -2972,6 +3060,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
 // ─── Mark completed bounties as exported (Admin) ─────────────────────────────
 // First-exported-wins: only stamps rows that haven't been exported before, so
 // a later re-export never overwrites the original exportedAt/exportedBy.
+// Only rows the export list offers (EXPORTABLE_BOUNTY) are stamped.
 router.patch(
   "/export-completed/mark-exported",
   authenticate,
@@ -2987,9 +3076,26 @@ router.patch(
 
       const exportedAt = new Date();
       const result = await prisma.bounty.updateMany({
-        where: { id: { in: bountyIds }, exportedAt: null },
+        where: {
+          ...ADMIN_EXPORTABLE_BOUNTY,
+          id: { in: bountyIds },
+          exportedAt: null,
+        },
         data: { exportedAt, exportedBy: req.user.id },
       });
+
+      // Re-read what this request actually stamped. A concurrent in-app
+      // payment (or a second export) can drop rows between the list and
+      // this update; the CSV must only contain the ones we accepted.
+      const stamped = await prisma.bounty.findMany({
+        where: {
+          id: { in: bountyIds },
+          exportedAt,
+          exportedBy: req.user.id,
+        },
+        select: { id: true },
+      });
+      const acceptedIds = stamped.map((b) => b.id);
 
       // exportedAt now feeds unpaidDoneCount in /stats/totals, so that cache
       // is stale the moment this commits — not just the versioned bounty
@@ -2998,7 +3104,7 @@ router.patch(
 
       sendRealtimeUpdate(
         "bounties_exported",
-        { bountyIds, exportedAt },
+        { bountyIds: acceptedIds, exportedAt },
         req.user.id,
       );
 
@@ -3006,6 +3112,7 @@ router.patch(
         message: "Marked as exported",
         newlyMarked: result.count,
         exportedAt,
+        acceptedIds,
       });
     } catch (error) {
       console.error("Error marking bounties exported:", error);
@@ -3106,16 +3213,17 @@ router.put("/:id", authenticate, async (req, res) => {
       select: {
         createdBy: true,
         teamId: true,
+        chain: true,
         status: true,
         isPaid: true,
         paymentAuthorized: true,
         paymentInFlight: true,
+        exportedAt: true,
         dateCreated: true,
         title: true,
         description: true,
         bountyAmount: true,
         timeToComplete: true,
-        status: true,
         isApproved: true,
       },
     });
@@ -3135,6 +3243,18 @@ router.put("/:id", authenticate, async (req, res) => {
       return res.status(400).json({ error: bodyValidation.error });
     }
 
+    const chainChanged =
+      req.body.chain !== undefined && req.body.chain !== existing.chain;
+
+    if (chainChanged) {
+      const chainError = validateBountyChain(req.body.chain);
+      if (chainError) {
+        return res
+          .status(req.body.chain === "TEST" ? 403 : 400)
+          .json({ error: chainError });
+      }
+    }
+
     // `assignee` and `bountyAmount` decide WHO is paid and HOW MUCH, and the
     // payout batch reads them live at send time. A plain bounty creator must
     // not be able to change them — only a global/team admin — and they must be
@@ -3145,8 +3265,10 @@ router.put("/:id", authenticate, async (req, res) => {
     // unchanged amount is not a payout edit.
     const editsPayoutFields =
       req.body.assignee !== undefined ||
+      chainChanged ||
       (req.body.bountyAmount !== undefined &&
         Number(req.body.bountyAmount) !== Number(existing.bountyAmount));
+
     if (editsPayoutFields) {
       if (!(await canAdministerBounty(existing, req.user))) {
         return res.status(403).json({
@@ -3156,11 +3278,12 @@ router.put("/:id", authenticate, async (req, res) => {
       if (
         existing.isPaid ||
         existing.paymentInFlight ||
-        existing.paymentAuthorized
+        existing.paymentAuthorized ||
+        existing.exportedAt
       ) {
         return res.status(409).json({
           error:
-            "Assignee and reward cannot be changed once payment is authorised or in progress",
+            "Assignee and reward cannot be changed once payment is authorised, in progress, or exported",
         });
       }
     }
@@ -3185,13 +3308,6 @@ router.put("/:id", authenticate, async (req, res) => {
       return res
         .status(403)
         .json({ error: "Only admins can change approval status" });
-    }
-
-    if (
-      req.body.chain !== undefined &&
-      !["MAIN", "TEST"].includes(req.body.chain)
-    ) {
-      return res.status(400).json({ error: "Invalid chain value" });
     }
 
     if (
@@ -3284,7 +3400,7 @@ router.put("/:id", authenticate, async (req, res) => {
           timeToComplete: new Date(req.body.timeToComplete),
         }),
         ...(req.body.assignee !== undefined && { assignee: req.body.assignee }),
-        ...(req.body.chain !== undefined && { chain: req.body.chain }),
+        ...(chainChanged && { chain: req.body.chain }),
         ...(req.body.isApproved !== undefined && {
           isApproved: req.body.isApproved,
           status: nextStatus,
@@ -3325,7 +3441,9 @@ router.put("/:id", authenticate, async (req, res) => {
         "timeToComplete",
         "chain",
         "teamId",
-      ].filter((k) => req.body[k] !== undefined);
+      ].filter((k) =>
+        k === "chain" ? chainChanged : req.body[k] !== undefined,
+      );
       const entries = [];
       if (approvalChanged)
         entries.push({ type: req.body.isApproved ? "APPROVED" : "UNAPPROVED" });
@@ -3344,6 +3462,14 @@ router.put("/:id", authenticate, async (req, res) => {
 
     await invalidateBounty(req.params.id);
     res.json(updated);
+
+    // isApproved can flip the status (see nextStatus), so send the same notices as /:id/status
+    if (nextStatus === "IN_PROGRESS" && existing.status !== "IN_PROGRESS") {
+      notifyBountyAssignees(prisma, req.params.id).catch((err) =>
+        console.error("Discord in-progress notify failed:", err.message),
+      );
+    }
+    notifyBountyState(prisma, req.params.id);
 
     if (notifyUsers === true) {
       const changes = [];

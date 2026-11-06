@@ -194,12 +194,12 @@ export function Navbar({
               className="transition-colors hover:text-primary"
             >
               <img
-              src="/ZecHubBlue.png"
-              alt="ZecHub"
-              width={32}
-              height={32}
-              className="h-8 w-8 shrink-0 object-contain"
-            />
+                src="/ZecHubBlue.png"
+                alt="ZecHub"
+                width={32}
+                height={32}
+                className="h-8 w-8 shrink-0 object-contain"
+              />
             </Link>
             <Link
               href={currentUser ? "/home" : "/"}
@@ -296,9 +296,7 @@ export function Navbar({
 
             <ThemePicker />
 
-            {currentUser && (
-              <NotificationsInbox />
-            )}
+            {currentUser && <NotificationsInbox />}
 
             {!currentUser ? (
               <Button

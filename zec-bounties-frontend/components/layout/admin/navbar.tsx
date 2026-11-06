@@ -15,14 +15,9 @@ import {
   AlertCircle,
   Loader2,
   FolderSync,
-  ShieldCheck,
   User,
-  Users,
   Building2,
   BookOpen,
-  Target,
-  Check,
-  ChevronDown,
   LayoutDashboard,
   BarChart3,
 } from "lucide-react";
@@ -63,400 +58,19 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
-import { Balance } from "@/lib/types";
-import type { SyncStatus } from "@/lib/bounty-context";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/theme/theme-picker";
-
-// ── Small visual divider between navbar groups ──────────────────────────────
-function NavDivider() {
-  return <div className="hidden xl:block h-6 w-px bg-border mx-1 shrink-0" />;
-}
-
-// ── Active wallet type pill — always visible in the navbar ─────────────────
-//
-// This is the key addition: a persistent, coloured pill that shows whether the
-// active wallet is a Team or Personal wallet. It never hides. The user always
-// knows what context they are operating in.
-//
-function ActiveWalletTypePill() {
-  const { zcashParams, currentTeam } = useBounty();
-  if (!zcashParams || zcashParams.length === 0) return null;
-  const active =
-    zcashParams.find((p) => p.isDefault) ?? zcashParams[zcashParams.length - 1];
-  if (!active) return null;
-  const isTeam = !!(active.isTeam && active.teamId);
-  const teamName = isTeam && currentTeam ? currentTeam.name : null;
-  const accountLabel = active.accountName || "Wallet";
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className={cn(
-            "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold cursor-default select-none transition-colors",
-            isTeam
-              ? "text-violet-700 dark:text-violet-300"
-              : "text-sky-700 dark:text-sky-300",
-          )}
-        >
-          {isTeam ? (
-            <Building2 className="h-3 w-3 shrink-0" />
-          ) : (
-            <User className="h-3 w-3 shrink-0" />
-          )}
-          <span className="hidden 2xl:inline">
-            {isTeam ? (teamName ?? "Team") : accountLabel}
-          </span>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs max-w-[200px]">
-        <p className="font-semibold mb-0.5">
-          {isTeam ? "Team wallet" : "Personal wallet"}
-        </p>
-        <p className="text-muted-foreground">{accountLabel}</p>
-        {teamName && <p className="text-muted-foreground">Team: {teamName}</p>}
-        <p className="text-muted-foreground capitalize">
-          {active.chain ?? "mainnet"}
-        </p>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-// ── Compact sync status line (used inside the sync dropdown & mobile sheet) ─
-function SyncStatusSummary({ status }: { status: SyncStatus | null }) {
-  if (!status) {
-    return <p className="text-muted-foreground">No sync data yet.</p>;
-  }
-  const pct =
-    status.percentage_total_blocks_scanned ||
-    status.percentage_total_outputs_scanned;
-  const done = pct === 100 || status.in_progress === false;
-  return (
-    <div className="space-y-1 font-mono">
-      <div className="flex items-center justify-between">
-        <span className="text-muted-foreground">Status</span>
-        <span className={done ? "text-emerald-500" : "text-amber-400"}>
-          {pct != null
-            ? `${Number(pct).toFixed(2)}%`
-            : status.in_progress
-              ? "In progress"
-              : "Idle"}
-        </span>
-      </div>
-      {status.synced_blocks != null && status.total_blocks != null && (
-        <div className="flex items-center justify-between text-muted-foreground/70">
-          <span>Blocks</span>
-          <span>
-            {status.synced_blocks}/{status.total_blocks}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Sync status — read-only check, its own fixed-width dropdown ────────────
-//
-// Sync only ever reads status from the wallet. It never touches balances, so
-// it gets a simple dropdown: a constant-size icon trigger with a status dot,
-// and the percentage/blocks detail inside a popover instead of an inline
-// badge that used to grow and squeeze neighbouring controls.
-function SyncStatusMenu({
-  syncStatus,
-  syncStatusError,
-  isSyncing,
-  onCheckSync,
-}: {
-  syncStatus: SyncStatus | null;
-  syncStatusError: string | null | undefined;
-  isSyncing: boolean;
-  onCheckSync: () => void;
-}) {
-  const hasError = !!syncStatusError;
-  const pct =
-    syncStatus?.percentage_total_blocks_scanned ||
-    syncStatus?.percentage_total_outputs_scanned;
-  const done = pct === 100 || syncStatus?.in_progress === false;
-
-  const dotClass = hasError
-    ? "bg-destructive"
-    : done
-      ? "bg-emerald-500"
-      : syncStatus
-        ? "bg-amber-400 animate-pulse"
-        : "bg-muted-foreground/30";
-
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 relative"
-              aria-label="Sync status"
-            >
-              {isSyncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Activity className="h-4 w-4" />
-              )}
-              <span
-                className={cn(
-                  "absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full",
-                  dotClass,
-                )}
-              />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          Sync status
-        </TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel>Sync status</DropdownMenuLabel>
-        <div className="px-2 pb-2 text-xs space-y-2">
-          {hasError ? (
-            <div className="flex items-start gap-1.5 text-destructive font-mono">
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span className="break-words">{syncStatusError}</span>
-            </div>
-          ) : (
-            <SyncStatusSummary status={syncStatus} />
-          )}
-        </div>
-        <div className="px-2 pb-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-1.5 text-xs h-8"
-            onClick={onCheckSync}
-            disabled={isSyncing}
-          >
-            {isSyncing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Activity className="h-3.5 w-3.5" />
-            )}
-            Check sync
-          </Button>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// ── Rescan — destructive action, gated behind a confirmation ───────────────
-//
-// Rescan resets the wallet balance to 0 and re-derives everything from the
-// chain, so it's kept entirely separate from the read-only sync check, and
-// requires an explicit confirmation before running. Its own result is shown
-// in a tooltip, never mixed with sync data.
-function RescanButton({
-  rescanStatus,
-  rescanLoading,
-  rescanHidden,
-  onRescan,
-}: {
-  rescanStatus: unknown;
-  rescanLoading: boolean;
-  rescanHidden: boolean;
-  onRescan: () => void;
-}) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const dotClass = rescanLoading
-    ? "bg-amber-400 animate-pulse"
-    : rescanStatus
-      ? "bg-emerald-500"
-      : "bg-muted-foreground/30";
-
-  return (
-    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-9 w-9 relative",
-                rescanHidden && "opacity-40 cursor-not-allowed",
-              )}
-              disabled={rescanLoading || rescanHidden}
-              aria-label="Rescan wallet"
-            >
-              {rescanLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <FolderSync className="h-4 w-4" />
-              )}
-              <span
-                className={cn(
-                  "absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full",
-                  dotClass,
-                )}
-              />
-            </Button>
-          </AlertDialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs max-w-[200px]">
-          <p>
-            {rescanHidden
-              ? "Rescan available soon..."
-              : "Rescan wallet — resets balance to 0 and rescans the chain"}
-          </p>
-          {!!rescanStatus && !rescanLoading && (
-            <p className="mt-1 text-muted-foreground font-mono break-words">
-              {typeof rescanStatus === "string"
-                ? rescanStatus
-                : JSON.stringify(rescanStatus)}
-            </p>
-          )}
-        </TooltipContent>
-      </Tooltip>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Rescan wallet?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This resets your wallet balance to 0 and rescans the chain from
-            scratch. Your balance will show 0 until the rescan finishes — this
-            can take a while.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              setConfirmOpen(false);
-              onRescan();
-            }}
-          >
-            Rescan
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-// ── Role toggle ────────────────────────────────────────────────────────────
-const ROLE_OPTIONS = [
-  { value: "ADMIN", label: "Admin", icon: ShieldCheck, redirect: "/admin" },
-  { value: "CLIENT", label: "Client", icon: User, redirect: "/home" },
-  { value: "HUNTER", label: "Hunter", icon: Target, redirect: "/home" },
-  { value: "TEAM", label: "Team", icon: Users, redirect: "/home" },
-] as const;
-
-function RoleToggleButton({ compact = false }: { compact?: boolean }) {
-  const { currentUser, switchRole, isSwitchingRole } = useBounty();
-  const router = useRouter();
-  if (!currentUser?.isRobin) return null;
-
-  const current = ROLE_OPTIONS.find((r) => r.value === currentUser.role);
-  const CurrentIcon = current?.icon ?? ShieldCheck;
-
-  const handleSelect = async (role: (typeof ROLE_OPTIONS)[number]) => {
-    if (role.value === currentUser.role || isSwitchingRole) return;
-    await switchRole(role.value);
-    router.push(role.redirect);
-  };
-
-  if (compact) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            className="gap-2 justify-start"
-            disabled={isSwitchingRole}
-          >
-            {isSwitchingRole ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CurrentIcon className="h-4 w-4" />
-            )}
-            {isSwitchingRole
-              ? "Switching..."
-              : `Role: ${current?.label ?? currentUser.role}`}
-            <ChevronDown className="h-3.5 w-3.5 ml-auto opacity-60" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
-          <DropdownMenuLabel>Switch role</DropdownMenuLabel>
-          {ROLE_OPTIONS.map((role) => {
-            const Icon = role.icon;
-            const isActive = role.value === currentUser.role;
-            return (
-              <DropdownMenuItem
-                key={role.value}
-                className="gap-2"
-                onClick={() => handleSelect(role)}
-                disabled={isActive}
-              >
-                <Icon className="h-4 w-4" />
-                {role.label}
-                {isActive && <Check className="h-3.5 w-3.5 ml-auto" />}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 h-8 text-xs font-medium border-dashed"
-              disabled={isSwitchingRole}
-            >
-              {isSwitchingRole ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CurrentIcon className="h-3.5 w-3.5" />
-              )}
-              <span className="hidden 2xl:inline">
-                {isSwitchingRole ? "..." : (current?.label ?? currentUser.role)}
-              </span>
-              <ChevronDown className="h-3 w-3 opacity-60" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel>Switch role</DropdownMenuLabel>
-            {ROLE_OPTIONS.map((role) => {
-              const Icon = role.icon;
-              const isActive = role.value === currentUser.role;
-              return (
-                <DropdownMenuItem
-                  key={role.value}
-                  className="gap-2"
-                  onClick={() => handleSelect(role)}
-                  disabled={isActive}
-                >
-                  <Icon className="h-4 w-4" />
-                  {role.label}
-                  {isActive && <Check className="h-3.5 w-3.5 ml-auto" />}
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
-        Switch role
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+import {
+  NavDivider,
+  WalletBalanceGroup,
+  SyncStatusMenu,
+  SyncStatusSummary,
+  RescanButton,
+  RoleToggleButton,
+  useRescanCooldown,
+  confirmedTotal,
+  fmt,
+} from "@/components/layout/nav-parts";
 
 // ── Main navbar ────────────────────────────────────────────────────────────
 export function AdminNavbar({
@@ -476,30 +90,7 @@ export function AdminNavbar({
   const [mobileRescanConfirmOpen, setMobileRescanConfirmOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const RESCAN_HIDE_MS = 0.5 * 60 * 1000; // 5 minutes
-  const [rescanHidden, setRescanHidden] = useState(() => {
-    try {
-      const ts = localStorage.getItem("walletImportedAt");
-      return !!ts && Date.now() - Number(ts) < RESCAN_HIDE_MS;
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      const ts = localStorage.getItem("walletImportedAt");
-      if (!ts) return;
-      const remaining = RESCAN_HIDE_MS - (Date.now() - Number(ts));
-      if (remaining <= 0) {
-        setRescanHidden(false);
-        return;
-      }
-      const timer = setTimeout(() => setRescanHidden(false), remaining);
-      return () => clearTimeout(timer);
-    } catch {
-      setRescanHidden(false);
-    }
-  }, []);
+  const rescanHidden = useRescanCooldown();
 
   const {
     currentUser,
@@ -532,16 +123,6 @@ export function AdminNavbar({
       ? zcashParams[zcashParams.length - 1]
       : null);
   const activeIsTeam = !!(activeWallet?.isTeam && activeWallet?.teamId);
-  const confirmedTotal = (b: Balance | undefined) => {
-    return (
-      ((b?.confirmed_ironwood_balance ?? 0) +
-        (b?.confirmed_orchard_balance ?? 0) +
-        (b?.confirmed_sapling_balance ?? 0) +
-        (b?.confirmed_transparent_balance ?? 0)) /
-      1e8
-    );
-  };
-  const fmt = (n: number) => n.toFixed(4);
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -642,32 +223,36 @@ export function AdminNavbar({
             <span className="mx-1 h-4 w-px bg-border" aria-hidden />
 
             <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link
-                  href="/admin/dashboard"
-                  prefetch
-                  aria-label="Admin dashboard"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-500 transition-colors hover:bg-amber-500/10 hover:text-amber-400"
-                >
-                  <LayoutDashboard className="h-4 w-4" />
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">Dashboard</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link
-                  href="/admin/kpis"
-                  prefetch
-                  aria-label="KPIs"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-sky-400 transition-colors hover:bg-sky-500/10 hover:text-sky-300"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">KPIs</TooltipContent>
-            </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href="/admin/dashboard"
+                    prefetch
+                    aria-label="Admin dashboard"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-500 transition-colors hover:bg-amber-500/10 hover:text-amber-400"
+                  >
+                    <LayoutDashboard className="h-4 w-4" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  Dashboard
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href="/admin/kpis"
+                    prefetch
+                    aria-label="KPIs"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-sky-400 transition-colors hover:bg-sky-500/10 hover:text-sky-300"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  KPIs
+                </TooltipContent>
+              </Tooltip>
             </TooltipProvider>
           </div>
 
@@ -691,86 +276,12 @@ export function AdminNavbar({
             <TooltipProvider delayDuration={300}>
               <NavDivider />
 
-              {/* Wallet group: context pill + balance, visually contained */}
-              <div className="flex items-center gap-0.5 pl-1 pr-0.5 py-0.5 rounded-lg border bg-muted/30">
-                <ActiveWalletTypePill />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      className="gap-2 h-8 text-xs font-mono"
-                      onClick={handleWalletClick}
-                    >
-                      <Wallet className="h-4 w-4" />
-                      {balance
-                        ? `${fmt(confirmedTotal(balance))} ZEC`
-                        : `0.0000 ZEC`}
-                    </Button>
-                  </TooltipTrigger>
-                  {balance && (
-                    <TooltipContent
-                      side="bottom"
-                      className="text-xs space-y-1.5 min-w-[180px]"
-                    >
-                      <p className="font-semibold text-foreground mb-1">
-                        Confirmed balances
-                      </p>
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">Ironwood</span>
-                        <span className="font-mono">
-                          {fmt(
-                            (balance.confirmed_ironwood_balance ??
-                              balance.confirmed_orchard_balance ??
-                              0) / 1e8,
-                          )}{" "}
-                          ZEC
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">Sapling</span>
-                        <span className="font-mono">
-                          {fmt(balance.confirmed_sapling_balance / 1e8)} ZEC
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Transparent
-                        </span>
-                        <span className="font-mono">
-                          {fmt(balance.confirmed_transparent_balance / 1e8)} ZEC
-                        </span>
-                      </div>
-                      <div className="border-t pt-1 flex justify-between gap-4 font-semibold">
-                        <span>Total</span>
-                        <span className="font-mono">
-                          {fmt(confirmedTotal(balance))} ZEC
-                        </span>
-                      </div>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleRefresh}
-                      disabled={isRefreshing}
-                      className="h-8 w-8"
-                    >
-                      <RefreshCw
-                        className={cn(
-                          "w-4 h-4",
-                          isRefreshing && "animate-spin",
-                        )}
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    Refresh balance
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+              <WalletBalanceGroup
+                balance={balance}
+                isRefreshing={isRefreshing}
+                onOpen={handleWalletClick}
+                onRefresh={handleRefresh}
+              />
 
               <NavDivider />
 

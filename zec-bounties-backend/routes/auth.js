@@ -19,7 +19,11 @@ const {
 } = require("../helpers/zcash/zcashHelper.js");
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
-const { delCache, deleteCacheByPattern } = require("../utils/cache");
+const {
+  delCache,
+  invalidateUserDirectory,
+  deleteCacheByPattern,
+} = require("../utils/cache");
 const { sendUserUpdated } = require("../middleware/websocket");
 const { OtpStore } = require("../helpers/recoveryOtp");
 const {
@@ -167,6 +171,7 @@ if (!user) {
           role: "CLIENT",
         },
       });
+      await invalidateUserDirectory();
     }
 
     const token = signSessionToken(user);
@@ -777,7 +782,7 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
     });
 
     await Promise.all([
-      delCache("users:all"),
+      invalidateUserDirectory(),
       deleteCacheByPattern("bounties:*"),
       deleteCacheByPattern("bounty:*"),
       deleteCacheByPattern("assignees:*"),
@@ -832,7 +837,7 @@ router.patch("/select-role", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     sendUserUpdated(req.user.id, updated);
 

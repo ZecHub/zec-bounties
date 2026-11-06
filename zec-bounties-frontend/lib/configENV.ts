@@ -7,3 +7,5 @@ export const backendWebSpocketUrl =
   process.env.NODE_ENV === "production"
     ? "wss://zechub.zone/"
     : "ws://localhost:9000";
+
+export const IS_DEV = process.env.NODE_ENV !== "production";

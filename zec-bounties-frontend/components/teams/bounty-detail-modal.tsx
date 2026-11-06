@@ -36,17 +36,17 @@ import {
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
 
-interface BountyDetailModalProps {
+interface TeamBountyDetailModalProps {
   bounty: Bounty | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function BountyDetailModal({
+export function TeamBountyDetailModal({
   bounty,
   open,
   onOpenChange,
-}: BountyDetailModalProps) {
+}: TeamBountyDetailModalProps) {
   const {
     currentUser,
     applyToBounty,
@@ -144,7 +144,10 @@ export function BountyDetailModal({
   const hasApplied = !!userApplication;
 
   const notice: Notice | null = (() => {
-    if (isAssignedToCurrentUser && (!bounty.isApproved || bounty.status === "TO_DO")) {
+    if (
+      isAssignedToCurrentUser &&
+      (!bounty.isApproved || bounty.status === "TO_DO")
+    ) {
       return {
         type: "warning",
         title: "Bounty not yet approved",

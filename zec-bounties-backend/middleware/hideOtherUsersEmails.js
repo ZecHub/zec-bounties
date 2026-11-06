@@ -1,13 +1,19 @@
-// Many bounty and team routes select `email` on nested users (creators,
-// assignees, applicants, team members, activity actors). Only admins may see
-// other users' addresses, so for everyone else the JSON response drops
-// `email` from every object except the caller's own user row. `email` exists
-// only on the User model, so dropping it by key cannot remove anything else.
+// Many bounty and team routes select sensitive user fields — `email` and the
+// payout addresses `z_address` / `UA_address` — on nested user rows (creators,
+// assignees, applicants, team members, activity actors). Only admins, or the
+// user themselves, may see another user's; for everyone else the JSON response
+// drops these from every user object except the caller's own row. All three
+// keys exist only on the User model, so dropping them by key cannot remove
+// anything else. (Export name kept for import compatibility; it now strips the
+// payout addresses too — the fields the codebase elsewhere treats as
+// admin-only, e.g. USER_SELECT_FULL / websocket broadcast redaction.)
+const PRIVATE_USER_FIELDS = new Set(["email", "z_address", "UA_address"]);
+
 function withoutOtherUsersEmails(body, viewerId) {
   if (body === null || typeof body !== "object") return body;
   return JSON.parse(
     JSON.stringify(body, function (key, value) {
-      if (key === "email" && (!viewerId || this.id !== viewerId)) {
+      if (PRIVATE_USER_FIELDS.has(key) && (!viewerId || this.id !== viewerId)) {
         return undefined;
       }
       return value;
