@@ -114,6 +114,7 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     "../utils/discord/discordNotify": {},
     "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: async () => {}, notifyBountyState: async () => {} },
     "../utils/constants": {},
+    "../utils/exportableBounty": require("../utils/exportableBounty"),
     "../helpers/validateBounty": {},
     "../utils/bountySuggestionReview": require("../utils/bountySuggestionReview"),
     "../utils/userSelects": require("../utils/userSelects"),
