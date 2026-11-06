@@ -238,6 +238,8 @@ test("actual roster replacement route with isolated real PostgreSQL", { skip: !c
       const f = await seed(setup, "team-owner"), owner = await setup.user.create({ data: { name: "Disposable team owner", role: "TEAM" } });
       const team = await setup.team.create({ data: { name: `Disposable owner team ${process.pid}`, members: { create: { userId: owner.id, role: "OWNER" } } } });
       await setup.bounty.update({ where: { id: f.bounty.id }, data: { teamId: team.id } });
+      // Assignees must belong to the team or its community.
+      await setup.teamMember.create({ data: { teamId: team.id, userId: f.next.id, role: "MEMBER" } });
       assert.equal((await loadRoute(setup).invoke(owner, f.bounty.id, [f.next.id])).statusCode, 200);
       assert.deepEqual((await snapshot(setup, f)).roster, [f.next.id]);
     });
@@ -247,12 +249,12 @@ test("actual roster replacement route with isolated real PostgreSQL", { skip: !c
       assert.equal((await loadRoute(setup).invoke(f.old, f.bounty.id, [])).statusCode, 403);
       assert.deepEqual(await snapshot(setup, f), { status: "IN_REVIEW", roster: [f.old.id], legacyAssignee: null, pending: 1 });
     });
-    await t.test("control: a failed replacement rolls back its deletion", async () => {
+    await t.test("control: a missing assignee is rejected before any write", async () => {
       const f = await seed(setup, "rollback"), route = loadRoute(setup);
-      const reply = await route.invoke(f.adminA, f.bounty.id, ["missing-test-user"], { expectedError: true });
-      assert.equal(reply.statusCode, 500);
+      const reply = await route.invoke(f.adminA, f.bounty.id, ["missing-test-user"]);
+      assert.equal(reply.statusCode, 400);
       assert.deepEqual(await snapshot(setup, f), { status: "IN_REVIEW", roster: [f.old.id], legacyAssignee: null, pending: 1 });
-      assert.equal(route.broadcasts.length, 0, "a rolled-back roster must not be broadcast");
+      assert.equal(route.broadcasts.length, 0, "a rejected roster must not be broadcast");
     });
     await t.test("regression: clearing roster races a replacement", async () => {
       const f = await seed(setup, "race-clear-first");
