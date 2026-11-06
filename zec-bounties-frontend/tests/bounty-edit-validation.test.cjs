@@ -50,6 +50,8 @@ function mount(kind) {
       },
       // The first effect copies the bounty into the form; later ones load activity.
       useEffect(fn) { if (!initialized && !effect) effect = fn; },
+      // Teams modal memoizes the directory lookup; compute it immediately.
+      useMemo(fn) { return fn(); },
     };
     if (id === "react/jsx-runtime") {
       const jsx = (type, props) => ({ type, props });
