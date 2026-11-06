@@ -39,11 +39,15 @@ function bounty(id, fields = {}) {
 function createDb(bounties) {
   const records = [];
   const matches = (row, where = {}) =>
-    Object.entries(where).every(([key, value]) =>
-      value && typeof value === "object" && "in" in value
-        ? value.in.includes(row[key])
-        : row[key] === value,
-    );
+    Object.entries(where).every(([key, value]) => {
+      if (key === "OR" && Array.isArray(value)) {
+        return value.some((clause) => matches(row, clause));
+      }
+      if (value && typeof value === "object" && "in" in value) {
+        return value.in.includes(row[key]);
+      }
+      return row[key] === value;
+    });
   const db = {
     bounties,
     records,
@@ -96,6 +100,7 @@ function loadRoutes(file, db) {
     "@prisma/client": { PrismaClient: function () { return db; } },
     "../prisma/client": db,
     crypto: require("node:crypto"),
+    "../utils/exportableBounty": require("../utils/exportableBounty"),
     "../utils/zingo/zingoLibQuickSend": async (list) => {
       effects.sent.push(...list);
       return { txids: [TXID], error: null, timedOut: false, raw: "{}" };
