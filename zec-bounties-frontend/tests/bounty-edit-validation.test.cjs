@@ -19,6 +19,9 @@ function loadTs(relative, requireFixture) {
   const module = { exports: {} };
   vm.runInNewContext(result.outputText, {
     module, exports: module.exports, require: requireFixture, Date, console,
+    // The admin modal registers a window event listener in an effect; a no-op
+    // stub lets that effect run harmlessly instead of being special-cased out.
+    window: { addEventListener() {}, removeEventListener() {} },
   }, { filename });
   return module.exports;
 }
@@ -35,7 +38,9 @@ function mount(kind) {
     update: async ({ data }) => { Object.assign(bounty, data); return { ...bounty }; },
   } });
   const state = [];
-  let cursor = 0, initialized = false, formEffect, directoryLoaded = false, needsRerender = false, payload, response;
+  const effects = [];
+  const NODEPS = Symbol("nodeps");
+  let cursor = 0, effectCursor = 0, payload, response;
   const components = new Proxy({}, { get: (_, name) => name });
   const utils = loadTs("lib/utils.ts", id => {
     if (id === "clsx") return { clsx: () => "" };
@@ -49,22 +54,15 @@ function mount(kind) {
         if (!(i in state)) state[i] = initial;
         return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
       },
-      // The first effect copies the bounty into the form. The teams directory
-      // effect runs once the Assignees tab is active; everything else is ignored
-      // (the admin activity listener needs window, which this fixture lacks).
-      useEffect(fn) {
-        const src = fn.toString();
-        if (src.includes("fetchTeamDirectory")) {
-          if (directoryLoaded) return;
-          const before = state.slice();
-          fn();
-          if (state.some((v, i) => v !== before[i]) || state.length !== before.length) {
-            directoryLoaded = true;
-            needsRerender = true;
-          }
-          return;
-        }
-        if (!initialized && !formEffect) formEffect = fn;
+      // Record each effect with its deps; render() runs it and re-runs it only
+      // when its deps change (so switching to the Assignees tab loads the team
+      // directory). This follows real useEffect semantics instead of matching
+      // effect source text, so it survives refactors of the components.
+      useEffect(fn, deps) {
+        const i = effectCursor++;
+        const rec = effects[i] || (effects[i] = { deps: NODEPS });
+        rec.fn = fn;
+        rec.nextDeps = deps;
       },
       // Teams modal memoizes the directory lookup; compute it immediately.
       useMemo(fn) { return fn(); },
@@ -101,15 +99,29 @@ function mount(kind) {
   });
   const Component = kind === "admin" ? exports.EditBountyModal : exports.TeamsEditBountyModal;
   function render() {
-    cursor = 0;
-    needsRerender = false;
-    const tree = Component({ bounty, open: true, onOpenChange() {} });
-    if (!initialized && formEffect) {
-      initialized = true;
-      formEffect();
-      return render();
+    let tree;
+    // Render, then flush effects whose deps changed, re-rendering until the
+    // effects settle (bounded so a misbehaving effect can't loop forever).
+    for (let pass = 0; pass < 20; pass++) {
+      cursor = 0;
+      effectCursor = 0;
+      tree = Component({ bounty, open: true, onOpenChange() {} });
+      let ran = false;
+      for (const rec of effects) {
+        const next = rec.nextDeps;
+        const prev = rec.deps;
+        const changed =
+          prev === NODEPS || !next || !prev ||
+          next.length !== prev.length || next.some((x, j) => !Object.is(x, prev[j]));
+        if (changed) {
+          if (typeof rec.cleanup === "function") rec.cleanup();
+          rec.cleanup = rec.fn();
+          rec.deps = next;
+          ran = true;
+        }
+      }
+      if (!ran) break;
     }
-    if (needsRerender) return render();
     return tree;
   }
   function find(predicate, node = render()) {
