@@ -455,6 +455,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
 router.get("/records", authenticate, isAdmin, async (req, res) => {
   try {
     const records = await prisma.transaction.findMany({
+      where: { bounty: { teamId: null } },
       orderBy: { createdAt: "desc" },
       take: 200,
       include: {
@@ -516,8 +517,9 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
 
     const record = await prisma.transaction.findUnique({
       where: { id: req.params.id },
+      include: { bounty: { select: { teamId: true } } },
     });
-    if (!record) {
+    if (!record || record.bounty?.teamId) {
       return res.status(404).json({ error: "Payment record not found" });
     }
     if (record.status !== "UNKNOWN") {

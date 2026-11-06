@@ -24,6 +24,7 @@ const executeZingoCliAddresses = require("../utils/zingo/zingoLibAddresses");
 const executeZingoQuickSend = require("../utils/zingo/zingoLibQuickSend");
 const {
   delCache,
+  invalidateUserDirectory,
   deleteCacheByPattern,
   bumpVersion,
   getCache,
@@ -715,9 +716,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    // Bust the cached "all users" list — /api/bounties/users won't
-    // reflect this role change until the TTL expires otherwise.
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -1634,9 +1633,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    // Bust the cached "all users" list — /api/bounties/users won't
-    // reflect this role change until the TTL expires otherwise.
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -3094,8 +3091,20 @@ router.post(
       if (!record || record.bounty?.teamId !== teamId) {
         return res.status(404).json({ error: "Record not found" });
       }
-      if (record.status !== "UNKNOWN") {
-        return res.status(409).json({ error: "already settled" });
+      const STALE_PENDING_MS = 10 * 60 * 1000;
+
+      if (record.status !== "UNKNOWN" && record.status !== "PENDING") {
+        return res
+          .status(409)
+          .json({ error: `Record is already ${record.status}` });
+      }
+      if (
+        record.status === "PENDING" &&
+        Date.now() - new Date(record.createdAt).getTime() < STALE_PENDING_MS
+      ) {
+        return res.status(409).json({
+          error: "Payment may still be in flight. Try again in a few minutes.",
+        });
       }
 
       const settledAt = new Date();
@@ -3106,7 +3115,7 @@ router.post(
           // Compare-and-swap on UNKNOWN, so two admins resolving the same
           // record can't both apply (one paying, one re-opening).
           const { count } = await tx.transaction.updateMany({
-            where: { id: record.id, status: "UNKNOWN" },
+            where: { id: record.id, status: record.status },
             data:
               outcome === "broadcast"
                 ? {

@@ -26,6 +26,7 @@ import {
   Pencil,
   Send,
   Share2,
+  Trophy,
   X,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
@@ -624,38 +625,75 @@ export function BountyDetailModal({
       ? DESC_COLLAPSED_PX
       : descFullHeight || undefined;
 
-  const assignees = [...(bounty.assignees ?? [])].sort(
-    (x, y) =>
+  // Once a bounty is completed, surface the paid winner first so they are
+  // always visible (not hidden behind the "+N" collapse); otherwise keep the
+  // current user first.
+  const winnerId = bounty.status === "DONE" ? bounty.assignee : null;
+  const assignees = [...(bounty.assignees ?? [])].sort((x, y) => {
+    const winnerRank =
+      Number(y.userId === winnerId) - Number(x.userId === winnerId);
+    if (winnerRank !== 0) return winnerRank;
+    return (
       Number(y.userId === currentUser?.id) -
-      Number(x.userId === currentUser?.id),
-  );
+      Number(x.userId === currentUser?.id)
+    );
+  });
   const [firstAssignee, ...restAssignees] = assignees;
 
   const renderAssignee = (a: (typeof assignees)[number]) => {
     const submitted = workSubmissions.some((s) => s.submittedBy === a.userId);
+    // When a bounty with multiple assignees is completed, the admin picks one
+    // winning submission; bounty.assignee holds that user. Flag them clearly so
+    // everyone can see whose submission was selected.
+    const isWinner = bounty.status === "DONE" && bounty.assignee === a.userId;
     return (
       <div
         key={a.userId}
-        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-2"
+        className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border p-2 ${
+          isWinner
+            ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
+            : "border-primary/20 bg-primary/5"
+        }`}
       >
-        <Avatar className="h-6 w-6 border border-primary/20">
+        <Avatar
+          className={`h-6 w-6 border ${
+            isWinner
+              ? "border-amber-300 dark:border-amber-500/40"
+              : "border-primary/20"
+          }`}
+        >
           <AvatarImage src={a.user?.avatar || "/placeholder-user.jpg"} />
           <AvatarFallback className="text-[10px]">
             {a.user?.name?.[0] || "?"}
           </AvatarFallback>
         </Avatar>
         <ProfileLink user={a.user}>
-          <p className="truncate text-xs font-semibold text-primary">
+          <p
+            className={`truncate text-xs font-semibold ${
+              isWinner
+                ? "text-amber-700 dark:text-amber-300"
+                : "text-primary"
+            }`}
+          >
             {a.user?.nickname || a.user?.name || "Unknown"}
           </p>
         </ProfileLink>
         {a.userId === currentUser?.id && (
           <span className="text-[10px] text-muted-foreground">You</span>
         )}
-        {submitted && (
-          <span className="ml-auto flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
-            <CheckCircle2 className="h-2.5 w-2.5" /> Submitted
+        {isWinner ? (
+          <span
+            className="ml-auto flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+            title="This contributor's submission was selected"
+          >
+            <Trophy className="h-2.5 w-2.5" /> Selected
           </span>
+        ) : (
+          submitted && (
+            <span className="ml-auto flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+              <CheckCircle2 className="h-2.5 w-2.5" /> Submitted
+            </span>
+          )
         )}
       </div>
     );
@@ -926,6 +964,15 @@ export function BountyDetailModal({
         {firstAssignee && (
           <div className="mt-4 space-y-1.5">
             <p className="text-xs text-muted-foreground">Assigned to</p>
+            {assignees.length > 1 && bounty.status !== "DONE" && (
+              <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                <Trophy className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                <span>
+                  More than one contributor is assigned. Only the best
+                  submission is selected.
+                </span>
+              </p>
+            )}
             <div className="flex items-center gap-1.5">
               {renderAssignee(firstAssignee)}
               {restAssignees.length > 0 && (

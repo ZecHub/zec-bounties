@@ -188,8 +188,8 @@ Backend:  http://localhost:9000
 - To reset the database: `docker rm -f zb-postgres`, start it again with the same `docker run` command, and re-run `npx prisma db push`.
 - Zcash integration (payments, shielded tx, etc.) requires Zebrad + Zaino running and correctly configured in .env.
   Without them, bounty creation/submission UI may work but actual ZEC transfers will fail.
-- GitHub login is used for authentication. Set up a GitHub OAuth App at https://github.com/settings/developers
-  and use the Client ID/Secret. For quick testing you can temporarily bypass auth in code if needed.
+- GitHub login is used for authentication. To exercise login locally, set up a GitHub OAuth App at https://github.com/settings/developers
+  and set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in the backend `.env`, following the [environment template](zec-bounties-backend/.env.example).
 - Both parts have their own lockfiles (yarn.lock / package-lock.json). Do not mix package managers.
 - Production deployment uses Vercel for frontend (see https://bounties.zechub.wiki/).
 - For issues or updates, check the subfolder README.md files or open issues on the GitHub repo.
@@ -199,7 +199,7 @@ Backend:  http://localhost:9000
 
 - Prisma errors: Ensure you ran `npx prisma generate` after any schema changes.
 - Port conflicts: the backend port is `PORT` in `zec-bounties-backend/.env` (9000 by default in `.env.example`); the frontend expects it at the URL in `zec-bounties-frontend/lib/configENV.ts`. Keep the two in step.
-- Yarn issues: Delete node_modules + yarn.lock and re-run `yarn install`.
+- Yarn issues: from `zec-bounties-frontend/`, remove `node_modules` and re-run `yarn install` while keeping the committed `yarn.lock`.
 - Missing env vars: Double-check .env file location (must be in backend root) and restart backend.
 - Zcash RPC connection refused: Confirm Zebrad is running, RPC is enabled on the URL/port in .env, and credentials match.
 
