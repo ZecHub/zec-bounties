@@ -1,5 +1,23 @@
 import { test, expect, type Page } from "@playwright/test";
 
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`filter selection returns focus to its trigger at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await mockAuthenticatedBackend(page);
+    await page.goto("/home");
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+    const trigger = page.getByRole("button", { name: "Status", exact: true });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const option = page.getByRole("option", { name: "Assigned", exact: true });
+    await option.focus();
+    await page.keyboard.press("Enter");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toContainText("Assigned");
+    await expect(trigger).toBeFocused();
+  });
+}
+
 const fixtureUser = {
   id: "a11y-fixture-user",
   name: "Accessibility Test User",
