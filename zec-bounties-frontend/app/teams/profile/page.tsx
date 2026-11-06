@@ -561,12 +561,26 @@ export default function TeamProfilePage() {
                 <Button
                   size="sm"
                   onClick={async () => {
-                    const token = localStorage.getItem("authToken");
-                    const res = await fetch(`${backendUrl}/auth/discord`, {
-                      headers: { Authorization: `Bearer ${token ?? ""}` },
-                    });
-                    const data = await res.json().catch(() => null);
-                    if (data?.url) window.location.href = data.url;
+                    try {
+                      const token = localStorage.getItem("authToken");
+                      const res = await fetch(`${backendUrl}/auth/discord`, {
+                        headers: { Authorization: `Bearer ${token ?? ""}` },
+                      });
+                      const data = res.ok
+                        ? await res.json().catch(() => null)
+                        : null;
+                      if (data?.url) {
+                        window.location.href = data.url;
+                      } else {
+                        toast.error("Couldn't start Discord connect", {
+                          description: "Please try again.",
+                        });
+                      }
+                    } catch {
+                      toast.error("Couldn't start Discord connect", {
+                        description: "Please try again.",
+                      });
+                    }
                   }}
                 >
                   Connect Discord
