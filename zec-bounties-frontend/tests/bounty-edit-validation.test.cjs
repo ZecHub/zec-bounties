@@ -35,8 +35,7 @@ function mount(kind) {
     update: async ({ data }) => { Object.assign(bounty, data); return { ...bounty }; },
   } });
   const state = [];
-  const effects = [];
-  let cursor = 0, payload, response;
+  let cursor = 0, initialized = false, formEffect, directoryLoaded = false, needsRerender = false, payload, response;
   const components = new Proxy({}, { get: (_, name) => name });
   const utils = loadTs("lib/utils.ts", id => {
     if (id === "clsx") return { clsx: () => "" };
@@ -50,9 +49,23 @@ function mount(kind) {
         if (!(i in state)) state[i] = initial;
         return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
       },
-      // Capture every effect. The first copies the bounty into the form; the
-      // teams directory effect loads assignees once the tab is active.
-      useEffect(fn) { effects.push(fn); },
+      // The first effect copies the bounty into the form. The teams directory
+      // effect runs once the Assignees tab is active; everything else is ignored
+      // (the admin activity listener needs window, which this fixture lacks).
+      useEffect(fn) {
+        const src = fn.toString();
+        if (src.includes("fetchTeamDirectory")) {
+          if (directoryLoaded) return;
+          const before = state.slice();
+          fn();
+          if (state.some((v, i) => v !== before[i]) || state.length !== before.length) {
+            directoryLoaded = true;
+            needsRerender = true;
+          }
+          return;
+        }
+        if (!initialized && !formEffect) formEffect = fn;
+      },
       // Teams modal memoizes the directory lookup; compute it immediately.
       useMemo(fn) { return fn(); },
     };
@@ -87,20 +100,16 @@ function mount(kind) {
     throw new Error(`Unexpected modal dependency: ${id}`);
   });
   const Component = kind === "admin" ? exports.EditBountyModal : exports.TeamsEditBountyModal;
-  function flush() {
-    const pending = effects.splice(0);
-    let changed = false;
-    for (const fn of pending) {
-      const before = state.slice();
-      fn();
-      if (state.length !== before.length || state.some((v, i) => v !== before[i])) changed = true;
-    }
-    return changed;
-  }
   function render() {
     cursor = 0;
+    needsRerender = false;
     const tree = Component({ bounty, open: true, onOpenChange() {} });
-    if (flush()) return render();
+    if (!initialized && formEffect) {
+      initialized = true;
+      formEffect();
+      return render();
+    }
+    if (needsRerender) return render();
     return tree;
   }
   function find(predicate, node = render()) {
