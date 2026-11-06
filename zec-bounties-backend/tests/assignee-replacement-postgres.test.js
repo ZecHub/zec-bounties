@@ -128,6 +128,7 @@ function loadRoute(prisma) {
     "../utils/userSelects": require(path.join(backend, "utils/userSelects")),
     "../utils/privacy": require(path.join(backend, "utils/privacy")),
     "../utils/bountySuggestionReview": require(path.join(backend, "utils/bountySuggestionReview")),
+    "../utils/exportableBounty": require(path.join(backend, "utils/exportableBounty")),
     // Real activity rows. Passing a client skips the unawaited fan-out, which
     // could outlive the test schema.
     "../utils/bountyActivity": {
