@@ -17,6 +17,7 @@ function bountyPayload() {
       id: "hunter",
       email: "h@example.com",
       z_address: "zs1hunter",
+      UA_address: "u1hunter",
     },
     assignees: [{ user: { id: "hunter", email: "h@example.com" } }],
     applications: [
@@ -92,4 +93,36 @@ test("a team user sees no other user's email", async () => {
 test("an admin still sees every email", async () => {
   const { json } = await request({ id: "admin", role: "ADMIN" });
   assert.equal(emailsIn(json).length, 5);
+});
+
+// Payout addresses (z_address / UA_address) are as sensitive as email and must
+// follow the same owner/admin-only rule.
+function addressesIn(value, found = []) {
+  if (!value || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "z_address" || key === "UA_address") found.push(child);
+    addressesIn(child, found);
+  }
+  return found;
+}
+
+test("a non-owner, non-admin loses other users' payout addresses", async () => {
+  // creator (TEAM) viewing a bounty whose assignee is the hunter
+  const { json } = await request({ id: "creator", role: "TEAM" });
+  assert.deepEqual(addressesIn(json), []);
+});
+
+test("the owner keeps their own payout addresses", () => {
+  const out = withoutOtherUsersEmails(bountyPayload(), "hunter");
+  assert.equal(out.assigneeUser.z_address, "zs1hunter");
+  assert.equal(out.assigneeUser.UA_address, "u1hunter");
+});
+
+test("an admin still sees payout addresses", async () => {
+  const { json } = await request({ id: "admin", role: "ADMIN" });
+  assert.deepEqual(addressesIn(json).sort(), ["u1hunter", "zs1hunter"]);
+});
+
+test("an anonymous caller gets no payout addresses", () => {
+  assert.deepEqual(addressesIn(withoutOtherUsersEmails(bountyPayload())), []);
 });
