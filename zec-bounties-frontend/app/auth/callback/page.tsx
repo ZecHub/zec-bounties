@@ -10,6 +10,7 @@ import {
   clearGithubLoginState,
   readGithubLoginState,
 } from "@/lib/githubLogin";
+import { extractAuthToken, sanitizeAuthUrl } from "@/lib/auth-errors";
 
 export default function GithubCallback() {
   const { setCurrentUser } = useBounty();
@@ -24,9 +25,7 @@ export default function GithubCallback() {
     // The session token arrives in the URL fragment (#token=...), or in the
     // query string (?token=...) during rolling deployments.
     const hash = typeof window !== "undefined" ? window.location.hash : "";
-    const hashToken = new URLSearchParams(hash.replace(/^#/, "")).get("token");
-    const queryToken = searchParams.get("token");
-    const token = hashToken || queryToken;
+    const token = extractAuthToken(hash, searchParams.get("token"));
     const expectedState = readGithubLoginState();
 
     if (!token) {
@@ -43,11 +42,7 @@ export default function GithubCallback() {
 
     // Strip the token from the address bar / history straight away.
     if (typeof window !== "undefined") {
-      const currentParams = new URLSearchParams(window.location.search);
-      currentParams.delete("token");
-      const cleanSearch = currentParams.toString()
-        ? `?${currentParams.toString()}`
-        : "";
+      const cleanSearch = sanitizeAuthUrl(window.location.search);
       window.history.replaceState(
         null,
         "",
