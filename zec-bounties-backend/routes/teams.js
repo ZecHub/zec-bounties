@@ -2742,6 +2742,13 @@ router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
 
 // ─── Team Wallet Payments (bounty payouts) ───────────────────────────────
 
+// batchKeys of team payouts this process has claimed and not yet settled.
+// Sends on one wallet run one at a time (withSendLock), and a send's own
+// timeout only starts once it holds the lock, so a PENDING row's age says
+// nothing about whether its send is still live. The resolve route checks
+// this set instead.
+const liveTeamPayoutBatches = new Set();
+
 // Authorize payout for one or more DONE, unpaid, approved bounties belonging
 // to this team, from the team's shared wallet. Same claim-before-send /
 // unknown-outcome handling as /api/transactions/authorize-payment, just
@@ -2750,6 +2757,7 @@ router.post(
   "/:teamId/wallet/authorize-payment",
   authenticate,
   async (req, res) => {
+    let liveBatchKey = null;
     try {
       const { teamId } = req.params;
       if (!(await requireTeamAdmin(teamId, req, res))) return;
@@ -2888,6 +2896,8 @@ router.post(
             "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
         });
       }
+      liveBatchKey = batchKey;
+      liveTeamPayoutBatches.add(batchKey);
 
       console.log(
         `💸 Paying ${paymentList.length} bounties from team "${teamId}" wallet "${wallet.accountName}" (by: ${req.user.id}, batch: ${batchKey})`,
@@ -3004,6 +3014,8 @@ router.post(
     } catch (error) {
       console.error("Error in team authorize-payment:", error);
       res.status(500).json({ error: error.message });
+    } finally {
+      if (liveBatchKey) liveTeamPayoutBatches.delete(liveBatchKey);
     }
   },
 );
@@ -3106,14 +3118,26 @@ router.post(
           error: "Payment may still be in flight. Try again in a few minutes.",
         });
       }
+      // Old is not enough: the send may be queued behind earlier sends on
+      // this wallet, or running now. Re-opening it would let a re-payment go
+      // out alongside it.
+      if (
+        record.status === "PENDING" &&
+        liveTeamPayoutBatches.has(record.batchKey)
+      ) {
+        return res.status(409).json({
+          error:
+            "This payment is still being sent from the team wallet. Try again once it settles.",
+        });
+      }
 
       const settledAt = new Date();
       const alreadySettled = new Error("already-settled");
 
       try {
         await prisma.$transaction(async (tx) => {
-          // Compare-and-swap on UNKNOWN, so two admins resolving the same
-          // record can't both apply (one paying, one re-opening).
+          // Compare-and-swap on the status we read, so two admins resolving
+          // the same record can't both apply (one paying, one re-opening).
           const { count } = await tx.transaction.updateMany({
             where: { id: record.id, status: record.status },
             data:
