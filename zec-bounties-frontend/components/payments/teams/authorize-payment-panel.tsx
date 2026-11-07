@@ -131,10 +131,19 @@ export function TeamAuthorizePaymentPanel({
       attemptKey.current = null;
       setSelectedIds(new Set());
 
-      // Report only bounties that were actually paid. `skipped` entries are
-      // matched by title, since that's what the toast shows.
-      const skippedTitles = new Set(result.skipped.map((s) => s.title));
+      // Report only bounties that were actually paid. Match `skipped` entries
+      // by ID first (falling back to title when ID is omitted) so duplicate
+      // bounty titles don't hide a paid bounty when a sibling was skipped.
+      const skippedIds = new Set(
+        result.skipped
+          .map((s) => s.id)
+          .filter((id): id is string => Boolean(id)),
+      );
+      const skippedTitles = new Set(
+        result.skipped.filter((s) => !s.id).map((s) => s.title),
+      );
       const paidIds = ids.filter((id) => {
+        if (skippedIds.has(id)) return false;
         const b = teamBounties.find((x) => x.id === id);
         return !!b && !skippedTitles.has(b.title);
       });

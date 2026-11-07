@@ -1328,14 +1328,22 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) {
         // Same as the admin flow: refresh regardless, since an unknown outcome
         // (502) may have already locked the bounties server-side.
-        await Promise.all([fetchBounties(), fetchTeamPaymentRecords(teamId)]);
+        await Promise.all([
+          fetchBounties(),
+          fetchTeamBounties(teamId),
+          fetchTeamPaymentRecords(teamId),
+        ]);
         const message = data.details
           ? `${data.error}: ${data.details}`
           : data.error || "Failed to authorize payment";
         throw new Error(message);
       }
 
-      await Promise.all([fetchBounties(), fetchTeamPaymentRecords(teamId)]);
+      await Promise.all([
+        fetchBounties(),
+        fetchTeamBounties(teamId),
+        fetchTeamPaymentRecords(teamId),
+      ]);
 
       return {
         success: true,

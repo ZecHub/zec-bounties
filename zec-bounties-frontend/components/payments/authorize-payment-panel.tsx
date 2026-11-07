@@ -75,6 +75,7 @@ export function AuthorizePaymentPanel() {
 
   const blockedBounties = bounties.filter(
     (b) =>
+      !b.teamId &&
       b.status === "DONE" &&
       b.isApproved &&
       !b.isPaid &&
@@ -86,18 +87,29 @@ export function AuthorizePaymentPanel() {
   // Sends whose outcome the backend couldn't confirm — locked server-side
   // until someone resolves them from the Transactions tab.
   const inFlightBounties = bounties.filter(
-    (b) => b.status === "DONE" && !b.isPaid && b.paymentInFlight,
+    (b) => !b.teamId && b.status === "DONE" && !b.isPaid && b.paymentInFlight,
   );
 
   // unpaidDoneCount is only tracked server-side for MAIN chain today, so we can
   // only detect "there's more than what's loaded" when paying from a mainnet wallet.
-  // Note this also doesn't filter on isApproved, so it can slightly overcount
-  // vs. eligibleBounties if some DONE/unpaid bounties aren't yet approved.
-  const totalUnpaidOnChain = activeChain === "MAIN" ? unpaidDoneCount : null;
-  const hasUnloadedEligible =
-    totalUnpaidOnChain !== null &&
-    totalUnpaidOnChain > eligibleBounties.length &&
-    hasMoreBounties;
+  // Subtract rows already loaded into `bounties` that the server's ADMIN_PAYOUT_SCOPE
+  // count includes (including team bounties with admin payout or in-flight/unapproved
+  // rows) so loaded non-eligible rows aren't mistaken for unloaded eligible ones.
+  const loadedUnpaidDoneOnMain = bounties.filter(
+    (b) =>
+      b.chain === "MAIN" &&
+      b.status === "DONE" &&
+      !b.isPaid &&
+      !b.exportedAt &&
+      (!b.teamId || b.team?.payoutBy !== "TEAM"),
+  ).length;
+  const unloadedMainCount =
+    activeChain === "MAIN"
+      ? Math.max(0, unpaidDoneCount - loadedUnpaidDoneOnMain)
+      : 0;
+  const totalUnpaidOnChain =
+    activeChain === "MAIN" ? eligibleBounties.length + unloadedMainCount : null;
+  const hasUnloadedEligible = unloadedMainCount > 0 && hasMoreBounties;
 
   const toggleOne = (id: string) => {
     setSelectedIds((prev) => {
@@ -151,7 +163,13 @@ export function AuthorizePaymentPanel() {
     }
   };
 
-  if (eligibleBounties.length === 0) {
+  const hasEligible = eligibleBounties.length > 0;
+  const hasActivity =
+    hasEligible ||
+    inFlightBounties.length > 0 ||
+    Boolean(defaultWallet && blockedBounties.length > 0);
+
+  if (!hasActivity) {
     if (hasUnloadedEligible) {
       return (
         <div className="text-center py-8 text-muted-foreground space-y-3">
@@ -264,88 +282,94 @@ export function AuthorizePaymentPanel() {
         </div>
       )}
 
-      {/* Select all + summary */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={selectedIds.size === eligibleBounties.length}
-            onCheckedChange={toggleAll}
-            id="select-all"
-          />
-          <label
-            htmlFor="select-all"
-            className="text-sm font-medium cursor-pointer"
-          >
-            Select all ({eligibleBounties.length})
-          </label>
-        </div>
-        {selectedIds.size > 0 && (
-          <span className="text-sm text-muted-foreground">
-            {selectedIds.size} selected · {totalSelected.toFixed(4)} ZEC
-          </span>
-        )}
-      </div>
-
-      {/* Bounty rows */}
-      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-        {eligibleBounties.map((bounty) => (
-          <div
-            key={bounty.id}
-            onClick={() => toggleOne(bounty.id)}
-            className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-              selectedIds.has(bounty.id)
-                ? "border-primary bg-primary/5"
-                : "hover:bg-muted/50"
-            }`}
-          >
-            <Checkbox
-              checked={selectedIds.has(bounty.id)}
-              onCheckedChange={() => toggleOne(bounty.id)}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{bounty.title}</p>
-              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                {bounty.assigneeUser?.name ?? "Unknown assignee"}
-                {bounty.chain === "MAIN" ? (
-                  bounty.assigneeUser?.UA_address ? (
-                    <span className="text-green-600 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> UA set
-                    </span>
-                  ) : (
-                    <span className="text-red-600 flex items-center gap-0.5">
-                      <AlertTriangle className="w-3 h-3" /> No UA
-                    </span>
-                  )
-                ) : bounty.assigneeUser?.z_address ? (
-                  <span className="text-blue-600 flex items-center gap-0.5">
-                    <CheckCircle2 className="w-3 h-3" /> TA set
-                  </span>
-                ) : (
-                  <span className="text-yellow-600 flex items-center gap-0.5">
-                    <AlertTriangle className="w-3 h-3" /> No TA
-                  </span>
-                )}
-              </p>
+      {hasEligible && (
+        <>
+          {/* Select all + summary */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={selectedIds.size === eligibleBounties.length}
+                onCheckedChange={toggleAll}
+                id="select-all"
+              />
+              <label
+                htmlFor="select-all"
+                className="text-sm font-medium cursor-pointer"
+              >
+                Select all ({eligibleBounties.length})
+              </label>
             </div>
-            <span className="text-sm font-mono font-medium shrink-0">
-              {bounty.bountyAmount.toFixed(4)} ZEC
-            </span>
+            {selectedIds.size > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} selected · {totalSelected.toFixed(4)} ZEC
+              </span>
+            )}
           </div>
-        ))}
-      </div>
 
-      {/* Authorize button */}
-      <Button
-        onClick={() => setShowConfirm(true)}
-        disabled={selectedIds.size === 0 || isProcessing || !defaultWallet}
-        className="w-full"
-        aria-busy={isProcessing}
-      >
-        {isProcessing
-          ? "Sending…"
-          : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
-      </Button>
+          {/* Bounty rows */}
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {eligibleBounties.map((bounty) => (
+              <div
+                key={bounty.id}
+                onClick={() => toggleOne(bounty.id)}
+                className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                  selectedIds.has(bounty.id)
+                    ? "border-primary bg-primary/5"
+                    : "hover:bg-muted/50"
+                }`}
+              >
+                <Checkbox
+                  checked={selectedIds.has(bounty.id)}
+                  onCheckedChange={() => toggleOne(bounty.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{bounty.title}</p>
+                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                    {bounty.assigneeUser?.name ?? "Unknown assignee"}
+                    {bounty.chain === "MAIN" ? (
+                      bounty.assigneeUser?.UA_address ? (
+                        <span className="text-green-600 flex items-center gap-0.5">
+                          <CheckCircle2 className="w-3 h-3" /> UA set
+                        </span>
+                      ) : (
+                        <span className="text-red-600 flex items-center gap-0.5">
+                          <AlertTriangle className="w-3 h-3" /> No UA
+                        </span>
+                      )
+                    ) : bounty.assigneeUser?.z_address ? (
+                      <span className="text-blue-600 flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3" /> TA set
+                      </span>
+                    ) : (
+                      <span className="text-yellow-600 flex items-center gap-0.5">
+                        <AlertTriangle className="w-3 h-3" /> No TA
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <span className="text-sm font-mono font-medium shrink-0">
+                  {bounty.bountyAmount.toFixed(4)} ZEC
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Authorize button */}
+          <Button
+            onClick={() => setShowConfirm(true)}
+            disabled={
+              selectedIds.size === 0 || isProcessing || !defaultWallet
+            }
+            className="w-full"
+            aria-busy={isProcessing}
+          >
+            {isProcessing
+              ? "Sending…"
+              : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
+          </Button>
+        </>
+      )}
 
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
         <AlertDialogContent>
