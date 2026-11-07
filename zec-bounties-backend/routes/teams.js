@@ -232,6 +232,10 @@ async function teardownTeamWallet(teamId, wallet) {
   // Sweeps rows owned by non-members (e.g. a global admin who created it)
   await prisma.zcashParams.deleteMany({ where: { teamId } });
   await prisma.teamWallet.delete({ where: { teamId } });
+
+  // The public overview must not keep showing this wallet's address as the
+  // place to donate once its directory is gone.
+  await delCache(donationAddressCacheKey(teamId));
 }
 
 async function canDeleteTeamWallet(teamId, req) {
@@ -419,11 +423,15 @@ function findUnifiedAddress(value) {
   return null;
 }
 
+function donationAddressCacheKey(teamId) {
+  return `team-donation-address:${teamId}`;
+}
+
 // Reads the team wallet's UA, cached because this route is public-facing and
 // should not hit the wallet on every page view. Returns null if the team has
-// no wallet or the wallet can't be read.
+// no wallet or the wallet can't be read. teardownTeamWallet clears the entry.
 async function getTeamDonationAddress(teamId) {
-  const cacheKey = `team-donation-address:${teamId}`;
+  const cacheKey = donationAddressCacheKey(teamId);
 
   try {
     const cached = await getCache(cacheKey);
