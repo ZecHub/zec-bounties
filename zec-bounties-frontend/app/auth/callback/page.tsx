@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { useBounty } from "@/lib/bounty-context";
 import { backendUrl } from "@/lib/configENV";
 import {
   clearGithubLoginState,
+  extractGithubCallbackParams,
   readGithubLoginState,
 } from "@/lib/githubLogin";
 
@@ -15,32 +16,39 @@ export default function GithubCallback() {
   const { setCurrentUser } = useBounty();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const handledRef = useRef(false);
 
   useEffect(() => {
-    // The session token arrives in the URL fragment (#token=...), not the query
-    // string — a fragment is never sent to servers (so it can't be logged) and
-    // is not included in the Referer header. Read it from location.hash.
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
-    const token = new URLSearchParams(hash.replace(/^#/, "")).get("token");
+    if (handledRef.current) return;
+    handledRef.current = true;
+
+    // The session token arrives in the URL fragment (#token=...), with a
+    // fallback to the query string (?token=...) during rolling deployments.
+    const location =
+      typeof window !== "undefined"
+        ? window.location
+        : { pathname: "/auth/callback", search: "", hash: "" };
+    const { token, state, scrubbedUrl } = extractGithubCallbackParams(
+      location,
+      searchParams,
+    );
     const expectedState = readGithubLoginState();
 
     if (!token) {
+      clearGithubLoginState();
       router.push("/login?error=missing_token");
       return;
     }
 
-    if (!expectedState || searchParams.get("state") !== expectedState) {
+    if (!expectedState || state !== expectedState) {
+      clearGithubLoginState();
       router.push("/login?error=invalid_state");
       return;
     }
 
     // Strip the token from the address bar / history straight away.
     if (typeof window !== "undefined") {
-      window.history.replaceState(
-        null,
-        "",
-        window.location.pathname + window.location.search,
-      );
+      window.history.replaceState(null, "", scrubbedUrl);
     }
 
     localStorage.setItem("authToken", token);
