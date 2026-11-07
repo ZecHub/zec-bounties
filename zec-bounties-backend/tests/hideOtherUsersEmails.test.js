@@ -126,3 +126,151 @@ test("an admin still sees payout addresses", async () => {
 test("an anonymous caller gets no payout addresses", () => {
   assert.deepEqual(addressesIn(withoutOtherUsersEmails(bountyPayload())), []);
 });
+
+// Self-payout team managers (role === "TEAM", teamMember.role in OWNER/ADMIN,
+// team.payoutBy === "TEAM") need assignee payout addresses and emails on
+// GET /:teamId/export-completed so the Export Completed modal and CSV have
+// destination addresses.
+function loadTeamsRouter(db, currentUser) {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const vm = require("node:vm");
+  const anything = new Proxy(function () {}, {
+    get: (_, key) => (key === "then" ? undefined : anything),
+    apply: () => anything,
+    construct: () => anything,
+  });
+  const dependencies = {
+    express,
+    "@prisma/client": {
+      PrismaClient: function () {
+        return db;
+      },
+    },
+    "../middleware/auth": {
+      authenticate: (req, _res, next) => {
+        req.user = currentUser;
+        next();
+      },
+      optionalAuthenticate: (req, _res, next) => {
+        req.user = currentUser;
+        next();
+      },
+      requireAdmin: (_req, _res, next) => next(),
+    },
+    "../utils/exportableBounty": require("../utils/exportableBounty"),
+    "../utils/userSelects": require("../utils/userSelects"),
+  };
+  const filename = path.join(__dirname, "../routes/teams.js");
+  const mod = { exports: {} };
+  vm.runInNewContext(
+    fs.readFileSync(filename, "utf8"),
+    {
+      module: mod,
+      exports: mod.exports,
+      require: (name) =>
+        Object.hasOwn(dependencies, name) ? dependencies[name] : anything,
+      console: { log() {}, error() {} },
+      process: { env: {} },
+      Promise,
+    },
+    { filename },
+  );
+  return mod.exports;
+}
+
+async function requestTeamExport({ user, memberRole, payoutBy }) {
+  const db = {
+    teamMember: {
+      findUnique: async () => (memberRole ? { role: memberRole } : null),
+    },
+    team: {
+      findUnique: async () => (payoutBy ? { payoutBy } : null),
+    },
+    bounty: {
+      findMany: async () => [
+        {
+          id: "bounty-1",
+          title: "Completed team bounty",
+          teamId: "team-1",
+          chain: "MAIN",
+          status: "DONE",
+          isApproved: true,
+          isPaid: false,
+          paymentInFlight: false,
+          exportedAt: null,
+          assigneeUser: {
+            id: "hunter-1",
+            name: "Hunter One",
+            email: "hunter1@example.com",
+            z_address: "zs1hunter1",
+            UA_address: "u1hunter1",
+          },
+          assignees: [
+            {
+              user: {
+                id: "hunter-2",
+                name: "Hunter Two",
+                email: "hunter2@example.com",
+                z_address: "zs1hunter2",
+                UA_address: "u1hunter2",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const app = express();
+  app.use(
+    "/api/teams",
+    hideOtherUsersEmails,
+    loadTeamsRouter(db, user),
+  );
+
+  const server = app.listen(0);
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/teams/team-1/export-completed`,
+    );
+    return { status: res.status, body: await res.json() };
+  } finally {
+    server.close();
+  }
+}
+
+test("a self-payout team OWNER or ADMIN receives assignee payout addresses and emails on GET /:teamId/export-completed", async () => {
+  for (const memberRole of ["OWNER", "ADMIN"]) {
+    const { status, body } = await requestTeamExport({
+      user: { id: "team-owner", role: "TEAM" },
+      memberRole,
+      payoutBy: "TEAM",
+    });
+    assert.equal(status, 200);
+    const [bounty] = body.data;
+    assert.equal(bounty.assigneeUser.UA_address, "u1hunter1");
+    assert.equal(bounty.assigneeUser.z_address, "zs1hunter1");
+    assert.equal(bounty.assigneeUser.email, "hunter1@example.com");
+    assert.equal(bounty.assignees[0].user.UA_address, "u1hunter2");
+    assert.equal(bounty.assignees[0].user.z_address, "zs1hunter2");
+    assert.equal(bounty.assignees[0].user.email, "hunter2@example.com");
+  }
+});
+
+test("non-manager team members and admin-payout teams cannot export completed team bounties", async () => {
+  const memberRes = await requestTeamExport({
+    user: { id: "team-member", role: "TEAM" },
+    memberRole: "MEMBER",
+    payoutBy: "TEAM",
+  });
+  assert.equal(memberRes.status, 403);
+
+  const adminPayoutRes = await requestTeamExport({
+    user: { id: "team-owner", role: "TEAM" },
+    memberRole: "OWNER",
+    payoutBy: "ADMIN",
+  });
+  assert.equal(adminPayoutRes.status, 403);
+});
+
