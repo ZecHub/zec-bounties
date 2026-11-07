@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,7 +16,10 @@ import { Terminal } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
 import { backendUrl } from "@/lib/configENV";
-import { startGithubLogin } from "@/lib/githubLogin";
+import {
+  getGithubOAuthErrorMessage,
+  startGithubLogin,
+} from "@/lib/githubLogin";
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -25,6 +28,15 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const { login, currentUser } = useBounty();
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search || "");
+    const oauthError = getGithubOAuthErrorMessage(params.get("error"));
+    if (oauthError) {
+      setError(oauthError);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
