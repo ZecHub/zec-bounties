@@ -831,10 +831,16 @@ router.patch(
         return res.status(400).json({ error: "Team not found" });
       }
 
+      // A payout record is owned by whoever owns the bounty now (platform
+      // records list/resolve vs. the team's), so a bounty whose platform
+      // payout is still unresolved must not change hands: the platform admin
+      // would lose it and the team admin, finding nothing in the team wallet,
+      // could mark it failed and pay it again.
       const result = await prisma.bounty.updateMany({
         where: {
           id: { in: bountyIds },
           teamId: null,
+          paymentInFlight: false,
           createdByUser: { role: "ADMIN" },
         },
         data: { teamId: team.id, isPrivate: team.isPrivate },
@@ -3305,6 +3311,20 @@ router.put("/:id", authenticate, async (req, res) => {
     ) {
       // Non-admins can't move a bounty to a different team via edit, including clearing it
       return res.status(403).json({ error: "Cannot reassign team" });
+    }
+
+    // Payout records follow the bounty's current team (platform vs. team
+    // records/resolve routes), so moving a bounty with an unresolved payout
+    // would hand that send to the wrong wallet's owner.
+    if (
+      req.body.teamId !== undefined &&
+      (req.body.teamId || null) !== existing.teamId &&
+      existing.paymentInFlight
+    ) {
+      return res.status(409).json({
+        error:
+          "This bounty has a payout in progress or awaiting resolution; resolve it before moving the bounty",
+      });
     }
 
     const validation = validateBountyUpdate(req.body);
