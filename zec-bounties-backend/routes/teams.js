@@ -756,6 +756,7 @@ router.get(
         },
         orderBy: { completedAt: "desc" },
       });
+      res.locals.allowExportUserFields = true;
       res.json({ success: true, data: bounties });
     } catch (error) {
       console.error("Error fetching completed team bounties:", error);

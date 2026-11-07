@@ -23,10 +23,13 @@ function withoutOtherUsersEmails(body, viewerId) {
 
 // Runs before the router, so it wraps res.json and checks the role only when
 // the response is sent, after the route's own authenticate has set req.user.
+// Routes that have already verified an equivalent export authorization (such
+// as a self-payout team's OWNER/ADMIN on GET /:teamId/export-completed) may opt
+// out for that response via `res.locals.allowExportUserFields = true`.
 function hideOtherUsersEmails(req, res, next) {
   const json = res.json.bind(res);
   res.json = (body) =>
-    req.user?.role === "ADMIN"
+    req.user?.role === "ADMIN" || res.locals?.allowExportUserFields
       ? json(body)
       : json(withoutOtherUsersEmails(body, req.user?.id));
   next();
