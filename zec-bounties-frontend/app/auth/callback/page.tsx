@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -10,36 +10,43 @@ import {
   clearGithubLoginState,
   readGithubLoginState,
 } from "@/lib/githubLogin";
+import { extractAuthToken, sanitizeAuthUrl } from "@/lib/auth-errors";
 
 export default function GithubCallback() {
   const { setCurrentUser } = useBounty();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hasHandledCallback = useRef(false);
 
   useEffect(() => {
-    // The session token arrives in the URL fragment (#token=...), not the query
-    // string — a fragment is never sent to servers (so it can't be logged) and
-    // is not included in the Referer header. Read it from location.hash.
+    if (hasHandledCallback.current) return;
+    hasHandledCallback.current = true;
+
+    // The session token arrives in the URL fragment (#token=...), or in the
+    // query string (?token=...) during rolling deployments.
     const hash = typeof window !== "undefined" ? window.location.hash : "";
-    const token = new URLSearchParams(hash.replace(/^#/, "")).get("token");
+    const token = extractAuthToken(hash, searchParams.get("token"));
     const expectedState = readGithubLoginState();
 
     if (!token) {
+      clearGithubLoginState();
       router.push("/login?error=missing_token");
       return;
     }
 
     if (!expectedState || searchParams.get("state") !== expectedState) {
+      clearGithubLoginState();
       router.push("/login?error=invalid_state");
       return;
     }
 
     // Strip the token from the address bar / history straight away.
     if (typeof window !== "undefined") {
+      const cleanSearch = sanitizeAuthUrl(window.location.search);
       window.history.replaceState(
         null,
         "",
-        window.location.pathname + window.location.search,
+        window.location.pathname + cleanSearch,
       );
     }
 
