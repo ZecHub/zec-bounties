@@ -104,6 +104,14 @@ const CHART_PALETTE = [
   "var(--primary)",
 ];
 
+function contributorLabel(user?: { name?: string | null; nickname?: string | null } | null): string {
+  if (!user) return "Unknown";
+  const name = user.name?.trim();
+  const nick = user.nickname?.trim();
+  if (name && nick && name !== nick) return `${name} (@${nick})`;
+  return name || nick || "Unknown";
+}
+
 function UserAvatar({
   user,
   getDefaultAvatarClasses,
@@ -181,12 +189,15 @@ export default function KpisDashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const editBadgesParam = searchParams?.get("editBadges");
+
   const [viewMode, setViewMode] = useState<"public" | "admin">(
     isAdmin ? "admin" : "public",
   );
   const [sortKey, setSortKey] = useState<SortKey>("completed");
   const [sortDirection, setSortDirection] = useState<"desc" | "asc">("desc");
   const [showAllUsers, setShowAllUsers] = useState(() => {
+    if (editBadgesParam) return true;
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("kpis:showAllUsers") === "true";
   });
@@ -389,7 +400,8 @@ const [zecPrices, setZecPrices] = useState<
         if (isAdmin) await initAddressDecoder();
 
         const params = new URLSearchParams();
-        if (showAllUsers) params.set("all", "true");
+        const needsAllUsers = showAllUsers || (isAdmin && !!editBadgesParam);
+        if (needsAllUsers) params.set("all", "true");
         params.set("timeRange", timeRange);
         params.set("chain", chainFilter === "all" ? "ALL" : chainFilter);
 
@@ -455,20 +467,26 @@ const [zecPrices, setZecPrices] = useState<
       }
     };
     loadData();
-  }, [isAdmin, showAllUsers, timeRange, chainFilter]);
+  }, [isAdmin, showAllUsers, editBadgesParam, timeRange, chainFilter]);
 
   // Open badge modal when arriving from staff view (?editBadges=<userId>)
   useEffect(() => {
     const userId = searchParams?.get("editBadges");
-    if (!userId || !isAdmin || loadingContributors) return;
+    if (!userId || !isAdmin) return;
+    if (!showAllUsers) {
+      setShowAllUsers(true);
+      return;
+    }
+    if (loadingContributors) return;
     const user = topContributors.find((u) => u.id === userId);
     if (!user) return;
     openBadgeModal(user);
     // Clear the param so a refresh doesn't re-open
     const next = new URLSearchParams(searchParams.toString());
     next.delete("editBadges");
-    router.replace(`?${next.toString()}`, { scroll: false });
-  }, [searchParams, isAdmin, loadingContributors, topContributors, router]);
+    const qs = next.toString();
+    router.replace(qs ? `?${qs}` : "/admin/kpis", { scroll: false });
+  }, [searchParams, isAdmin, showAllUsers, loadingContributors, topContributors, router]);
 
   // Fetch time series data
   useEffect(() => {
@@ -1058,6 +1076,7 @@ const [zecPrices, setZecPrices] = useState<
                           {isAdmin && viewMode === "admin" && (
                             <button
                               onClick={() => {
+                                if (!showAllUsers) setShowAllUsers(true);
                                 setSelectedUserForBadges(null);
                                 setSelectedBadges([]);
                                 setIsBadgeModalOpen(true);
@@ -1695,12 +1714,17 @@ const [zecPrices, setZecPrices] = useState<
                         />
                         <div className="mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
                           {topContributors
-                            .filter((u) =>
-                              u.name
-                                .toLowerCase()
-                                .includes(userFilter.toLowerCase().trim()),
+                            .filter((u) => {
+                              const q = userFilter.toLowerCase().trim();
+                              return (
+                                contributorLabel(u).toLowerCase().includes(q) ||
+                                u.name?.toLowerCase().includes(q) ||
+                                (u as any).nickname?.toLowerCase().includes(q)
+                              );
+                            })
+                            .sort((a, b) =>
+                              contributorLabel(a).localeCompare(contributorLabel(b)),
                             )
-                            .sort((a, b) => a.name.localeCompare(b.name))
                             .map((user) => (
                               <button
                                 key={user.id}
@@ -1712,14 +1736,17 @@ const [zecPrices, setZecPrices] = useState<
                                 }}
                                 className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
                               >
-                                {user.name}
+                                {contributorLabel(user)}
                               </button>
                             ))}
-                          {topContributors.filter((u) =>
-                            u.name
-                              .toLowerCase()
-                              .includes(userFilter.toLowerCase().trim()),
-                          ).length === 0 && (
+                          {topContributors.filter((u) => {
+                            const q = userFilter.toLowerCase().trim();
+                            return (
+                              contributorLabel(u).toLowerCase().includes(q) ||
+                              u.name?.toLowerCase().includes(q) ||
+                              (u as any).nickname?.toLowerCase().includes(q)
+                            );
+                          }).length === 0 && (
                             <div className="px-3 py-2 text-sm text-muted-foreground">
                               No users found
                             </div>
@@ -1734,7 +1761,7 @@ const [zecPrices, setZecPrices] = useState<
                     <div className="mb-4">
                       <p className="text-sm text-muted-foreground mb-1">User</p>
                       <div className="font-medium">
-                        {selectedUserForBadges.name}
+                        {contributorLabel(selectedUserForBadges)}
                       </div>
                     </div>
                   )}

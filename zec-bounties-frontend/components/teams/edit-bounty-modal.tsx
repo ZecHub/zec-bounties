@@ -37,6 +37,16 @@ import { Bounty, User } from "@/lib/types";
 import { displayName } from "@/lib/displayName";
 import { IS_DEV } from "@/lib/configENV";
 
+// Show both identities when they differ so team admins can match the name
+// used in the staff view / KPI list (name) against the nickname.
+function assigneeLabel(user?: { name?: string | null; nickname?: string | null } | null): string {
+  if (!user) return "User";
+  const name = user.name?.trim();
+  const nick = user.nickname?.trim();
+  if (name && nick && name !== nick) return `${name} (@${nick})`;
+  return displayName(user as any);
+}
+
 interface EditBountyModalProps {
   bounty: Bounty | null;
   open: boolean;
@@ -147,9 +157,14 @@ export function TeamsEditBountyModal({
   const lacksAddress = (u: User) => hasAddress(u) === false;
 
   const filteredUsers = teamUsers
-    .filter((u) =>
-      displayName(u).toLowerCase().includes(assigneeSearch.toLowerCase()),
-    )
+    .filter((u) => {
+      const q = assigneeSearch.toLowerCase();
+      return (
+        assigneeLabel(u).toLowerCase().includes(q) ||
+        u.name?.toLowerCase().includes(q) ||
+        u.nickname?.toLowerCase().includes(q)
+      );
+    })
     .sort((a, b) => {
       const aSelected = selectedUserIds.includes(a.id);
       const bSelected = selectedUserIds.includes(b.id);
@@ -372,10 +387,10 @@ export function TeamsEditBountyModal({
                           src={u.avatar || "/placeholder-user.jpg"}
                         />
                         <AvatarFallback className="text-[8px]">
-                          {displayName(u)[0]}
+                          {assigneeLabel(u)[0]}
                         </AvatarFallback>
                       </Avatar>
-                      {displayName(u)}
+                      {assigneeLabel(u)}
                       <button
                         onClick={() => toggleUser(u.id)}
                         className="text-muted-foreground hover:text-destructive transition-colors"
@@ -399,7 +414,7 @@ export function TeamsEditBountyModal({
                     </p>
                     <p className="text-yellow-700 dark:text-yellow-300 text-xs">
                       {selectedUsersWithoutAddress
-                        .map((u) => displayName(u))
+                        .map((u) => assigneeLabel(u))
                         .join(", ")}{" "}
                       {selectedUsersWithoutAddress.length === 1
                         ? "has"
@@ -455,12 +470,12 @@ export function TeamsEditBountyModal({
                             src={user.avatar || "/placeholder-user.jpg"}
                           />
                           <AvatarFallback className="text-xs font-semibold">
-                            {displayName(user)[0]}
+                            {assigneeLabel(user)[0]}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">
-                            {displayName(user)}
+                            {assigneeLabel(user)}
                           </p>
                           {chain === "MAIN" ? (
                             addressOk ? (

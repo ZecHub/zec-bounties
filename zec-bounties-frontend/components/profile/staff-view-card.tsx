@@ -382,67 +382,68 @@ export function StaffViewCard({
     <>
       <Card className="border-amber-500/40">
         <CardHeader className="pb-2">
-          <button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            className="flex w-full items-center justify-between gap-3 text-left"
-            aria-expanded={open}
-          >
-            <CardTitle className="text-base flex items-center gap-2">
-              Staff view
-              <Badge variant="outline" className="text-[10px] font-normal">
-                Admin
-              </Badge>
-              {data?.displayName && (
-                <span className="text-[10px] font-normal text-muted-foreground">
-                  {data.nickname && data.name && data.nickname !== data.name
-                    ? `${data.name} (@${data.nickname})`
-                    : data.displayName}
-                </span>
-              )}
-              {taskAccess && taskBlocked && (
-                <Badge
-                  variant="destructive"
-                  className="gap-1 text-[10px] font-normal"
-                >
-                  <Ban className="w-2.5 h-2.5" />
-                  Tasks blocked
+          <div className="flex w-full items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              className="flex flex-1 items-center justify-between gap-3 text-left min-w-0"
+              aria-expanded={open}
+            >
+              <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                Staff view
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  Admin
                 </Badge>
-              )}
-              {data?.joinedAt && (
-                <span className="text-[10px] font-normal text-muted-foreground">
-                  Joined{" "}
-                  {new Date(data.joinedAt).toLocaleString(undefined, {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                </span>
-              )}
-            </CardTitle>
-            <span className="flex items-center gap-3 text-xs text-muted-foreground">
-              {data && (
-                <span className="tabular-nums">
-                  {bountyCount} · {fmt(zecEarned)} earned
-                </span>
-              )}
-              {data?.userId && (
-                <Link
-                  href={`/admin/kpis?editBadges=${encodeURIComponent(data.userId)}`}
-                  className="inline-flex items-center gap-1 rounded p-1 hover:bg-muted text-muted-foreground hover:text-foreground"
-                  title="Edit badges for this user"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Link>
-              )}
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
-              />
-            </span>
-          </button>
+                {data?.displayName && (
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    {data.nickname && data.name && data.nickname !== data.name
+                      ? `${data.name} (@${data.nickname})`
+                      : data.displayName}
+                  </span>
+                )}
+                {taskAccess && taskBlocked && (
+                  <Badge
+                    variant="destructive"
+                    className="gap-1 text-[10px] font-normal"
+                  >
+                    <Ban className="w-2.5 h-2.5" />
+                    Tasks blocked
+                  </Badge>
+                )}
+                {data?.joinedAt && (
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    Joined{" "}
+                    {new Date(data.joinedAt).toLocaleString(undefined, {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                )}
+              </CardTitle>
+              <span className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                {data && (
+                  <span className="tabular-nums">
+                    {bountyCount} · {fmt(zecEarned)} earned
+                  </span>
+                )}
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
+                />
+              </span>
+            </button>
+            {data?.userId && (
+              <Link
+                href={`/admin/kpis?editBadges=${encodeURIComponent(data.userId)}`}
+                className="inline-flex items-center gap-1 rounded p-1 hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
+                title="Edit badges for this user"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </div>
         </CardHeader>
         {open && (
           <CardContent className="space-y-4">
@@ -536,21 +537,33 @@ export function StaffViewCard({
                 <div className="space-y-6">
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-2">
-                      Open
+                      Open ({openVisible.length}
+                      {data.openTotal > openVisible.length
+                        ? ` of ${data.openTotal}`
+                        : ""}
+                      )
                     </p>
                     <div className="space-y-4 pl-2 border-l border-border/50">
-                      <List
-                        title="Personal"
-                        total={openPersonal.length}
-                        rows={openPersonal}
-                        onOpen={openBounty}
-                      />
-                      <List
-                        title="Team"
-                        total={openTeam.length}
-                        rows={openTeam}
-                        onOpen={openBounty}
-                      />
+                      {openPersonal.length === 0 && openTeam.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">
+                          None
+                        </p>
+                      ) : (
+                        <>
+                          <List
+                            title="Personal"
+                            total={openPersonal.length}
+                            rows={openPersonal}
+                            onOpen={openBounty}
+                          />
+                          <List
+                            title="Team"
+                            total={openTeam.length}
+                            rows={openTeam}
+                            onOpen={openBounty}
+                          />
+                        </>
+                      )}
                     </div>
                     {data.openNextOffset != null && onLoadMoreOpen && (
                       <button
@@ -565,21 +578,34 @@ export function StaffViewCard({
 
                   <div>
                     <p className="text-xs font-medium text-muted-foreground mb-2">
-                      History
+                      History ({historyVisible.length}
+                      {data.historyTotal > historyVisible.length
+                        ? ` of ${data.historyTotal}`
+                        : ""}
+                      )
                     </p>
                     <div className="space-y-4 pl-2 border-l border-border/50">
-                      <List
-                        title="Personal"
-                        total={historyPersonal.length}
-                        rows={historyPersonal}
-                        onOpen={openBounty}
-                      />
-                      <List
-                        title="Team"
-                        total={historyTeam.length}
-                        rows={historyTeam}
-                        onOpen={openBounty}
-                      />
+                      {historyPersonal.length === 0 &&
+                      historyTeam.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">
+                          None
+                        </p>
+                      ) : (
+                        <>
+                          <List
+                            title="Personal"
+                            total={historyPersonal.length}
+                            rows={historyPersonal}
+                            onOpen={openBounty}
+                          />
+                          <List
+                            title="Team"
+                            total={historyTeam.length}
+                            rows={historyTeam}
+                            onOpen={openBounty}
+                          />
+                        </>
+                      )}
                     </div>
                     {data.historyNextOffset != null && onLoadMoreHistory && (
                       <button
