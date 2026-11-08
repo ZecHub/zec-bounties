@@ -1688,15 +1688,14 @@ router.get("/:id/submissions", authenticate, async (req, res) => {
 
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, createdBy: true, assignee: true },
+      select: { id: true, createdBy: true, assignee: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
-    const isCreatorOrAdmin =
-      bounty.createdBy === userId || userRole === "ADMIN";
+    const isManager = await canManageBounty(bounty, req.user);
 
     let isAssignee = false;
-    if (!isCreatorOrAdmin) {
+    if (!isManager) {
       isAssignee =
         bounty.assignee === userId ||
         !!(await prisma.bountyAssignee.findUnique({
@@ -1705,15 +1704,15 @@ router.get("/:id/submissions", authenticate, async (req, res) => {
         }));
     }
 
-    if (!isCreatorOrAdmin && !isAssignee) {
+    if (!isManager && !isAssignee) {
       return res
         .status(403)
         .json({ error: "You do not have permission to view submissions" });
     }
 
-    // Only cache admin/creator view — assignee view is filtered per-user
+    // Only cache manager view — assignee view is filtered per-user
     // so sharing a cache key would leak data or serve wrong results
-    const cacheKey = isCreatorOrAdmin ? `submissions:${bountyId}` : null;
+    const cacheKey = isManager ? `submissions:${bountyId}` : null;
 
     if (cacheKey) {
       const cached = await getCache(cacheKey);
@@ -1727,7 +1726,7 @@ router.get("/:id/submissions", authenticate, async (req, res) => {
     const submissions = await prisma.workSubmission.findMany({
       where: {
         bountyId,
-        ...(!isCreatorOrAdmin && { submittedBy: userId }),
+        ...(!isManager && { submittedBy: userId }),
       },
       include: {
         submitterUser: {
@@ -2513,10 +2512,10 @@ router.get("/:bountyId/applications", authenticate, async (req, res) => {
     const { bountyId } = req.params;
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, createdBy: true },
+      select: { id: true, createdBy: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-    if (req.user.role !== "ADMIN" && bounty.createdBy !== req.user.id) {
+    if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -3118,7 +3117,7 @@ router.get("/:id/activity", authenticate, async (req, res) => {
       select: { id: true, createdBy: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-    if (req.user.role !== "ADMIN") {
+    if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
