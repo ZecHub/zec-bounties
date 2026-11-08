@@ -55,6 +55,10 @@ jobs:
           echo "::notice::$message"
           echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Enable Corepack
+        if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
+        run: corepack enable
+
       - name: Setup Node.js
         if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
         uses: actions/setup-node@v4
