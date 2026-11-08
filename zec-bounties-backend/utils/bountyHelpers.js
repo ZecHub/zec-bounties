@@ -48,16 +48,105 @@ const sendPushToOptedIn = async (userIds, payload) => {
   }
 };
 
-// Mirrors canViewPrivateBounty's rules, but returns the full recipient set
-// instead of checking one user — used to scope websocket broadcasts so a
-// private bounty's payload never reaches a socket outside its audience.
-// Returns null for public bounties, meaning "broadcast to everyone".
-async function getBroadcastRecipients(bounty) {
-  if (!bounty.isPrivate) return null;
+// Canonical access-control projections for private bounties and private-team
+// bounties (#401):
+//   1. bountiesVisibleTo(user)             -> Prisma `where` filter for list queries
+//   2. canViewPrivateBounty(bounty, user)  -> single-row authorization check
+//   3. audienceOf(bounty)                  -> recipient user IDs for scoped broadcasts
+//                                             (null when public = broadcast to all)
+const FAVORITE_ACCESS_ROLES = new Set(["HUNTER"]);
 
-  const recipients = new Set([bounty.createdBy]);
+const PUBLIC_BOUNTY_WHERE = {
+  isPrivate: false,
+  OR: [{ teamId: null }, { team: { isPrivate: false } }],
+};
 
-  const admins = await prisma.user.findMany({
+function bountiesVisibleTo(user) {
+  if (user?.role === "ADMIN") return {};
+  const userId = user?.id;
+  return {
+    OR: [
+      PUBLIC_BOUNTY_WHERE,
+      ...(userId
+        ? [
+            { createdBy: userId },
+            { team: { members: { some: { userId } } } },
+            ...(FAVORITE_ACCESS_ROLES.has(user?.role)
+              ? [
+                  {
+                    team: {
+                      favoritedBy: { some: { userId } },
+                    },
+                  },
+                ]
+              : []),
+          ]
+        : []),
+    ],
+  };
+}
+
+async function isPublicBountyRow(bounty, db = prisma) {
+  if (!bounty || bounty.isPrivate) return false;
+  if (!bounty.teamId) return true;
+  if (typeof bounty.team?.isPrivate === "boolean") {
+    return !bounty.team.isPrivate;
+  }
+  if (typeof db?.team?.findUnique === "function") {
+    const team = await db.team.findUnique({
+      where: { id: bounty.teamId },
+      select: { isPrivate: true },
+    });
+    return !team?.isPrivate;
+  }
+  return true;
+}
+
+async function canViewBountyById(bountyId, user, db = prisma) {
+  if (!bountyId || typeof db?.bounty?.findFirst !== "function") return false;
+  const match = await db.bounty.findFirst({
+    where: { id: bountyId, ...bountiesVisibleTo(user) },
+    select: { id: true },
+  });
+  return Boolean(match);
+}
+
+async function canViewPrivateBounty(bounty, user, db = prisma) {
+  if (!bounty) return false;
+  if (
+    bounty.id &&
+    typeof db?.bounty?.findFirst === "function" &&
+    !db?.teamMember
+  ) {
+    return canViewBountyById(bounty.id, user, db);
+  }
+  if (await isPublicBountyRow(bounty, db)) return true;
+  if (!user) return false;
+  if (user.role === "ADMIN") return true;
+  if (bounty.createdBy && bounty.createdBy === user.id) return true;
+  if (!bounty.teamId) return false;
+
+  const teamMember = await db.teamMember.findUnique({
+    where: { teamId_userId: { teamId: bounty.teamId, userId: user.id } },
+  });
+  if (teamMember) return true;
+
+  if (FAVORITE_ACCESS_ROLES.has(user.role)) {
+    const fav = await db.teamFavorite.findUnique({
+      where: { userId_teamId: { userId: user.id, teamId: bounty.teamId } },
+      select: { userId: true },
+    });
+    return Boolean(fav);
+  }
+  return false;
+}
+
+async function audienceOf(bounty, db = prisma) {
+  if (await isPublicBountyRow(bounty, db)) return null;
+
+  const recipients = new Set(bounty.createdBy ? [bounty.createdBy] : []);
+
+  const admins = await db.user.findMany({
     where: { role: "ADMIN" },
     select: { id: true },
   });
@@ -65,12 +154,15 @@ async function getBroadcastRecipients(bounty) {
 
   if (bounty.teamId) {
     const [members, favorites] = await Promise.all([
-      prisma.teamMember.findMany({
+      db.teamMember.findMany({
         where: { teamId: bounty.teamId },
         select: { userId: true },
       }),
-      prisma.teamFavorite.findMany({
-        where: { teamId: bounty.teamId },
+      db.teamFavorite.findMany({
+        where: {
+          teamId: bounty.teamId,
+          user: { role: { in: [...FAVORITE_ACCESS_ROLES] } },
+        },
         select: { userId: true },
       }),
     ]);
@@ -80,6 +172,8 @@ async function getBroadcastRecipients(bounty) {
 
   return [...recipients];
 }
+
+const getBroadcastRecipients = audienceOf;
 
 // Sends a realtime event about one team to the people allowed to see it.
 // membersOnly — internal team business (members, roles, wallets, payments):
@@ -362,6 +456,10 @@ module.exports = {
   shouldSendEmails,
   sendMailIfEnabled,
   sendPushToOptedIn,
+  bountiesVisibleTo,
+  canViewBountyById,
+  canViewPrivateBounty,
+  audienceOf,
   getBroadcastRecipients,
   getSubmissionRecipients,
   withoutSubmissionBodies,

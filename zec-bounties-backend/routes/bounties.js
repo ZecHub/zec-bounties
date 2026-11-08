@@ -51,6 +51,8 @@ const {
 const {
   sendMailIfEnabled,
   sendPushToOptedIn,
+  bountiesVisibleTo,
+  canViewPrivateBounty,
   getBroadcastRecipients,
   getSubmissionRecipients,
   withoutSubmissionBodies,
@@ -171,29 +173,6 @@ async function canAdministerBounty(bounty, user, db = prisma) {
       where: { teamId_userId: { teamId: bounty.teamId, userId: user.id } },
     });
     if (member && ["OWNER", "ADMIN"].includes(member.role)) return true;
-  }
-  return false;
-}
-
-async function canViewPrivateBounty(bounty, user) {
-  if (!bounty.isPrivate) return true;
-  if (!user) return false;
-  if (user.role === "ADMIN") return true;
-  if (bounty.createdBy === user.id) return true;
-  if (!bounty.teamId) return false;
-
-  const teamMember = await prisma.teamMember.findUnique({
-    where: { teamId_userId: { teamId: bounty.teamId, userId: user.id } },
-  });
-  if (teamMember) return true;
-
-  // Community membership = favorited the team (hunters only)
-  if (user.role === "HUNTER") {
-    const fav = await prisma.teamFavorite.findUnique({
-      where: { userId_teamId: { userId: user.id, teamId: bounty.teamId } },
-      select: { userId: true },
-    });
-    return !!fav;
   }
   return false;
 }
@@ -614,47 +593,7 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     //
     // Filtering happens in the database before pagination.
     // ------------------------------------------------------------
-    const visibilityFilter = isAdmin
-      ? {}
-      : {
-          OR: [
-            // Public bounties not owned by private teams.
-            {
-              isPrivate: false,
-              OR: [{ teamId: null }, { team: { isPrivate: false } }],
-            },
-
-            // Creators can see their own individually private bounties.
-            ...(userId
-              ? [
-                  {
-                    isPrivate: true,
-                    createdBy: userId,
-                  },
-
-                  // Members can see bounties owned by their private team.
-                  {
-                    team: {
-                      isPrivate: true,
-                      members: { some: { userId } },
-                    },
-                  },
-
-                  // Preserve existing hunter access to favorited teams.
-                  ...(req.user?.role === "HUNTER"
-                    ? [
-                        {
-                          team: {
-                            isPrivate: true,
-                            favoritedBy: { some: { userId } },
-                          },
-                        },
-                      ]
-                    : []),
-                ]
-              : []),
-          ],
-        };
+    const visibilityFilter = bountiesVisibleTo(req.user);
 
     // ------------------------------------------------------------
     // Optional user filter (admin only)
