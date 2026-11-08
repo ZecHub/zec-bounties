@@ -19,6 +19,7 @@ import { setNymSending } from "@/components/nym-sending-indicator";
 export function AuthorizePaymentPanel() {
   const {
     bounties,
+    teams = [],
     authorizeDuePayment,
     zcashParams,
     unpaidDoneCount,
@@ -73,6 +74,8 @@ export function AuthorizePaymentPanel() {
       b.chain === activeChain,
   );
 
+  // Explicitly require a valid chain ("MAIN" | "TEST") so a malformed/missing
+  // chain is never misreported as a chain-mismatch blocked bounty.
   const blockedBounties = bounties.filter(
     (b) =>
       !b.teamId &&
@@ -81,27 +84,39 @@ export function AuthorizePaymentPanel() {
       !b.isPaid &&
       !b.paymentInFlight &&
       !b.exportedAt &&
+      (b.chain === "MAIN" || b.chain === "TEST") &&
       b.chain !== activeChain,
   );
 
   // Sends whose outcome the backend couldn't confirm — locked server-side
-  // until someone resolves them from the Transactions tab.
+  // until someone resolves them from the Transactions tab. Match any unpaid
+  // platform bounty with `paymentInFlight` regardless of status so a row whose
+  // status was changed while stuck still surfaces in the warning banner.
   const inFlightBounties = bounties.filter(
-    (b) => !b.teamId && b.status === "DONE" && !b.isPaid && b.paymentInFlight,
+    (b) => !b.teamId && !b.isPaid && Boolean(b.paymentInFlight),
   );
 
-  // unpaidDoneCount is only tracked server-side for MAIN chain today, so we can
-  // only detect "there's more than what's loaded" when paying from a mainnet wallet.
-  // Subtract rows already loaded into `bounties` that the server's ADMIN_PAYOUT_SCOPE
-  // count includes (including team bounties with admin payout or in-flight/unapproved
-  // rows) so loaded non-eligible rows aren't mistaken for unloaded eligible ones.
+  // Server-side `unpaidDoneCount` (`GET /api/bounties/stats/totals`) counts:
+  //   chain: "MAIN", status: "DONE", isPaid: false, exportedAt: null,
+  //   OR: [{ teamId: null }, { team: { payoutBy: "ADMIN" } }] (ADMIN_PAYOUT_SCOPE).
+  // Specifically:
+  // - It is MAIN-only, so `hasUnloadedEligible` is only evaluated when
+  //   `activeChain === "MAIN"` (on TEST or without a default wallet, 0).
+  // - It already excludes exported rows (`exportedAt: null`) and team-wallet
+  //   bounties (`team.payoutBy === "TEAM"`), but includes ADMIN_PAYOUT_SCOPE
+  //   rows that are not eligible for in-app wallet payout: admin-payout team
+  //   bounties, `paymentInFlight` bounties, and any unapproved `DONE` rows.
+  // Subtracting all loaded rows matching that exact server predicate prevents
+  // loaded team/in-flight/unapproved rows from inflating `unloadedMainCount`.
+  const resolveTeamPayoutBy = (b: (typeof bounties)[number]) =>
+    b.team?.payoutBy ?? teams?.find((t) => t.id === b.teamId)?.payoutBy;
   const loadedUnpaidDoneOnMain = bounties.filter(
     (b) =>
       b.chain === "MAIN" &&
       b.status === "DONE" &&
       !b.isPaid &&
       !b.exportedAt &&
-      (!b.teamId || b.team?.payoutBy !== "TEAM"),
+      (!b.teamId || resolveTeamPayoutBy(b) !== "TEAM"),
   ).length;
   const unloadedMainCount =
     activeChain === "MAIN"
@@ -167,7 +182,7 @@ export function AuthorizePaymentPanel() {
   const hasActivity =
     hasEligible ||
     inFlightBounties.length > 0 ||
-    Boolean(defaultWallet && blockedBounties.length > 0);
+    blockedBounties.length > 0;
 
   if (!hasActivity) {
     if (hasUnloadedEligible) {
@@ -237,25 +252,36 @@ export function AuthorizePaymentPanel() {
         </div>
       )}
 
-      {defaultWallet && blockedBounties.length > 0 && (
+      {blockedBounties.length > 0 && (
         <div className="flex items-start gap-2.5 text-sm p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
           <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-          <span className="text-yellow-800 dark:text-yellow-200">
-            <span className="font-medium">
-              {blockedBounties.length} bount
-              {blockedBounties.length > 1 ? "ies" : "y"} hidden
-            </span>{" "}
-            — your default wallet is on{" "}
-            <span className="font-medium">{defaultWallet.chain}</span> but{" "}
-            {blockedBounties.length > 1
-              ? "those bounties are"
-              : "that bounty is"}{" "}
-            on{" "}
-            <span className="font-medium">
-              {activeChain === "TEST" ? "mainnet" : "testnet"}
+          {defaultWallet ? (
+            <span className="text-yellow-800 dark:text-yellow-200">
+              <span className="font-medium">
+                {blockedBounties.length} bount
+                {blockedBounties.length > 1 ? "ies" : "y"} hidden
+              </span>{" "}
+              — your default wallet is on{" "}
+              <span className="font-medium">{defaultWallet.chain}</span> but{" "}
+              {blockedBounties.length > 1
+                ? "those bounties are"
+                : "that bounty is"}{" "}
+              on{" "}
+              <span className="font-medium">
+                {activeChain === "TEST" ? "mainnet" : "testnet"}
+              </span>
+              . Switch your default wallet to pay them.
             </span>
-            . Switch your default wallet to pay them.
-          </span>
+          ) : (
+            <span className="text-yellow-800 dark:text-yellow-200">
+              <span className="font-medium">
+                {blockedBounties.length} bount
+                {blockedBounties.length > 1 ? "ies" : "y"} hidden
+              </span>{" "}
+              — configure a default wallet in Settings to pay{" "}
+              {blockedBounties.length > 1 ? "them" : "it"}.
+            </span>
+          )}
         </div>
       )}
 

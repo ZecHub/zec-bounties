@@ -115,14 +115,64 @@ test("Payments Due still renders in-flight and chain-mismatch warnings when no b
   assert.ok(!blockedOnly.includes("No bounties ready for payment"), blockedOnly);
 });
 
-test("Payments Due does not claim loaded team bounties are unloaded eligible payouts", () => {
+test("Payments Due surfaces blocked and no-default-wallet warnings when defaultWallet is absent", () => {
   const rendered = adminPanel(
-    [bounty("team-due", { teamId: "team-1" })],
+    [bounty("due-main", { chain: "MAIN" })],
     "mainnet",
-    { unpaidDoneCount: 1, hasMoreBounties: true },
+    { zcashParams: [] },
   );
-  assert.match(rendered, /No bounties ready for payment/);
-  assert.ok(!rendered.includes("not loaded into this view yet"), rendered);
+  assert.match(rendered, /No default wallet set\. Go to Settings to configure one\./);
+  assert.match(rendered, /1 bounty hidden/);
+  assert.match(rendered, /configure a default wallet in Settings to pay it/);
+  assert.ok(!rendered.includes("No bounties ready for payment"), rendered);
+});
+
+test("Payments Due does not claim loaded team or in-flight bounties are unloaded eligible payouts", () => {
+  // Server count (3) includes 1 admin-payout team row, 1 in-flight row, and 1 unapproved DONE row.
+  const allLoaded = adminPanel(
+    [
+      bounty("team-due", { teamId: "team-admin" }),
+      bounty("inflight-due", { paymentInFlight: true }),
+      bounty("unapproved-due", { isApproved: false }),
+      bounty("team-self-paid", {
+        teamId: "team-self",
+        team: { id: "team-self", name: "Self", payoutBy: "TEAM" },
+      }),
+    ],
+    "mainnet",
+    { unpaidDoneCount: 3, hasMoreBounties: true },
+  );
+  assert.match(allLoaded, /1 payment awaiting settlement/);
+  assert.ok(!allLoaded.includes("not loaded into this view yet"), allLoaded);
+  assert.ok(!allLoaded.includes("unpaid bounties"), allLoaded);
+
+  // When server count (4) exceeds the 3 loaded ADMIN_PAYOUT_SCOPE rows, 1 unloaded eligible row is reported.
+  const oneUnloaded = adminPanel(
+    [
+      bounty("eligible-loaded"),
+      bounty("team-due", { teamId: "team-admin" }),
+      bounty("inflight-due", { paymentInFlight: true }),
+    ],
+    "mainnet",
+    { unpaidDoneCount: 4, hasMoreBounties: true },
+  );
+  assert.match(oneUnloaded, /Showing 1 of 2 unpaid bounties/);
+});
+
+test("both panels surface non-DONE in-flight bounties and ignore missing chain in blockedBounties", () => {
+  const adminRendered = adminPanel([
+    bounty("non-done-inflight", { status: "IN_PROGRESS", paymentInFlight: true }),
+    bounty("missing-chain", { chain: null }),
+  ]);
+  assert.match(adminRendered, /1 payment awaiting settlement/);
+  assert.ok(!adminRendered.includes("hidden"), adminRendered);
+
+  const teamRendered = teamPanel([
+    bounty("team-non-done-inflight", { teamId: "team-1", status: "IN_PROGRESS", paymentInFlight: true }),
+    bounty("team-missing-chain", { teamId: "team-1", chain: undefined }),
+  ]);
+  assert.match(teamRendered, /1 payment awaiting settlement/);
+  assert.ok(!teamRendered.includes("hidden"), teamRendered);
 });
 
 test("the team panel does not list a bounty exported for an off-platform payout", () => {
@@ -143,7 +193,7 @@ test("the team panel does not offer to switch wallets to pay an exported bounty"
   assert.ok(!rendered.includes("hidden"), rendered);
 });
 
-test("the team panel matches skipped bounties by ID so a paid bounty with the same title is still reported to onPaid", async () => {
+function runTeamPanelAuthorize(skippedEntries) {
   const filename = path.resolve(__dirname, "..", "components/payments/teams/authorize-payment-panel.tsx");
   const result = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
     fileName: filename,
@@ -152,6 +202,7 @@ test("the team panel matches skipped bounties by ID so a paid bounty with the sa
   const module = { exports: {} };
   let stateIdx = 0;
   const states = [new Set(["b1", "b2"]), false, false];
+  const warnings = [];
   const findAction = (node) => {
     if (!node || typeof node !== "object") return null;
     if (Array.isArray(node)) {
@@ -182,7 +233,7 @@ test("the team panel matches skipped bounties by ID so a paid bounty with the sa
           success: true,
           paidCount: 1,
           txids: ["a".repeat(64)],
-          skipped: [{ id: "b1", title: "Weekly Digest", reason: "Assignee has no UA address" }],
+          skipped: skippedEntries,
         }),
       }),
     },
@@ -190,7 +241,9 @@ test("the team panel matches skipped bounties by ID so a paid bounty with the sa
     "@/components/nym-sending-indicator": { setNymSending() {} },
   };
   vm.runInNewContext(result.outputText, {
-    module, exports: module.exports, console,
+    module,
+    exports: module.exports,
+    console: { ...console, warn: (...args) => warnings.push(args.join(" ")) },
     require(id) {
       if (Object.hasOwn(dependencies, id)) return dependencies[id];
       if (id.startsWith("@/components/") || id === "lucide-react") return components;
@@ -209,8 +262,26 @@ test("the team panel matches skipped bounties by ID so a paid bounty with the sa
   });
   const confirmClick = findAction(tree);
   assert.equal(typeof confirmClick, "function");
+  return { confirmClick, paid, warnings };
+}
+
+test("the team panel matches skipped bounties by ID so a paid bounty with the same title is still reported to onPaid", async () => {
+  const { confirmClick, paid, warnings } = runTeamPanelAuthorize([
+    { id: "b1", title: "Weekly Digest", reason: "Assignee has no UA address" },
+  ]);
   await confirmClick();
   assert.deepEqual(paid, ["b2"]);
+  assert.deepEqual(warnings, []);
+});
+
+test("the team panel fails closed when a skipped entry is missing an id", async () => {
+  const { confirmClick, paid, warnings } = runTeamPanelAuthorize([
+    { title: "Weekly Digest", reason: "Assignee has no UA address" },
+  ]);
+  await confirmClick();
+  assert.deepEqual(paid, []);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /missing an id/i);
 });
 
 test("authorizeTeamDuePayment refreshes team bounties even when the send outcome is unknown (502)", async () => {
@@ -294,3 +365,96 @@ test("authorizeTeamDuePayment refreshes team bounties even when the send outcome
     fetchedUrls.some((u) => u.includes("/api/teams/team-1/wallet/payment-records")),
   );
 });
+
+test("fetchTeamBounties ignores stale out-of-order responses (latest wins)", async () => {
+  const filename = path.resolve(__dirname, "..", "lib/bounty-context.tsx");
+  const result = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  });
+  let capturedValue = null;
+  let stateIdx = 0;
+  let teamBountiesState = {};
+  const pendingResolvers = [];
+  const moduleObj = { exports: {} };
+  vm.runInNewContext(
+    result.outputText,
+    {
+      module: moduleObj,
+      exports: moduleObj.exports,
+      console: { log() {}, error() {}, warn() {} },
+      URLSearchParams,
+      crypto: require("node:crypto"),
+      localStorage: { getItem: () => "tok", setItem() {}, removeItem() {} },
+      window: { location: { reload() {} }, addEventListener() {}, removeEventListener() {} },
+      fetch: async () =>
+        new Promise((resolve) => {
+          pendingResolvers.push(resolve);
+        }),
+      require(id) {
+        if (id === "react") {
+          return {
+            createContext: () => ({ Provider: "Provider" }),
+            useContext: () => ({}),
+            useState: (init) => {
+              const idx = stateIdx++;
+              if (idx === 1) return [{ id: "u1", role: "TEAM" }, () => {}];
+              const initialVal = typeof init === "function" ? init() : init;
+              return [
+                initialVal,
+                (updater) => {
+                  if (typeof updater === "function") {
+                    const next = updater(teamBountiesState);
+                    if (next && typeof next === "object" && "team-1" in next && Array.isArray(next["team-1"])) {
+                      teamBountiesState = next;
+                    }
+                  }
+                },
+              ];
+            },
+            useEffect: () => {},
+            useMemo: (fn) => fn(),
+            useRef: (init) => ({ current: init }),
+          };
+        }
+        if (id === "react/jsx-runtime") {
+          return {
+            jsx: (type, props) => {
+              if (type === "Provider") capturedValue = props.value;
+              return { type, props };
+            },
+            jsxs: (type, props) => ({ type, props }),
+          };
+        }
+        if (id === "./configENV") return { backendUrl: "http://api.test", backendWebSpocketUrl: "ws://api.test" };
+        if (id === "./displayName") return { displayName: (u) => u?.name || "" };
+        if (id === "./bounty-merge") return { bountyUpdatedAt: () => 0, mergeBounty: (_, b) => b };
+        return {};
+      },
+    },
+    { filename },
+  );
+
+  moduleObj.exports.BountyProvider({ children: null });
+  const first = capturedValue.fetchTeamBounties("team-1");
+  const second = capturedValue.fetchTeamBounties("team-1");
+  assert.equal(pendingResolvers.length, 2);
+
+  // Resolve the newer request first with fresh data, then the older request with stale data.
+  pendingResolvers[1]({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: [bounty("fresh-bounty", { teamId: "team-1", isPaid: true })], total: 1 }),
+  });
+  await second;
+  assert.deepEqual(Array.from(teamBountiesState["team-1"], (b) => b.id), ["fresh-bounty"]);
+
+  pendingResolvers[0]({
+    ok: true,
+    status: 200,
+    json: async () => ({ data: [bounty("stale-bounty", { teamId: "team-1", isPaid: false })], total: 1 }),
+  });
+  await first;
+  assert.deepEqual(Array.from(teamBountiesState["team-1"], (b) => b.id), ["fresh-bounty"]);
+});
+

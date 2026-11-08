@@ -567,6 +567,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const fetchBountiesReqId = useRef(0);
   const fetchMyBountiesReqId = useRef(0);
   const fetchStatsReqId = useRef(0);
+  const fetchTeamBountiesReqId = useRef<Record<string, number>>({});
+  const fetchTeamPaymentRecordsReqId = useRef<Record<string, number>>({});
   const bountyUpdates = useRef(new Map<string, Bounty>());
 
   const mergeForViewer = (current: Bounty, update: Bounty) =>
@@ -1285,6 +1287,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const fetchTeamPaymentRecords = async (teamId: string) => {
     if (!currentUser) return;
+    const requestId =
+      (fetchTeamPaymentRecordsReqId.current[teamId] =
+        (fetchTeamPaymentRecordsReqId.current[teamId] ?? 0) + 1);
     try {
       const res = await fetch(
         `${backendUrl}/api/teams/${teamId}/wallet/payment-records`,
@@ -1292,6 +1297,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       );
       if (!res.ok) throw new Error("Failed to fetch team payment records");
       const data = await res.json();
+      if (requestId !== fetchTeamPaymentRecordsReqId.current[teamId]) return;
       setTeamPaymentRecords(data.records || []);
     } catch (error) {
       console.error("Failed to fetch team payment records:", error);
@@ -1614,6 +1620,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL" },
   ) => {
     const reset = opts?.reset ?? true;
+    const requestId =
+      (fetchTeamBountiesReqId.current[teamId] =
+        (fetchTeamBountiesReqId.current[teamId] ?? 0) + 1);
 
     setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: true }));
     try {
@@ -1634,6 +1643,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to fetch team bounties");
 
       const data = await res.json();
+      if (requestId !== fetchTeamBountiesReqId.current[teamId]) return;
       const incoming: Bounty[] = data.data ?? [];
       const total: number = data.total ?? incoming.length;
 
@@ -1655,7 +1665,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Failed to fetch team bounties:", error);
     } finally {
-      setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: false }));
+      if (requestId === fetchTeamBountiesReqId.current[teamId]) {
+        setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: false }));
+      }
     }
   };
 

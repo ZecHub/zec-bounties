@@ -77,11 +77,12 @@ export function TeamAuthorizePaymentPanel({
       !b.isPaid &&
       !b.paymentInFlight &&
       !b.exportedAt &&
+      (b.chain === "MAIN" || b.chain === "TEST") &&
       b.chain !== activeChain,
   );
 
   const inFlightBounties = teamBounties.filter(
-    (b) => b.status === "DONE" && !b.isPaid && b.paymentInFlight,
+    (b) => !b.isPaid && Boolean(b.paymentInFlight),
   );
 
   const toggleOne = (id: string) => {
@@ -132,22 +133,21 @@ export function TeamAuthorizePaymentPanel({
       setSelectedIds(new Set());
 
       // Report only bounties that were actually paid. Match `skipped` entries
-      // by ID first (falling back to title when ID is omitted) so duplicate
-      // bounty titles don't hide a paid bounty when a sibling was skipped.
-      const skippedIds = new Set(
-        result.skipped
-          .map((s) => s.id)
-          .filter((id): id is string => Boolean(id)),
-      );
-      const skippedTitles = new Set(
-        result.skipped.filter((s) => !s.id).map((s) => s.title),
-      );
-      const paidIds = ids.filter((id) => {
-        if (skippedIds.has(id)) return false;
-        const b = teamBounties.find((x) => x.id === id);
-        return !!b && !skippedTitles.has(b.title);
-      });
-      if (paidIds.length > 0) onPaid?.(paidIds);
+      // strictly by `id`; if any skipped entry is missing `id`, log a warning
+      // and fail closed (relying on the server refetch from
+      // `authorizeTeamDuePayment`) so duplicate titles can never misclassify
+      // a skipped bounty as paid or vice versa.
+      if (result.skipped.some((s) => !s.id)) {
+        console.warn(
+          "Skipped team payout entry is missing an id; skipping optimistic onPaid update",
+        );
+      } else {
+        const skippedIds = new Set(result.skipped.map((s) => s.id));
+        const paidIds = ids.filter(
+          (id) => !skippedIds.has(id) && teamBounties.some((x) => x.id === id),
+        );
+        if (paidIds.length > 0) onPaid?.(paidIds);
+      }
     } catch (error: any) {
       const [title, ...rest] = error.message?.split(": ") ?? [];
       const description =
