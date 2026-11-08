@@ -63,9 +63,13 @@ jobs:
           cache: yarn
           cache-dependency-path: zec-bounties-frontend/yarn.lock
 
+      - name: Enable Corepack
+        if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
+        run: corepack enable
+
       - name: Install dependencies
         if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
 
       - name: Run bounty edit form test
         if: steps.changes.outputs.skip != 'true' || steps.changes.outputs.only-edit-form == 'true'

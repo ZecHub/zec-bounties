@@ -39,8 +39,11 @@ jobs:
           cache: yarn
           cache-dependency-path: zec-bounties-frontend/yarn.lock
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium

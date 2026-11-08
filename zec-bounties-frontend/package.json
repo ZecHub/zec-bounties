@@ -2,6 +2,7 @@
   "name": "my-v0-project",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "yarn@4.18.1",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
