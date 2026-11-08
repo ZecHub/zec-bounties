@@ -99,6 +99,10 @@ function isCompleted(row: StaffBountyRow) {
   return row.status === "DONE" && isAssigned(row);
 }
 
+function isTeamBounty(row: StaffBountyRow) {
+  return !!row.teamName;
+}
+
 function Row({
   row,
   onOpen,
@@ -366,6 +370,14 @@ export function StaffViewCard({
   const visible = (rows: StaffBountyRow[]) =>
     status === "ALL" ? rows : rows.filter((row) => row.status === status);
 
+  const openVisible = data ? visible(data.open) : [];
+  const historyVisible = data ? visible(data.history) : [];
+
+  const openPersonal = openVisible.filter((row) => !isTeamBounty(row));
+  const openTeam = openVisible.filter((row) => isTeamBounty(row));
+  const historyPersonal = historyVisible.filter((row) => !isTeamBounty(row));
+  const historyTeam = historyVisible.filter((row) => isTeamBounty(row));
+
   return (
     <>
       <Card className="border-amber-500/40">
@@ -520,26 +532,66 @@ export function StaffViewCard({
                     );
                   })}
                 </div>
-                <List
-                  title="Open"
-                  total={data.openTotal}
-                  rows={visible(data.open)}
-                  onLoadMore={
-                    data.openNextOffset == null ? undefined : onLoadMoreOpen
-                  }
-                  onOpen={openBounty}
-                />
-                <List
-                  title="History"
-                  total={data.historyTotal}
-                  rows={visible(data.history)}
-                  onLoadMore={
-                    data.historyNextOffset == null
-                      ? undefined
-                      : onLoadMoreHistory
-                  }
-                  onOpen={openBounty}
-                />
+
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      Open
+                    </p>
+                    <div className="space-y-4 pl-2 border-l border-border/50">
+                      <List
+                        title="Personal"
+                        total={openPersonal.length}
+                        rows={openPersonal}
+                        onOpen={openBounty}
+                      />
+                      <List
+                        title="Team"
+                        total={openTeam.length}
+                        rows={openTeam}
+                        onOpen={openBounty}
+                      />
+                    </div>
+                    {data.openNextOffset != null && onLoadMoreOpen && (
+                      <button
+                        type="button"
+                        onClick={onLoadMoreOpen}
+                        className="mt-2 text-xs text-primary hover:underline"
+                      >
+                        Load more open
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      History
+                    </p>
+                    <div className="space-y-4 pl-2 border-l border-border/50">
+                      <List
+                        title="Personal"
+                        total={historyPersonal.length}
+                        rows={historyPersonal}
+                        onOpen={openBounty}
+                      />
+                      <List
+                        title="Team"
+                        total={historyTeam.length}
+                        rows={historyTeam}
+                        onOpen={openBounty}
+                      />
+                    </div>
+                    {data.historyNextOffset != null && onLoadMoreHistory && (
+                      <button
+                        type="button"
+                        onClick={onLoadMoreHistory}
+                        className="mt-2 text-xs text-primary hover:underline"
+                      >
+                        Load more history
+                      </button>
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </CardContent>
