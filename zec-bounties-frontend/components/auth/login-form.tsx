@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,23 +12,34 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Terminal } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { backendUrl } from "@/lib/configENV";
-import { startGithubLogin } from "@/lib/githubLogin";
+import {
+  startGithubLogin,
+  getGithubOAuthErrorMessage,
+} from "@/lib/githubLogin";
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [oauthError, setOauthError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { login, currentUser } = useBounty();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Surface OAuth callback errors that arrive as ?error=...
+  useEffect(() => {
+    const msg = getGithubOAuthErrorMessage(searchParams.get("error"));
+    if (msg) setOauthError(msg);
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setOauthError(null);
     setIsLoading(true);
 
     try {
@@ -68,10 +79,10 @@ export function LoginForm() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
+            {(error || oauthError) && (
               <Alert className="border-destructive/30 bg-destructive/10">
                 <AlertDescription className="text-destructive">
-                  {error}
+                  {error || oauthError}
                 </AlertDescription>
               </Alert>
             )}
