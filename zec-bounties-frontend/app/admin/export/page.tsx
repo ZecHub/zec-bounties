@@ -98,12 +98,18 @@ function getPayoutAddress(
 
 // ─── Bounty detail panel (shown inside the modal) ─────────────────────────────
 function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
-  const primaryAssignee =
-    bounty.assigneeUser ?? bounty.assignees?.[0]?.user ?? null;
-  const payoutAddress = getPayoutAddress(bounty.chain, primaryAssignee);
   // On a completed bounty, bounty.assignee is the submission the admin
   // selected; surface that contributor first and mark them.
   const winnerId = bounty.status === "DONE" ? bounty.assignee : null;
+  const winnerAssignee = winnerId
+    ? bounty.assignees?.find((a) => a.userId === winnerId)?.user ?? null
+    : null;
+  const primaryAssignee =
+    winnerAssignee ??
+    bounty.assigneeUser ??
+    bounty.assignees?.[0]?.user ??
+    null;
+  const payoutAddress = getPayoutAddress(bounty.chain, primaryAssignee);
   const sortedAssignees = [...(bounty.assignees ?? [])].sort(
     (x, y) => Number(y.userId === winnerId) - Number(x.userId === winnerId),
   );

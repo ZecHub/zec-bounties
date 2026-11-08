@@ -40,6 +40,17 @@ import {
   bountyCreatorInitial,
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
+
+function assigneeLabel(
+  user?: { name?: string | null; nickname?: string | null } | null,
+): string {
+  if (!user) return "Unknown";
+  const name = user.name?.trim();
+  const nick = user.nickname?.trim();
+  if (name && nick && name !== nick) return `${name} (@${nick})`;
+  return name || nick || "Unknown";
+}
+
 import { ProfileLink } from "@/components/profile-link";
 import { ZecToUsd } from "./ZecToUsd";
 import { BountyChat } from "@/components/bounty-chat";
@@ -675,7 +686,7 @@ export function BountyDetailModal({
                 : "text-primary"
             }`}
           >
-            {a.user?.nickname || a.user?.name || "Unknown"}
+            {assigneeLabel(a.user)}
           </p>
         </ProfileLink>
         {a.userId === currentUser?.id && (

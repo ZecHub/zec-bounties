@@ -190,8 +190,16 @@ export default function BountyDetailPage() {
     bg: "bg-slate-100",
   };
 
+  const winnerAssignee =
+    bounty.status === "DONE" && bounty.assignee
+      ? bounty.assignees?.find((a) => a.userId === bounty.assignee)?.user
+      : null;
+
   const primaryAssignee =
-    bounty.assigneeUser ?? bounty.assignees?.[0]?.user ?? null;
+    winnerAssignee ??
+    bounty.assigneeUser ??
+    bounty.assignees?.[0]?.user ??
+    null;
 
   const deadlineDate = bounty.timeToComplete
     ? new Date(bounty.timeToComplete)
@@ -348,12 +356,32 @@ export default function BountyDetailPage() {
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  {bounty.assignees.map((a) => {
+                  {[...(bounty.assignees ?? [])]
+                    .sort((x, y) => {
+                      const winnerId =
+                        bounty.status === "DONE" ? bounty.assignee : null;
+                      return (
+                        Number(y.userId === winnerId) -
+                        Number(x.userId === winnerId)
+                      );
+                    })
+                    .map((a) => {
                     const user = a.user;
                     // On a completed bounty, bounty.assignee is the submission
                     // the admin selected.
                     const isWinner =
                       bounty.status === "DONE" && bounty.assignee === a.userId;
+                    const hasNickname = !!user?.nickname?.trim();
+                    const hasName = !!user?.name?.trim();
+                    const showHandle =
+                      hasNickname &&
+                      hasName &&
+                      user!.name!.trim() !== user!.nickname!.trim();
+                    const primaryName =
+                      user?.name?.trim() || user?.nickname?.trim() || "—";
+                    const initial = (
+                      user?.name?.trim() || user?.nickname?.trim()
+                    )?.[0]?.toUpperCase();
                     return (
                       <div
                         key={a.userId ?? user?.id}
@@ -367,11 +395,11 @@ export default function BountyDetailPage() {
                           {user?.avatar && (
                             <AvatarImage
                               src={user.avatar}
-                              alt={user.name ?? ""}
+                              alt={primaryName}
                             />
                           )}
                           <AvatarFallback className="text-[9px]">
-                            {user?.name?.[0]?.toUpperCase() ?? (
+                            {initial ?? (
                               <User className="w-2.5 h-2.5" />
                             )}
                           </AvatarFallback>
@@ -384,11 +412,11 @@ export default function BountyDetailPage() {
                                 : ""
                             }`}
                           >
-                            {user?.name ?? "—"}
+                            {primaryName}
                           </p>
-                          {user?.email && (
+                          {showHandle && (
                             <p className="text-[10px] text-muted-foreground mt-0.5">
-                              {user.email}
+                              @{user!.nickname!.trim()}
                             </p>
                           )}
                         </div>

@@ -8,6 +8,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+
+function assigneeLabel(
+  user?: { name?: string | null; nickname?: string | null } | null,
+): string {
+  if (!user) return "Unknown";
+  const name = user.name?.trim();
+  const nick = user.nickname?.trim();
+  if (name && nick && name !== nick) return `${name} (@${nick})`;
+  return name || nick || "Unknown";
+}
+
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Trophy, CheckCircle2, Loader2, Coins } from "lucide-react";
 import { Bounty } from "@/lib/types";
@@ -81,13 +92,14 @@ export function SelectWinnerModal({
             const user = a.user;
             const isSelected = selectedWinnerId === a.userId;
 
+            const label = assigneeLabel(user);
             return (
               <button
                 key={a.userId}
                 type="button"
                 onClick={() => setSelectedWinnerId(a.userId)}
                 aria-pressed={isSelected}
-                aria-label={`Select ${user?.name ?? "Unknown"} as payment recipient`}
+                aria-label={`Select ${label} as payment recipient`}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all duration-150 ${
                   isSelected
                     ? "border-amber-500 bg-amber-500/8 shadow-sm"
@@ -100,13 +112,13 @@ export function SelectWinnerModal({
                     alt=""
                   />
                   <AvatarFallback className="text-sm font-semibold">
-                    {user?.name?.[0] ?? "?"}
+                    {label[0] ?? "?"}
                   </AvatarFallback>
                 </Avatar>
 
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-sm truncate">
-                    {user?.name ?? "Unknown"}
+                    {label}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
                     {user?.email}

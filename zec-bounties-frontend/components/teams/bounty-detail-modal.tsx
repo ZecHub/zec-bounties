@@ -37,6 +37,17 @@ import {
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
 
+function assigneeLabel(
+  user?: { name?: string | null; nickname?: string | null } | null,
+): string {
+  if (!user) return "Unknown";
+  const name = user.name?.trim();
+  const nick = user.nickname?.trim();
+  if (name && nick && name !== nick) return `${name} (@${nick})`;
+  return name || nick || "Unknown";
+}
+
+
 interface TeamBountyDetailModalProps {
   bounty: Bounty | null;
   open: boolean;
@@ -661,7 +672,20 @@ export function TeamBountyDetailModal({
                   </p>
                 )}
                 <div className="space-y-1.5">
-                  {bounty.assignees.map((a) => {
+                  {[...(bounty.assignees ?? [])]
+                    .sort((x, y) => {
+                      const winnerId =
+                        bounty.status === "DONE" ? bounty.assignee : null;
+                      const winnerRank =
+                        Number(y.userId === winnerId) -
+                        Number(x.userId === winnerId);
+                      if (winnerRank !== 0) return winnerRank;
+                      return (
+                        Number(y.userId === currentUser?.id) -
+                        Number(x.userId === currentUser?.id)
+                      );
+                    })
+                    .map((a) => {
                     const hasSubmitted = workSubmissions.some(
                       (s) => s.submittedBy === a.userId,
                     );
@@ -670,6 +694,7 @@ export function TeamBountyDetailModal({
                     const isWinner =
                       bounty.status === "DONE" &&
                       bounty.assignee === a.userId;
+                    const label = assigneeLabel(a.user);
                     return (
                       <div
                         key={a.userId}
@@ -690,7 +715,7 @@ export function TeamBountyDetailModal({
                             src={a.user?.avatar || "/placeholder-user.jpg"}
                           />
                           <AvatarFallback className="text-[10px]">
-                            {a.user?.name?.[0] || "?"}
+                            {label[0] || "?"}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
@@ -701,7 +726,7 @@ export function TeamBountyDetailModal({
                                 : "text-primary"
                             }`}
                           >
-                            {a.user?.nickname || a.user?.name || "Unknown"}
+                            {label}
                           </p>
                           <div className="flex items-center gap-1.5">
                             {a.userId === currentUser?.id && (
