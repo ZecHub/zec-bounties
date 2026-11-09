@@ -2,42 +2,44 @@
 
 import { useEffect } from "react";
 import { useBounty } from "@/lib/bounty-context";
-import { subscribeToPush } from "@/lib/push";
+import { readPushState, enablePush } from "@/lib/push";
 
-const PUSH_ATTEMPT_KEY = "zecBountiesPushAttempted";
-const RETRY_DAYS = 14;
-
+/**
+ * Keeps the browser's existing push subscription in sync with the backend.
+ *
+ * This deliberately does not ask for permission. Browser notification
+ * permission must come from an explicit click (see NotificationsInbox), because
+ * a permission prompt fired from a timer is dismissed automatically by every
+ * modern browser and then counts as a denial. Previously this component wrote
+ * an "attempted" timestamp 3s after load — before knowing whether enrollment
+ * succeeded — which suppressed retries for 14 days while the browser had no
+ * subscription at all.
+ *
+ * The only automatic work left is re-syncing a subscription that already
+ * exists and was already granted.
+ */
 export function PushNotificationInit() {
   const { currentUser } = useBounty();
 
   useEffect(() => {
     if (!currentUser) return;
 
-    if (!("Notification" in window)) return;
-
-    // If the browser has already denied notifications,
-    // don't keep bothering the user.
-    if (Notification.permission === "denied") return;
-
-    const previousAttempt = Number(localStorage.getItem(PUSH_ATTEMPT_KEY) || 0);
-
-    const retryAfter = previousAttempt + RETRY_DAYS * 86400000;
-
-    if (previousAttempt && Date.now() < retryAfter) {
-      return;
-    }
-
-    const timer = setTimeout(async () => {
+    let active = true;
+    const sync = async () => {
+      const state = await readPushState();
+      if (!active || state !== "on") return;
       try {
-        localStorage.setItem(PUSH_ATTEMPT_KEY, String(Date.now()));
-
-        await subscribeToPush();
+        // Cheap and idempotent: the endpoint upsert keeps the row fresh.
+        await enablePush();
       } catch (error) {
-        console.error("Push notification initialization failed:", error);
+        console.error("Push subscription re-sync failed:", error);
       }
-    }, 3000);
+    };
 
-    return () => clearTimeout(timer);
+    void sync();
+    return () => {
+      active = false;
+    };
   }, [currentUser]);
 
   return null;

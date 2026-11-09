@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { Bell, Check, Loader2 } from "lucide-react";
+import { Bell, Check, Loader2, BellOff, BellRing, ShieldAlert } from "lucide-react";
 import { backendUrl } from "@/lib/configENV";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +15,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter } from "next/navigation";
+import {
+  readPushState,
+  enablePush,
+  disablePush,
+  type PushState,
+} from "@/lib/push";
 
 interface InboxNotification {
   id: string;
   title: string;
   body: string;
   bountyId: string | null;
+  url?: string | null;
   readAt: string | null;
   createdAt: string;
 }
@@ -36,6 +43,32 @@ async function fetchInbox() {
   return data as { notifications: InboxNotification[]; unreadCount: number };
 }
 
+/** Where a notification should take the user. Prefers the stored URL. */
+function notificationHref(item: InboxNotification): string | null {
+  if (item.url) return item.url;
+  if (item.bountyId) return `/bounties/${item.bountyId}`;
+  return null;
+}
+
+const PUSH_COPY: Record<PushState, { label: string; hint: string }> = {
+  unsupported: {
+    label: "Browser notifications unavailable",
+    hint: "This browser does not support web push.",
+  },
+  blocked: {
+    label: "Notifications blocked",
+    hint: "Allow notifications for this site in your browser settings, then retry.",
+  },
+  off: {
+    label: "Browser notifications off",
+    hint: "Get a push when a bounty is assigned, reviewed or paid.",
+  },
+  on: {
+    label: "Browser notifications on",
+    hint: "This device will receive push notifications.",
+  },
+};
+
 export function NotificationsInbox({ fullWidth = false }: { fullWidth?: boolean }) {
   const { currentUser } = useBounty();
   const router = useRouter();
@@ -43,6 +76,9 @@ export function NotificationsInbox({ fullWidth = false }: { fullWidth?: boolean 
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [pushState, setPushState] = useState<PushState>("off");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -67,10 +103,23 @@ export function NotificationsInbox({ fullWidth = false }: { fullWidth?: boolean 
     };
   }, [currentUser?.id]);
 
+  // Reading the state is side-effect free, so it can run without a click.
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
+    void readPushState().then((state) => {
+      if (active) setPushState(state);
+    });
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id]);
+
   const handleOpenChange = async (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen || !currentUser) return;
     setIsLoading(true);
+    void readPushState().then(setPushState);
     try {
       const inbox = await fetchInbox();
       setNotifications(inbox.notifications);
@@ -81,6 +130,26 @@ export function NotificationsInbox({ fullWidth = false }: { fullWidth?: boolean 
       setIsLoading(false);
     }
   };
+
+  const handleTogglePush = useCallback(async () => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      // Permission must be requested from this click — never from a timer.
+      const next = pushState === "on" ? await disablePush() : await enablePush();
+      setPushState(next);
+      if (next === "off" && pushState !== "on") {
+        setPushError("Permission was not granted. You can retry any time.");
+      }
+    } catch (error) {
+      setPushError(
+        error instanceof Error ? error.message : "Could not update notifications",
+      );
+      setPushState(await readPushState());
+    } finally {
+      setPushBusy(false);
+    }
+  }, [pushState]);
 
   const markAllRead = async () => {
     const token = localStorage.getItem("authToken");
@@ -112,10 +181,15 @@ export function NotificationsInbox({ fullWidth = false }: { fullWidth?: boolean 
       setUnreadCount((count) => Math.max(0, count - 1));
     }
     setOpen(false);
-    if (item.bountyId) router.push(`/bounty/${item.bountyId}`);
+    const href = notificationHref(item);
+    if (href) router.push(href);
   };
 
   if (!currentUser) return null;
+
+  const copy = PUSH_COPY[pushState];
+  const pushToggleLabel =
+    pushState === "on" ? "Turn off" : pushState === "blocked" ? "Retry" : "Enable";
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
@@ -184,6 +258,45 @@ export function NotificationsInbox({ fullWidth = false }: { fullWidth?: boolean 
             ))
           )}
         </div>
+
+        {pushState !== "unsupported" && (
+          <>
+            <DropdownMenuSeparator className="m-0" />
+            <div className="px-3 py-2.5">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 text-muted-foreground">
+                  {pushState === "on" ? (
+                    <BellRing className="h-4 w-4" aria-hidden="true" />
+                  ) : pushState === "blocked" ? (
+                    <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <BellOff className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium">{copy.label}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {pushError ?? copy.hint}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void handleTogglePush();
+                  }}
+                  disabled={pushBusy}
+                >
+                  {pushBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : pushToggleLabel}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

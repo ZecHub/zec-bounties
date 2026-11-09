@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   Moon,
   Sun,
-  Bell,
   Search,
   Wallet,
   Menu,
@@ -36,6 +35,7 @@ import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { useRouter, useParams } from "next/navigation";
 import { ThemePicker } from "@/components/theme/theme-picker";
+import { NotificationsInbox } from "@/components/notifications-inbox";
 import {
   NavDivider,
   WalletBalanceGroup,
@@ -243,6 +243,8 @@ export function TeamNavbar({
             {/* Role Toggle */}
             {currentUser && <RoleToggleButton />}
 
+            {currentUser && <NotificationsInbox />}
+
             <Button
               variant="ghost"
               size="icon"
@@ -255,12 +257,6 @@ export function TeamNavbar({
             </Button>
 
             <ThemePicker />
-
-            {currentUser && (
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Bell className="h-4 w-4" />
-              </Button>
-            )}
 
             {!currentUser ? (
               <Button
@@ -414,10 +410,7 @@ export function TeamNavbar({
 
                       <RoleToggleButton compact />
 
-                      <Button variant="outline" className="gap-2 justify-start">
-                        <Bell className="h-4 w-4" />
-                        Notifications
-                      </Button>
+                      <NotificationsInbox fullWidth />
 
                       <div className="border-t" />
 

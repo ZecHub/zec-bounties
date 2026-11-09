@@ -111,7 +111,7 @@ function loadRoutes(team) {
       bumpVersion: async () => {},
     }),
     "../utils/bountyHelpers": helpers,
-    "../utils/bountySuggestionReview": require("../utilsppp/bountySuggestionReview"),
+    "../utils/bountySuggestionReview": require("../utils/bountySuggestionReview"),
   };
   const routes = {};
   const filename = path.join(__dirname, "../routes/bounties.js");
