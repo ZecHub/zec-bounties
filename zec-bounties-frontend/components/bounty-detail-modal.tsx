@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
+import { discordInviteUrl } from "@/lib/configENV";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
@@ -1272,7 +1273,16 @@ export function BountyDetailModal({
                   >
                     profile
                   </Link>{" "}
-                  to get notified if you're assigned.
+                  to get notified if you're assigned, and{" "}
+                  <a
+                    href={discordInviteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    join the server
+                  </a>
+                  .
                 </span>
               </p>
             )}
