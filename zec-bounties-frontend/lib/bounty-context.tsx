@@ -320,7 +320,12 @@ interface BountyContextType {
   fetchExportCompleted: () => Promise<any[]>;
   markBountiesExported: (
     bountyIds: string[],
-  ) => Promise<{ exportedAt: string }>;
+  ) => Promise<{ exportedAt: string; acceptedIds: string[] }>;
+  fetchTeamExportCompleted: (teamId: string) => Promise<any[]>;
+  markTeamBountiesExported: (
+    teamId: string,
+    bountyIds: string[],
+  ) => Promise<{ exportedAt: string; acceptedIds: string[] }>;
   updateUserOfac: (userId: string, ofacVerified: boolean) => Promise<void>;
 
   // Admin: move selected teamless bounties onto a chosen team
@@ -354,6 +359,7 @@ interface BountyContextType {
       name?: string;
       description?: string;
       isPrivate?: boolean;
+      payoutBy?: "ADMIN" | "TEAM";
       twitterUrl?: string;
       discordUrl?: string;
       additionalLinks?: string[];
@@ -416,6 +422,7 @@ interface BountyContextType {
   fetchTeamApplications: (teamId: string) => Promise<BountyApplication[]>;
   fetchTeamSubmissions: (teamId: string) => Promise<WorkSubmission[]>;
   fetchTeamCommunity: (teamId: string) => Promise<TeamFavorite[]>;
+  fetchTeamDirectory: (teamId: string) => Promise<User[]>;
   uploadTeamLogo: (teamId: string, file: File) => Promise<Team>;
   removeTeamLogo: (teamId: string) => Promise<void>;
   fetchTeamTransactionHashes: (teamId: string) => Promise<void>;
@@ -1449,9 +1456,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const endpoint =
         currentUser?.role === "ADMIN"
           ? `${backendUrl}/api/bounties/users/full`
-          : currentUser?.role === "TEAM"
-            ? `${backendUrl}/api/bounties/users/teams`
-            : `${backendUrl}/api/bounties/users`;
+          : `${backendUrl}/api/bounties/users`;
       const res = await fetch(endpoint, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch users");
       const data = await res.json();
@@ -2167,7 +2172,15 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const updateTeam = async (
     id: string,
-    data: { name?: string; description?: string; isPrivate?: boolean },
+    data: {
+      name?: string;
+      description?: string;
+      isPrivate?: boolean;
+      payoutBy?: "ADMIN" | "TEAM";
+      twitterUrl?: string;
+      discordUrl?: string;
+      additionalLinks?: string[];
+    },
   ): Promise<Team> => {
     if (!currentUser) throw new Error("Unauthorized");
     const res = await fetch(`${backendUrl}/api/teams/${id}`, {
@@ -2474,9 +2487,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       // pointless connect/401/retry loop for logged-out users.
       if (!token) return;
 
-      ws = new WebSocket(
-        `${backendWebSpocketUrl}?token=${encodeURIComponent(token)}`,
-      );
+      // Carry the session token in the WebSocket subprotocol, never the query
+      // string, so the 7-day bearer does not land in server access logs on
+      // every reconnect. Browsers can't set custom headers on a WS handshake,
+      // so the subprotocol field is the one place the token can ride.
+      ws = new WebSocket(backendWebSpocketUrl, [token]);
 
       ws.onopen = () => {
         retryDelay = 1000; // reset backoff on successful connect
@@ -2688,6 +2703,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
           case "bounties_exported":
             fetchTotalStats();
             fetchMyBounties();
+            if (msg.payload?.teamId) fetchTeamBounties(msg.payload.teamId);
             break;
 
           case "bounty_assignees_updated":
@@ -2704,6 +2720,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             setTeams((prev) =>
               prev.map((t) => (t.id === msg.payload.id ? msg.payload : t)),
             );
+            fetchTotalStats();
 
             // Bounties embed a lightweight { id, name, logo } snapshot of
             // their team — keep it in sync so cards/modals update live
@@ -3259,6 +3276,22 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return data.community ?? [];
   };
 
+  const fetchTeamDirectory = async (teamId: string): Promise<User[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/community/directory`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.members ?? []) as User[];
+    } catch (error) {
+      console.error("Failed to fetch team directory:", error);
+      return [];
+    }
+  };
+
   const fetchBountyQuota = async () => {
     if (!currentUser) return;
     if (currentUser.role === "ADMIN") {
@@ -3778,7 +3811,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const markBountiesExported = async (
     bountyIds: string[],
-  ): Promise<{ exportedAt: string }> => {
+  ): Promise<{ exportedAt: string; acceptedIds: string[] }> => {
     if (!currentUser || currentUser.role !== "ADMIN") {
       throw new Error("Unauthorized");
     }
@@ -3795,7 +3828,54 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       throw new Error(json.error || "Failed to mark bounties exported");
     }
     await fetchTotalStats();
-    return { exportedAt: json.exportedAt };
+    return {
+      exportedAt: json.exportedAt,
+      acceptedIds: Array.isArray(json.acceptedIds) ? json.acceptedIds : [],
+    };
+  };
+
+  // Team-scoped twins of the admin export. Role is enforced by the backend
+  // (team OWNER/ADMIN or platform ADMIN), same as the other /api/teams/:id
+  // wallet routes, so no client-side role gate here.
+  const fetchTeamExportCompleted = async (teamId: string): Promise<any[]> => {
+    if (!currentUser) return [];
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/export-completed`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch completed team bounties");
+      const data = await res.json();
+      return data.data || [];
+    } catch (error) {
+      console.error("Failed to fetch completed team bounties:", error);
+      return [];
+    }
+  };
+
+  const markTeamBountiesExported = async (
+    teamId: string,
+    bountyIds: string[],
+  ): Promise<{ exportedAt: string; acceptedIds: string[] }> => {
+    if (!currentUser) throw new Error("Unauthorized");
+    const res = await fetch(
+      `${backendUrl}/api/teams/${teamId}/export-completed/mark-exported`,
+      {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ bountyIds }),
+      },
+    );
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.error || "Failed to mark bounties exported");
+    }
+    // Exported bounties must drop out of the team's payable list.
+    await fetchTeamBounties(teamId);
+    return {
+      exportedAt: json.exportedAt,
+      acceptedIds: Array.isArray(json.acceptedIds) ? json.acceptedIds : [],
+    };
   };
 
   const updateUserOfac = async (
@@ -4296,6 +4376,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchExportPayments,
         fetchExportCompleted,
         markBountiesExported,
+        fetchTeamExportCompleted,
+        markTeamBountiesExported,
         updateUserOfac,
         unassignedBounties,
         unassignedBountiesLoading,
@@ -4333,6 +4415,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchTeamApplications,
         fetchTeamSubmissions,
         fetchTeamCommunity,
+        fetchTeamDirectory,
         favoriteTeamIds,
         favoriteTeamsLoading,
         fetchFavoriteTeams,

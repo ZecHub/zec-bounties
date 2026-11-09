@@ -101,7 +101,8 @@ function useFakeDb(assigneeIds, status = "IN_PROGRESS") {
     db.rows.push(...data);
   };
   prisma.bountyActivity.create = async () => null;
-  prisma.user.findMany = async () => [];
+  prisma.user.findMany = async ({ where } = {}) =>
+    (where?.id?.in ?? []).map((id) => ({ id, role: "HUNTER" }));
   prisma.$queryRaw = async () => [{ id: "b1" }];
   prisma.$transaction = async (arg) =>
     typeof arg === "function" ? arg(prisma) : Promise.all(arg);

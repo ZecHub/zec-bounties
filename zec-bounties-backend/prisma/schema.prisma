@@ -241,6 +241,7 @@ model Team {
   favoritedBy TeamFavorite[] @relation("TeamFavoritedBy")
   communityMembers CommunityMember[] @relation("TeamCommunity")
   verifications TeamVerification[] @relation("TeamVerifications")
+  payoutBy PayoutBy @default(ADMIN)
 
 
   @@map("teams")
@@ -415,6 +416,12 @@ enum TxStatus {
   FAILED     // wallet reported an error before sending — confirmed NOT sent
   UNKNOWN    // send attempted, outcome unclear (timeout) — needs a human
 }
+
+enum PayoutBy {
+  ADMIN
+  TEAM
+}
+
 
 model PlatformSetting {
   key       String   @id

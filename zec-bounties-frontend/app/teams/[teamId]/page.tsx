@@ -12,10 +12,11 @@ import type {
   TeamFavorite,
   TeamVerificationStatus,
   SyncStatus,
+  BountyStatus,
 } from "@/lib/types";
 import { getUserRole } from "../page";
 import { TeamsNewBountyModal } from "@/components/teams/new-bounty-modal";
-import { BountyDetailModal } from "@/components/teams/bounty-detail-modal";
+import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { TeamNavbar } from "@/components/layout/teams/navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +73,7 @@ import {
   Activity,
   AlertCircle,
   XIcon,
+  Download,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { FaXTwitter } from "react-icons/fa6";
@@ -94,11 +96,15 @@ import {
 } from "@/components/ui/select";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { TeamAuthorizePaymentPanel } from "@/components/payments/teams/authorize-payment-panel";
+import { ExportCompletedModal } from "@/components/payments/export-completed-modal";
 import {
   SyncStatusMenu,
   RescanButton,
   useRescanCooldown,
 } from "@/components/layout/nav-parts";
+import { toast } from "sonner";
+import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
+import { ProfileLink } from "@/components/profile-link";
 
 type Tab =
   | "Overview"
@@ -535,6 +541,132 @@ function CountPill({
   );
 }
 
+function TeamBountyActionsMenu({
+  bounty,
+  pendingApps,
+  pendingSubs,
+  showApproval,
+  onView,
+  onEdit,
+  onReviewSuggestion,
+  onStatusChange,
+  onApprovalChange,
+  onViewApplications,
+  onViewSubmissions,
+  onCancel,
+}: {
+  bounty: Bounty;
+  pendingApps: number;
+  pendingSubs: number;
+  showApproval: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onReviewSuggestion: () => void;
+  onStatusChange: (status: BountyStatus) => void;
+  onApprovalChange: (approved: boolean) => void;
+  onViewApplications: () => void;
+  onViewSubmissions: () => void;
+  onCancel: () => void;
+}) {
+  const statusItems: { status: BountyStatus; label: string }[] = [
+    { status: "TO_DO", label: "Set To Do" },
+    { status: "IN_PROGRESS", label: "Set In Progress" },
+    { status: "IN_REVIEW", label: "Set In Review" },
+    { status: "DONE", label: "Mark as Done" },
+  ];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label={`Actions for ${bounty.title}`}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem onClick={onView}>
+          <Eye className="mr-2 h-4 w-4" />
+          View Details
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onEdit}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Edit Bounty
+        </DropdownMenuItem>
+        {bounty.suggestionReviewStatus === "PENDING" && (
+          <DropdownMenuItem onClick={onReviewSuggestion}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Review Suggestion
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Change Status</DropdownMenuLabel>
+        {statusItems.map(({ status, label }) => (
+          <DropdownMenuItem key={status} onClick={() => onStatusChange(status)}>
+            <span
+              className={`mr-2 h-2 w-2 rounded-full ${statusDotColor(status)}`}
+            />
+            {label}
+          </DropdownMenuItem>
+        ))}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Manage</DropdownMenuLabel>
+        <DropdownMenuItem onClick={onViewApplications}>
+          <Users className="mr-2 h-4 w-4" />
+          View Applications
+          {pendingApps > 0 && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {pendingApps}
+            </span>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onViewSubmissions}>
+          <Upload className="mr-2 h-4 w-4" />
+          Review Submissions
+          {pendingSubs > 0 && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {pendingSubs}
+            </span>
+          )}
+        </DropdownMenuItem>
+
+        {showApproval && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Approval</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() => onApprovalChange(true)}
+              disabled={bounty.isApproved}
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Approve Bounty
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onApprovalChange(false)}
+              disabled={!bounty.isApproved}
+              className="text-destructive"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              Reject Bounty
+            </DropdownMenuItem>
+          </>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onCancel} className="text-destructive">
+          <XCircle className="mr-2 h-4 w-4" />
+          Cancel Bounty
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function ReviewStatusNote({
   status,
 }: {
@@ -592,6 +724,9 @@ function OverviewTab({
     reviewWorkSubmission,
     rejectOtherSubmissions,
     teamActivityVersion,
+    updateBountyStatus,
+    updateBounty,
+    approveBounty,
   } = useBounty();
 
   const [applications, setApplications] = useState<BountyApplication[]>([]);
@@ -604,6 +739,8 @@ function OverviewTab({
   const [reviewingSuggestion, setReviewingSuggestion] = useState<Bounty | null>(
     null,
   );
+  const [viewingBounty, setViewingBounty] = useState<Bounty | null>(null);
+  const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
 
@@ -703,6 +840,65 @@ function OverviewTab({
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleStatusChange = async (
+    bountyId: string,
+    newStatus: BountyStatus,
+  ) => {
+    if (newStatus !== "DONE") {
+      updateBountyStatus(bountyId, newStatus);
+      return;
+    }
+
+    const bounty = teamBounties.find((b) => b.id === bountyId);
+    if (!bounty) return;
+
+    const assigneeCount = bounty.assignees?.length ?? 0;
+
+    if (assigneeCount === 0) {
+      const hasLegacyAssignee = !!bounty.assigneeUser;
+      const createdByHunter = bounty.createdByUser?.role === "HUNTER";
+
+      if (hasLegacyAssignee && createdByHunter) {
+        try {
+          await updateBountyStatus(bountyId, "DONE");
+        } catch (err) {
+          console.error(err);
+        }
+        return;
+      }
+
+      toast.error("Cannot mark as done", {
+        description:
+          "This bounty has no assignees. Assign at least one person before marking it done.",
+      });
+      return;
+    }
+
+    if (assigneeCount === 1) {
+      try {
+        await updateBountyStatus(bountyId, "DONE");
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setWinnerBounty(bounty);
+    }
+  };
+
+  const handleWinnerConfirm = async (bountyId: string, winnerId: string) => {
+    await updateBountyStatus(bountyId, "DONE", winnerId);
+    try {
+      await updateBounty(bountyId, { userIds: [winnerId] } as any);
+    } catch (err) {
+      console.error("Failed to trim assignees to winner:", err);
+    }
+    setWinnerBounty(null);
+  };
+
+  const handleApprovalChange = (bountyId: string, approved: boolean) => {
+    approveBounty(bountyId, approved);
   };
 
   return (
@@ -945,47 +1141,28 @@ function OverviewTab({
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right pr-4 sm:pr-6">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Manage</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => setEditingBounty(bounty)}
-                            >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit bounty
-                            </DropdownMenuItem>
-                            {bounty.suggestionReviewStatus === "PENDING" && (
-                              <DropdownMenuItem
-                                onClick={() => setReviewingSuggestion(bounty)}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-2" />
-                                Review suggestion
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={() => openApplications(bounty.id)}
-                            >
-                              <Users className="h-4 w-4 mr-2" />
-                              View applications
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => openSubmissions(bounty.id)}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Review submissions
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <TeamBountyActionsMenu
+                          bounty={bounty}
+                          pendingApps={pendingApps}
+                          pendingSubs={pendingSubs}
+                          showApproval={currentUser?.role === "ADMIN"}
+                          onView={() => setViewingBounty(bounty)}
+                          onEdit={() => setEditingBounty(bounty)}
+                          onReviewSuggestion={() =>
+                            setReviewingSuggestion(bounty)
+                          }
+                          onStatusChange={(status) =>
+                            handleStatusChange(bounty.id, status)
+                          }
+                          onApprovalChange={(approved) =>
+                            handleApprovalChange(bounty.id, approved)
+                          }
+                          onViewApplications={() => openApplications(bounty.id)}
+                          onViewSubmissions={() => openSubmissions(bounty.id)}
+                          onCancel={() =>
+                            handleStatusChange(bounty.id, "CANCELLED")
+                          }
+                        />
                       </TableCell>
                     )}
                   </TableRow>
@@ -1020,6 +1197,23 @@ function OverviewTab({
         onOpenChange={(open) => {
           if (!open) setReviewingSuggestion(null);
         }}
+      />
+
+      <BountyDetailModal
+        bounty={viewingBounty}
+        open={!!viewingBounty}
+        onOpenChange={(open) => {
+          if (!open) setViewingBounty(null);
+        }}
+      />
+
+      <SelectWinnerModal
+        bounty={winnerBounty}
+        open={!!winnerBounty}
+        onOpenChange={(open) => {
+          if (!open) setWinnerBounty(null);
+        }}
+        onConfirm={handleWinnerConfirm}
       />
 
       {/* ── Applications dialog ── */}
@@ -1060,23 +1254,35 @@ function OverviewTab({
                   className="border rounded-lg px-3.5 py-3"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <Avatar className="h-8 w-8 flex-shrink-0 border">
-                        <AvatarImage
-                          src={
-                            application.applicantUser?.avatar ||
-                            "/placeholder-user.jpg"
-                          }
-                        />
-                        <AvatarFallback className="text-[11px]">
-                          {displayName(application.applicantUser)[0]}
-                        </AvatarFallback>
-                      </Avatar>
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <ProfileLink
+                        user={application.applicantUser}
+                        className="inline-flex flex-shrink-0"
+                        newTab
+                      >
+                        <Avatar className="h-8 w-8 flex-shrink-0 border">
+                          <AvatarImage
+                            src={
+                              application.applicantUser?.avatar ||
+                              "/placeholder-user.jpg"
+                            }
+                          />
+                          <AvatarFallback className="text-[11px]">
+                            {displayName(application.applicantUser)[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                      </ProfileLink>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium leading-tight truncate">
-                          {displayName(application.applicantUser)}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <ProfileLink
+                          user={application.applicantUser}
+                          className="block min-w-0 hover:underline"
+                          newTab
+                        >
+                          <p className="truncate text-sm font-medium leading-tight">
+                            {displayName(application.applicantUser)}
+                          </p>
+                        </ProfileLink>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           Applied{" "}
                           {format(
                             new Date(application.appliedAt),
@@ -1184,23 +1390,35 @@ function OverviewTab({
                   className="border rounded-lg px-3.5 py-3 space-y-3"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <Avatar className="h-8 w-8 flex-shrink-0 border">
-                        <AvatarImage
-                          src={
-                            submission.submitterUser?.avatar ||
-                            "/placeholder-user.jpg"
-                          }
-                        />
-                        <AvatarFallback className="text-[11px]">
-                          {displayName(submission.submitterUser)[0]}
-                        </AvatarFallback>
-                      </Avatar>
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <ProfileLink
+                        user={submission.submitterUser}
+                        className="inline-flex flex-shrink-0"
+                        newTab
+                      >
+                        <Avatar className="h-8 w-8 flex-shrink-0 border">
+                          <AvatarImage
+                            src={
+                              submission.submitterUser?.avatar ||
+                              "/placeholder-user.jpg"
+                            }
+                          />
+                          <AvatarFallback className="text-[11px]">
+                            {displayName(submission.submitterUser)[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                      </ProfileLink>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium leading-tight truncate">
-                          {displayName(submission.submitterUser)}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <ProfileLink
+                          user={submission.submitterUser}
+                          className="block min-w-0 hover:underline"
+                          newTab
+                        >
+                          <p className="truncate text-sm font-medium leading-tight">
+                            {displayName(submission.submitterUser)}
+                          </p>
+                        </ProfileLink>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           {format(
                             new Date(submission.submittedAt),
                             "MMM d, yyyy",
@@ -2177,6 +2395,7 @@ function TreasuryTab({
     fetchTeamSyncStatus,
   } = useBounty();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [deletingWallet, setDeletingWallet] = useState(false);
   const [isFetchingTxHashes, setIsFetchingTxHashes] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -2275,11 +2494,36 @@ function TreasuryTab({
       )}
 
       {activeView === "due" && (
-        <TeamAuthorizePaymentPanel
-          team={team}
-          teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
-          onPaid={handlePaid}
-        />
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Payments due</h2>
+              <p className="text-xs text-muted-foreground">
+                Completed bounties awaiting payout
+              </p>
+            </div>
+            {team.payoutBy === "TEAM" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowExportModal(true)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Completed
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Payouts for this team are handled by an admin.
+              </p>
+            )}
+          </div>
+          <TeamAuthorizePaymentPanel
+            team={team}
+            teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
+            onPaid={handlePaid}
+          />
+        </div>
       )}
 
       {activeView === "transactions" && (
@@ -2352,7 +2596,10 @@ function TreasuryTab({
               </div>
             )
           ) : teamPaymentRecords.length > 0 ? (
-            <PaymentRecordsTable records={teamPaymentRecords} />
+            <PaymentRecordsTable
+              records={teamPaymentRecords}
+              teamId={team.id}
+            />
           ) : (
             <div className="rounded-xl border border-dashed bg-muted/20 py-12 text-center text-sm text-muted-foreground">
               No payout records yet.
@@ -2419,6 +2666,14 @@ function TreasuryTab({
           </div>
         ))}
 
+      {team.payoutBy === "TEAM" && (
+        <ExportCompletedModal
+          open={showExportModal}
+          onOpenChange={setShowExportModal}
+          teamId={team.id}
+        />
+      )}
+
       <TeamWalletModal
         open={walletModalOpen}
         onOpenChange={setWalletModalOpen}
@@ -2450,6 +2705,10 @@ function SettingsTab({
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description || "");
   const [isPrivate, setIsPrivate] = useState(team.isPrivate);
+  const [payoutBy, setPayoutBy] = useState<"ADMIN" | "TEAM">(
+    team.payoutBy ?? "ADMIN",
+  );
+  const [payoutError, setPayoutError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2597,6 +2856,19 @@ function SettingsTab({
       if (!confirm(`Leave ${team.name}?`)) return;
       await removeTeamMember(team.id, currentUserId);
       router.push("/teams");
+    }
+  };
+
+  const handlePayoutChange = async (next: "ADMIN" | "TEAM") => {
+    if (next === payoutBy) return;
+    const prev = payoutBy;
+    setPayoutBy(next);
+    setPayoutError(null);
+    try {
+      await updateTeam(team.id, { payoutBy: next });
+    } catch (err: any) {
+      setPayoutBy(prev);
+      setPayoutError(err.message ?? "Failed to update payout setting");
     }
   };
 
@@ -2962,6 +3234,55 @@ function SettingsTab({
                 Save
               </Button>
             </div>
+          )}
+        </section>
+      )}
+
+      {canManage && (
+        <section className="rounded-xl border bg-card p-5 space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Payouts
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Choose who pays out completed bounties for {team.name}.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(
+              [
+                [
+                  "ADMIN",
+                  "Paid by admin",
+                  "Platform admins export and pay completed bounties.",
+                ],
+                [
+                  "TEAM",
+                  "Paid by our team",
+                  "Your team exports completed bounties and pays them itself.",
+                ],
+              ] as const
+            ).map(([value, title, desc]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => handlePayoutChange(value)}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  payoutBy === value
+                    ? "border-primary bg-primary/5"
+                    : "hover:bg-muted/40"
+                }`}
+              >
+                <div className="text-sm font-medium">{title}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {desc}
+                </div>
+              </button>
+            ))}
+          </div>
+          {payoutError && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <XCircle className="h-3.5 w-3.5" />
+              {payoutError}
+            </p>
           )}
         </section>
       )}

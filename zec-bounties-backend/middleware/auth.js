@@ -52,13 +52,6 @@ function isAdmin(req, res, next) {
   next();
 }
 
-function isTeamOrAdmin(req, res, next) {
-  if (!["TEAM", "ADMIN"].includes(req.user.role)) {
-    return res.status(403).json({ error: "Team access only" });
-  }
-  next();
-}
-
 const optionalAuthenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -95,7 +88,6 @@ const optionalAuthenticate = async (req, res, next) => {
 module.exports = {
   authenticate,
   isAdmin,
-  isTeamOrAdmin,
   optionalAuthenticate,
   signSessionToken,
   loadAuthUser,

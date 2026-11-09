@@ -61,6 +61,7 @@ function loadRoutes(prisma) {
     "../utils/discord/discordNotify": { notifyNewBounty: (bounty) => effects.discord.push(bounty.id) },
     "../utils/discord/discordAssignWebhook": { notifyAssignment: noOp, notifyBountyAssignees: noOp, notifyBountyState: noOp },
     "../utils/constants": { REQUIRED_TEAM_VERIFICATIONS: 3 },
+    "../utils/exportableBounty": require("../../utils/exportableBounty"),
     "../helpers/validateBounty": require("../../helpers/validateBounty"),
 "../utils/bountySuggestionReview": require("../../utils/bountySuggestionReview"),
     "../utils/suggestionSettings": {

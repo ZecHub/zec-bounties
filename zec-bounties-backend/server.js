@@ -54,12 +54,11 @@ const wss = new WebSocketServer({
   server,
   verifyClient: async (info, done) => {
     try {
-      const url = new URL(info.req.url, `http://${info.req.headers.host}`);
-      // Accept the token either as ?token=... or via Sec-WebSocket-Protocol,
-      // since browsers can't set custom headers on the WS handshake.
-      const token =
-        url.searchParams.get("token") ||
-        info.req.headers["sec-websocket-protocol"];
+      // The session token rides in the Sec-WebSocket-Protocol header, never the
+      // URL, so the 7-day bearer never lands in server access logs. Browsers
+      // can't set custom headers on a WS handshake, so the subprotocol field is
+      // the one place it can travel.
+      const token = info.req.headers["sec-websocket-protocol"];
 
       if (!token) {
         return done(false, 401, "Unauthorized");

@@ -37,6 +37,16 @@ import { useBounty } from "@/lib/bounty-context";
 import { Bounty, BountyActivity } from "@/lib/types";
 import Link from "next/link";
 import { displayName } from "@/lib/displayName";
+
+// Show both identities when they differ so staff can match the name
+// used in the staff view / KPI list (name) against the nickname.
+function assigneeLabel(user?: { name?: string | null; nickname?: string | null } | null): string {
+  if (!user) return "User";
+  const name = user.name?.trim();
+  const nick = user.nickname?.trim();
+  if (name && nick && name !== nick) return `${name} (@${nick})`;
+  return displayName(user as any);
+}
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 import { REPOS } from "@/lib/repos";
 import { RepoMenuLabel } from "@/components/repo-filter";
@@ -166,11 +176,15 @@ export function EditBountyModal({
     );
   };
   const filteredUsers = nonAdminUsers
-    .filter(
-      (u) =>
-        displayName(u).toLowerCase().includes(assigneeSearch.toLowerCase()) ||
-        u.email?.toLowerCase().includes(assigneeSearch.toLowerCase()),
-    )
+    .filter((u) => {
+      const q = assigneeSearch.toLowerCase();
+      return (
+        assigneeLabel(u).toLowerCase().includes(q) ||
+        u.name?.toLowerCase().includes(q) ||
+        u.nickname?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q)
+      );
+    })
     .sort((a, b) => {
       const aSelected = selectedUserIds.includes(a.id);
       const bSelected = selectedUserIds.includes(b.id);
@@ -406,10 +420,10 @@ export function EditBountyModal({
                             src={u.avatar || "/placeholder-user.jpg"}
                           />
                           <AvatarFallback className="text-[8px]">
-                            {displayName(u)[0]}
+                            {assigneeLabel(u)[0]}
                           </AvatarFallback>
                         </Avatar>
-                        {displayName(u)}
+                        {assigneeLabel(u)}
                       </Link>
                       <button
                         type="button"
@@ -419,7 +433,7 @@ export function EditBountyModal({
                           toggleUser(u.id);
                         }}
                         className="text-muted-foreground hover:text-destructive transition-colors ml-0.5"
-                        aria-label={`Remove ${displayName(u)}`}
+                        aria-label={`Remove ${assigneeLabel(u)}`}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -439,7 +453,7 @@ export function EditBountyModal({
                     </p>
                     <p className="text-yellow-700 dark:text-yellow-300 text-xs">
                       {selectedUsersWithoutAddress
-                        .map((u) => displayName(u))
+                        .map((u) => assigneeLabel(u))
                         .join(", ")}{" "}
                       {selectedUsersWithoutAddress.length === 1
                         ? "has"
@@ -484,12 +498,12 @@ export function EditBountyModal({
                             src={user.avatar || "/placeholder-user.jpg"}
                           />
                           <AvatarFallback className="text-xs font-semibold">
-                            {displayName(user)[0]}
+                            {assigneeLabel(user)[0]}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">
-                            {displayName(user)}
+                            {assigneeLabel(user)}
                           </p>
                           <p className="text-xs text-muted-foreground truncate">
                             {user.email}

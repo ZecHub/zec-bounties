@@ -18,3 +18,29 @@ export function readGithubLoginState(): string | null {
 export function clearGithubLoginState() {
   sessionStorage.removeItem(STATE_KEY);
 }
+
+/**
+ * Map OAuth / callback error codes (from ?error=) to user-facing messages.
+ * Used by the login form so failures are not silent.
+ */
+export function getGithubOAuthErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  switch (code) {
+    case "missing_token":
+      return "Sign-in did not complete. Please try again.";
+    case "invalid_state":
+      return "Sign-in state did not match. Please try again.";
+    case "invalid_token":
+      return "Session verification failed. Please try again.";
+    case "oauth_failed":
+    case "oauth_cancelled":
+      return "GitHub sign-in was cancelled or failed.";
+    case "no_email":
+      return "A verified GitHub email is required.";
+    case "account_mismatch":
+    case "account_exists":
+      return "This GitHub account cannot be linked.";
+    default:
+      return "Sign-in failed. Please try again.";
+  }
+}

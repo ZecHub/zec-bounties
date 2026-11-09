@@ -19,6 +19,9 @@ function loadTs(relative, requireFixture) {
   const module = { exports: {} };
   vm.runInNewContext(result.outputText, {
     module, exports: module.exports, require: requireFixture, Date, console,
+    // The admin modal registers a window event listener in an effect; a no-op
+    // stub lets that effect run harmlessly instead of being special-cased out.
+    window: { addEventListener() {}, removeEventListener() {} },
   }, { filename });
   return module.exports;
 }
@@ -27,14 +30,17 @@ function mount(kind) {
   const bounty = {
     id: "b1", title: "Expired fixture", description: "A valid expired bounty fixture.",
     bountyAmount: 1, timeToComplete: "2000-01-02T03:45:12.000Z",
-    createdBy: "owner", teamId: null, status: "TO_DO", chain: "MAIN", assignees: [],
+    createdBy: "owner", teamId: kind === "teams" ? "team-1" : null,
+    status: "TO_DO", chain: "MAIN", assignees: [],
   };
   const h = loadRoutes({ bounty: {
     findUnique: async () => ({ ...bounty }),
     update: async ({ data }) => { Object.assign(bounty, data); return { ...bounty }; },
   } });
   const state = [];
-  let cursor = 0, initialized = false, effect, payload, response;
+  const effects = [];
+  const NODEPS = Symbol("nodeps");
+  let cursor = 0, effectCursor = 0, payload, response;
   const components = new Proxy({}, { get: (_, name) => name });
   const utils = loadTs("lib/utils.ts", id => {
     if (id === "clsx") return { clsx: () => "" };
@@ -48,8 +54,18 @@ function mount(kind) {
         if (!(i in state)) state[i] = initial;
         return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
       },
-      // The first effect copies the bounty into the form; later ones load activity.
-      useEffect(fn) { if (!initialized && !effect) effect = fn; },
+      // Record each effect with its deps; render() runs it and re-runs it only
+      // when its deps change (so switching to the Assignees tab loads the team
+      // directory). This follows real useEffect semantics instead of matching
+      // effect source text, so it survives refactors of the components.
+      useEffect(fn, deps) {
+        const i = effectCursor++;
+        const rec = effects[i] || (effects[i] = { deps: NODEPS });
+        rec.fn = fn;
+        rec.nextDeps = deps;
+      },
+      // Teams modal memoizes the directory lookup; compute it immediately.
+      useMemo(fn) { return fn(); },
     };
     if (id === "react/jsx-runtime") {
       const jsx = (type, props) => ({ type, props });
@@ -61,6 +77,11 @@ function mount(kind) {
     if (id === "@/lib/bounty-context") return { useBounty: () => ({
       currentUser: { id: "admin", role: "ADMIN" },
       fetchBountyActivity: async () => [],
+      // Sync thenable so the teams directory effect can set users before the next render.
+      fetchTeamDirectory: () => ({
+        then(resolve) { resolve([{ id: "hunter", name: "Hunter", hasUnifiedAddress: true, hasShieldedAddress: true }]); return this; },
+        finally(fn) { fn(); return this; },
+      }),
       nonAdminUsers: [{ id: "hunter", name: "Hunter", UA_address: "fixture", z_address: "fixture" }],
       updateBounty: async (_id, body) => {
         // Match the HTTP JSON boundary: omit undefined, serialize Date values.
@@ -78,9 +99,29 @@ function mount(kind) {
   });
   const Component = kind === "admin" ? exports.EditBountyModal : exports.TeamsEditBountyModal;
   function render() {
-    cursor = 0;
-    const tree = Component({ bounty, open: true, onOpenChange() {} });
-    if (!initialized) { initialized = true; effect(); return render(); }
+    let tree;
+    // Render, then flush effects whose deps changed, re-rendering until the
+    // effects settle (bounded so a misbehaving effect can't loop forever).
+    for (let pass = 0; pass < 20; pass++) {
+      cursor = 0;
+      effectCursor = 0;
+      tree = Component({ bounty, open: true, onOpenChange() {} });
+      let ran = false;
+      for (const rec of effects) {
+        const next = rec.nextDeps;
+        const prev = rec.deps;
+        const changed =
+          prev === NODEPS || !next || !prev ||
+          next.length !== prev.length || next.some((x, j) => !Object.is(x, prev[j]));
+        if (changed) {
+          if (typeof rec.cleanup === "function") rec.cleanup();
+          rec.cleanup = rec.fn();
+          rec.deps = next;
+          ran = true;
+        }
+      }
+      if (!ran) break;
+    }
     return tree;
   }
   function find(predicate, node = render()) {

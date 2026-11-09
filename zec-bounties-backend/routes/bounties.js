@@ -5,7 +5,6 @@ const { escapeHtml, formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
   authenticate,
-  isTeamOrAdmin,
   isAdmin,
   optionalAuthenticate,
   signSessionToken,
@@ -15,6 +14,7 @@ const {
   getCache,
   setCache,
   delCache,
+  invalidateUserDirectory,
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
@@ -71,6 +71,10 @@ const {
 } = require("../utils/userIdentity");
 const { logActivity, publishActivity } = require("../utils/bountyActivity");
 const { redactPublicUser } = require("../utils/privacy");
+const {
+  ADMIN_EXPORTABLE_BOUNTY,
+  ADMIN_PAYOUT_SCOPE,
+} = require("../utils/exportableBounty");
 
 // ─── Email settings ───────────────────────────────────────────────────────────
 const ENABLE_EMAILS_IN_DEV = false; // Set to true when you want to test emails
@@ -876,6 +880,28 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       return res.status(403).json({
         error: "You do not have permission to manage this bounty's assignees",
       });
+    }
+
+    if (userIds.length > 0) {
+      const where = {
+        id: { in: userIds },
+        role: { not: "ADMIN" },
+        ...(bounty.teamId && {
+          OR: [
+            { favoriteTeams: { some: { teamId: bounty.teamId } } },
+            { teamMembers: { some: { teamId: bounty.teamId } } },
+          ],
+        }),
+      };
+      const found = await prisma.user.findMany({
+        where,
+        select: { id: true, z_address: true, UA_address: true },
+      });
+      if (found.length !== new Set(userIds).size) {
+        return res.status(400).json({
+          error: "Assignees must belong to this team or its community",
+        });
+      }
     }
 
     const [freshBounty, assignees, existingAssignees] =
@@ -2245,33 +2271,6 @@ router.get("/users/full", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-router.get("/users/teams", authenticate, isTeamOrAdmin, async (req, res) => {
-  try {
-    const cacheKey = "users:teams";
-    const cached = await getCache(cacheKey);
-    if (cached) return res.json(cached);
-
-    const users = await prisma.user.findMany({
-      where: { role: { not: "ADMIN" } },
-      select: {
-        id: true,
-        name: true,
-        nickname: true,
-        email: true,
-        role: true,
-        avatar: true,
-        z_address: true,
-        UA_address: true,
-      },
-    });
-
-    await setCache(cacheKey, users, TTL.USERS);
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.patch(
   "/users/:id/task-access",
   authenticate,
@@ -2337,7 +2336,7 @@ router.patch("/switch-role", authenticate, async (req, res) => {
         UA_address: true,
       },
     });
-    await delCache("users:all");
+    await invalidateUserDirectory();
     const token = signSessionToken(updated);
     res.json({ user: updated, token });
   } catch (error) {
@@ -2873,6 +2872,7 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
     const bounties = await prisma.bounty.findMany({
       where: { isPaid: true, ...(from || to ? { paidAt: dateFilter } : {}) },
       include: {
+        team: { select: { id: true, name: true } },
         assigneeUser: {
           select: USER_SELECT_EXPORT,
         },
@@ -2899,7 +2899,7 @@ router.get("/export-payments", authenticate, isAdmin, async (req, res) => {
 router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
   try {
     const bounties = await prisma.bounty.findMany({
-      where: { status: "DONE", chain: "MAIN" },
+      where: ADMIN_EXPORTABLE_BOUNTY,
       include: {
         assigneeUser: {
           select: USER_SELECT_EXPORT,
@@ -3023,6 +3023,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
             status: "DONE",
             isPaid: false,
             exportedAt: null,
+            ...ADMIN_PAYOUT_SCOPE,
           },
         }),
       ],
@@ -3053,6 +3054,7 @@ router.get("/stats/totals", authenticate, isAdmin, async (req, res) => {
 // ─── Mark completed bounties as exported (Admin) ─────────────────────────────
 // First-exported-wins: only stamps rows that haven't been exported before, so
 // a later re-export never overwrites the original exportedAt/exportedBy.
+// Only rows the export list offers (EXPORTABLE_BOUNTY) are stamped.
 router.patch(
   "/export-completed/mark-exported",
   authenticate,
@@ -3068,9 +3070,26 @@ router.patch(
 
       const exportedAt = new Date();
       const result = await prisma.bounty.updateMany({
-        where: { id: { in: bountyIds }, exportedAt: null },
+        where: {
+          ...ADMIN_EXPORTABLE_BOUNTY,
+          id: { in: bountyIds },
+          exportedAt: null,
+        },
         data: { exportedAt, exportedBy: req.user.id },
       });
+
+      // Re-read what this request actually stamped. A concurrent in-app
+      // payment (or a second export) can drop rows between the list and
+      // this update; the CSV must only contain the ones we accepted.
+      const stamped = await prisma.bounty.findMany({
+        where: {
+          id: { in: bountyIds },
+          exportedAt,
+          exportedBy: req.user.id,
+        },
+        select: { id: true },
+      });
+      const acceptedIds = stamped.map((b) => b.id);
 
       // exportedAt now feeds unpaidDoneCount in /stats/totals, so that cache
       // is stale the moment this commits — not just the versioned bounty
@@ -3079,7 +3098,7 @@ router.patch(
 
       sendRealtimeUpdate(
         "bounties_exported",
-        { bountyIds, exportedAt },
+        { bountyIds: acceptedIds, exportedAt },
         req.user.id,
       );
 
@@ -3087,6 +3106,7 @@ router.patch(
         message: "Marked as exported",
         newlyMarked: result.count,
         exportedAt,
+        acceptedIds,
       });
     } catch (error) {
       console.error("Error marking bounties exported:", error);
@@ -3192,6 +3212,7 @@ router.put("/:id", authenticate, async (req, res) => {
         isPaid: true,
         paymentAuthorized: true,
         paymentInFlight: true,
+        exportedAt: true,
         dateCreated: true,
         title: true,
         description: true,
@@ -3251,11 +3272,12 @@ router.put("/:id", authenticate, async (req, res) => {
       if (
         existing.isPaid ||
         existing.paymentInFlight ||
-        existing.paymentAuthorized
+        existing.paymentAuthorized ||
+        existing.exportedAt
       ) {
         return res.status(409).json({
           error:
-            "Assignee and reward cannot be changed once payment is authorised or in progress",
+            "Assignee and reward cannot be changed once payment is authorised, in progress, or exported",
         });
       }
     }

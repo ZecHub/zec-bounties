@@ -42,6 +42,8 @@ interface ExportRow {
   chain: "MAIN" | "TEST";
   exportedAt?: string | null;
   exportedBy?: string | null;
+  teamId?: string | null;
+  team?: { id: string; name: string } | null;
   assigneeUser?: {
     id: string;
     name?: string;
@@ -65,6 +67,7 @@ interface ExportRow {
 interface ExportCompletedModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  teamId?: string;
 }
 
 type SortKey =
@@ -76,22 +79,30 @@ type SortKey =
   | "amount"
   | "network"
   | "address"
-  | "ofac";
+  | "ofac"
+  | "team";
 
 type SortDirection = "asc" | "desc";
 
 export function ExportCompletedModal({
   open,
   onOpenChange,
+  teamId,
 }: ExportCompletedModalProps) {
-  const { fetchExportCompleted, markBountiesExported, updateUserOfac } =
-    useBounty();
+  const {
+    fetchExportCompleted,
+    markBountiesExported,
+    fetchTeamExportCompleted,
+    markTeamBountiesExported,
+    updateUserOfac,
+  } = useBounty();
 
   const [rows, setRows] = useState<ExportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
@@ -145,6 +156,8 @@ export function ExportCompletedModal({
         return (getPayoutAddress(row) ?? "").toLowerCase();
       case "ofac":
         return recipient?.ofacVerified ? 1 : 0;
+      case "team":
+        return (row.team?.name ?? "").toLowerCase();
       default:
         return "";
     }
@@ -205,8 +218,11 @@ export function ExportCompletedModal({
   const load = async () => {
     setLoading(true);
     setSelectedIds(new Set());
+    setExportNote(null);
     try {
-      const data = await fetchExportCompleted();
+      const data = teamId
+        ? await fetchTeamExportCompleted(teamId)
+        : await fetchExportCompleted();
       setRows(
         data.filter((r: ExportRow) => r.chain === "MAIN" && !r.exportedAt),
       );
@@ -275,63 +291,97 @@ export function ExportCompletedModal({
     return val;
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const exportRows =
       selectedIds.size > 0
         ? sortedRows.filter((r) => selectedIds.has(r.id))
         : sortedRows;
+    if (exportRows.length === 0) return;
 
-    const headers = [
-      "Date Created",
-      "Date Completed",
-      "OFAC Status",
-      "Recipient",
-      "Contact",
-      "Reason for Payment",
-      "Bounty URL",
-      "ZEC Amount",
-      "Network",
-      "Payout Address",
-      "Transaction ID",
-    ];
-    const csvRows = exportRows.map((row) => {
-      const recipient = getPrimaryRecipient(row);
-      return [
-        row.dateCreated
-          ? new Date(row.dateCreated).toLocaleDateString("en-US")
-          : "",
-        row.completedAt
-          ? new Date(row.completedAt).toLocaleDateString("en-US")
-          : "",
-        recipient?.ofacVerified ? "Completed" : "Pending",
-        recipient?.name ?? "",
-        recipient?.email ?? "",
-        row.title,
-        `${baseUrl}/${row.id}`,
-        row.bountyAmount.toString(),
-        row.chain === "MAIN" ? "Mainnet" : "Testnet",
-        getPayoutAddress(row) ?? "",
-        row.paymentTxId ?? "",
-      ]
-        .map(escapeCsv)
-        .join(",");
-    });
-    const csv = [headers.join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setExportNote(null);
+    try {
+      // Stamp first. The CSV only includes rows the server accepted, so a
+      // concurrent in-app payment cannot leave a double-pay candidate in the file.
+      const ids = exportRows.map((r) => r.id);
+      const { acceptedIds } = teamId
+        ? await markTeamBountiesExported(teamId, ids)
+        : await markBountiesExported(ids);
+      const accepted = new Set(acceptedIds);
+      const attempted = new Set(exportRows.map((r) => r.id));
+      const toCsv = exportRows.filter((r) => accepted.has(r.id));
+      const skipped = exportRows.length - toCsv.length;
 
-    const exportedIds = exportRows.map((r) => r.id);
-    markBountiesExported(exportedIds)
-      .then(() => {
-        setRows((prev) => prev.filter((r) => !exportedIds.includes(r.id)));
-        setSelectedIds(new Set());
-      })
-      .catch((err) => console.error("Failed to mark bounties exported:", err));
+      // Drop everything we tried: accepted ones are stamped, the rest were
+      // claimed by the other channel and are no longer exportable.
+      setRows((prev) => prev.filter((r) => !attempted.has(r.id)));
+      setSelectedIds(new Set());
+
+      if (toCsv.length === 0) {
+        setExportNote(
+          skipped === 1
+            ? "That bounty was paid in the app before it could be exported. Nothing was written to the CSV."
+            : `${skipped} bounties were paid in the app before they could be exported. Nothing was written to the CSV.`,
+        );
+        return;
+      }
+
+      const headers = [
+        "Date Created",
+        "Date Completed",
+        "OFAC Status",
+        "Recipient",
+        "Contact",
+        "Reason for Payment",
+        ...(teamId ? [] : ["Team"]),
+        "Bounty URL",
+        "ZEC Amount",
+        "Network",
+        "Payout Address",
+        "Transaction ID",
+      ];
+      const csvRows = toCsv.map((row) => {
+        const recipient = getPrimaryRecipient(row);
+        return [
+          row.dateCreated
+            ? new Date(row.dateCreated).toLocaleDateString("en-US")
+            : "",
+          row.completedAt
+            ? new Date(row.completedAt).toLocaleDateString("en-US")
+            : "",
+          recipient?.ofacVerified ? "Completed" : "Pending",
+          recipient?.name ?? "",
+          recipient?.email ?? "",
+          row.title,
+          ...(teamId ? [] : [row.team?.name ?? "Platform"]),
+          `${baseUrl}/${row.id}`,
+          row.bountyAmount.toString(),
+          row.chain === "MAIN" ? "Mainnet" : "Testnet",
+          getPayoutAddress(row) ?? "",
+          row.paymentTxId ?? "",
+        ]
+          .map(escapeCsv)
+          .join(",");
+      });
+      const csv = [headers.join(","), ...csvRows].join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${teamId ? "team-" : ""}completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      if (skipped > 0) {
+        setExportNote(
+          `${skipped} of ${exportRows.length} were paid in the app before export and were left out of the CSV.`,
+        );
+      }
+    } catch (err) {
+      console.error("Failed to mark bounties exported:", err);
+      setExportNote(
+        `Export failed: ${err instanceof Error ? err.message : "unknown error"}. Nothing was written.`,
+      );
+    }
   };
 
   const ofacCount = rows.filter(
@@ -340,7 +390,7 @@ export function ExportCompletedModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="imd:max-w-5xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="imd:max-w-6xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-semibold">
@@ -375,6 +425,11 @@ export function ExportCompletedModal({
           </div>
 
           {/* Stats */}
+          {exportNote && (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              {exportNote}
+            </p>
+          )}
           {loaded && (
             <div className="flex items-center gap-5 mt-2 text-xs text-muted-foreground">
               <span>{rows.length} completed bounties</span>
@@ -421,6 +476,7 @@ export function ExportCompletedModal({
                   <SortableHead column="recipient">Recipient</SortableHead>
                   <SortableHead column="contact">Contact</SortableHead>
                   <SortableHead column="title">Bounty</SortableHead>
+                  {!teamId && <SortableHead column="team">Type</SortableHead>}
                   <SortableHead column="amount">Amount</SortableHead>
                   <SortableHead column="network">Network</SortableHead>
                   <SortableHead column="address">Payout Address</SortableHead>
@@ -479,6 +535,23 @@ export function ExportCompletedModal({
                           </a>
                         </div>
                       </TableCell>
+                      {!teamId && (
+                        <TableCell>
+                          {row.team || row.teamId ? (
+                            <Badge
+                              variant="outline"
+                              className="max-w-[140px] truncate text-[10px] border-blue-300 text-blue-700 dark:text-blue-400"
+                              title={row.team?.name}
+                            >
+                              {row.team?.name ?? "Team"}
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px]">
+                              Platform
+                            </Badge>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-xs font-mono whitespace-nowrap">
                         {row.bountyAmount} ZEC
                       </TableCell>
@@ -502,7 +575,7 @@ export function ExportCompletedModal({
                           <Switch
                             checked={recipient?.ofacVerified ?? false}
                             onCheckedChange={(v) => handleOfacToggle(row, v)}
-                            disabled={isToggling || !recipient?.id}
+                            disabled={isToggling || !recipient?.id || !!teamId}
                           />
                           <Badge
                             variant={

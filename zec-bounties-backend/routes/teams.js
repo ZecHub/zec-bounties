@@ -24,6 +24,7 @@ const executeZingoCliAddresses = require("../utils/zingo/zingoLibAddresses");
 const executeZingoQuickSend = require("../utils/zingo/zingoLibQuickSend");
 const {
   delCache,
+  invalidateUserDirectory,
   deleteCacheByPattern,
   bumpVersion,
   getCache,
@@ -60,6 +61,8 @@ const {
   validateBountyChain,
 } = require("../utils/bountyHelpers");
 const { redactPublicUser } = require("../utils/privacy");
+const { EXPORTABLE_BOUNTY } = require("../utils/exportableBounty");
+const { USER_SELECT_EXPORT } = require("../utils/userSelects");
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -449,6 +452,45 @@ async function isCommunityMember(teamId, userId) {
   return Boolean(fav);
 }
 
+// Platform ADMIN, or OWNER/ADMIN of this team. Mirrors canAdministerBounty.
+async function requireTeamManager(req, res, next) {
+  try {
+    if (req.user.role === "ADMIN") return next();
+    const member = await prisma.teamMember.findUnique({
+      where: {
+        teamId_userId: { teamId: req.params.teamId, userId: req.user.id },
+      },
+      select: { role: true },
+    });
+    if (!member || !["OWNER", "ADMIN"].includes(member.role)) {
+      return res.status(403).json({ error: "Team admin access required" });
+    }
+    next();
+  } catch (err) {
+    console.error("Team manager check failed:", err);
+    res.status(500).json({ error: "Failed to verify team access" });
+  }
+}
+
+async function requireSelfPayout(req, res, next) {
+  try {
+    const team = await prisma.team.findUnique({
+      where: { id: req.params.teamId },
+      select: { payoutBy: true },
+    });
+    if (!team) return res.status(404).json({ error: "Team not found" });
+    if (team.payoutBy !== "TEAM") {
+      return res.status(403).json({
+        error: "Payouts for this team are handled by an admin",
+      });
+    }
+    next();
+  } catch (err) {
+    console.error("Payout mode check failed:", err);
+    res.status(500).json({ error: "Failed to verify payout settings" });
+  }
+}
+
 // ─── Team CRUD ───────────────────────────────────────────────────────────────
 
 router.post("/", authenticate, async (req, res) => {
@@ -674,9 +716,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    // Bust the cached "all users" list — /api/bounties/users won't
-    // reflect this role change until the TTL expires otherwise.
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -696,6 +736,96 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
     res.status(500).json({ error: "Failed to convert user role" });
   }
 });
+
+router.get(
+  "/:teamId/export-completed",
+  authenticate,
+  requireTeamManager,
+  requireSelfPayout,
+  async (req, res) => {
+    try {
+      const bounties = await prisma.bounty.findMany({
+        where: {
+          ...EXPORTABLE_BOUNTY,
+          teamId: req.params.teamId,
+          exportedAt: null,
+        },
+        include: {
+          assigneeUser: { select: USER_SELECT_EXPORT },
+          assignees: { include: { user: { select: USER_SELECT_EXPORT } } },
+        },
+        orderBy: { completedAt: "desc" },
+      });
+      res.json({ success: true, data: bounties });
+    } catch (error) {
+      console.error("Error fetching completed team bounties:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch completed bounties",
+      });
+    }
+  },
+);
+
+router.patch(
+  "/:teamId/export-completed/mark-exported",
+  authenticate,
+  requireTeamManager,
+  requireSelfPayout,
+  async (req, res) => {
+    try {
+      const { teamId } = req.params;
+      const { bountyIds } = req.body;
+      if (!Array.isArray(bountyIds) || bountyIds.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "bountyIds must be a non-empty array" });
+      }
+
+      const exportedAt = new Date();
+      const result = await prisma.bounty.updateMany({
+        where: {
+          ...EXPORTABLE_BOUNTY,
+          teamId, // ids from another team are silently not accepted
+          id: { in: bountyIds },
+          exportedAt: null,
+        },
+        data: { exportedAt, exportedBy: req.user.id },
+      });
+
+      const stamped = await prisma.bounty.findMany({
+        where: {
+          id: { in: bountyIds },
+          teamId,
+          exportedAt,
+          exportedBy: req.user.id,
+        },
+        select: { id: true },
+      });
+      const acceptedIds = stamped.map((b) => b.id);
+
+      // stats:totals counts unpaid DONE bounties across all teams, so it
+      // goes stale here too, not just the versioned bounty caches.
+      await Promise.all([bumpVersion("bounties"), delCache("stats:totals")]);
+
+      sendRealtimeUpdate(
+        "bounties_exported",
+        { bountyIds: acceptedIds, exportedAt, teamId },
+        req.user.id,
+      );
+
+      res.json({
+        message: "Marked as exported",
+        newlyMarked: result.count,
+        exportedAt,
+        acceptedIds,
+      });
+    } catch (error) {
+      console.error("Error marking team bounties exported:", error);
+      res.status(500).json({ error: "Failed to mark bounties exported" });
+    }
+  },
+);
 
 // routes/teams.js — add this route (I put it near the other "Team Activity"
 // routes, below GET /:teamId/submissions works fine, or wherever you like).
@@ -1378,6 +1508,51 @@ router.get("/:teamId/community/members", authenticate, async (req, res) => {
   }
 });
 
+router.get("/:teamId/community/directory", authenticate, async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    if (!(await requireTeamAdmin(teamId, req, res))) return;
+
+    const favs = await prisma.teamFavorite.findMany({
+      where: { teamId, user: { role: { not: "ADMIN" } } },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      select: {
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            nickname: true,
+            email: true,
+            avatar: true,
+            role: true,
+            z_address: true,
+            UA_address: true,
+          },
+        },
+      },
+    });
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      members: favs.map(
+        ({ createdAt, user: { z_address, UA_address, ...u } }) => ({
+          joinedAt: createdAt,
+          ...u,
+          hasUnifiedAddress:
+            typeof UA_address === "string" && /^u(test)?1/i.test(UA_address),
+          hasShieldedAddress: !!z_address,
+        }),
+      ),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to load community directory" });
+  }
+});
+
 router.get("/:teamId/community", authenticate, async (req, res) => {
   try {
     const { teamId } = req.params;
@@ -1458,9 +1633,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    // Bust the cached "all users" list — /api/bounties/users won't
-    // reflect this role change until the TTL expires otherwise.
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -1600,8 +1773,16 @@ router.patch("/:teamId", authenticate, async (req, res) => {
       twitterUrl,
       discordUrl,
       additionalLinks,
+      payoutBy,
     } = req.body;
     const data = {};
+
+    if (payoutBy !== undefined) {
+      if (!["ADMIN", "TEAM"].includes(payoutBy)) {
+        return res.status(400).json({ error: "Invalid payoutBy" });
+      }
+      data.payoutBy = payoutBy;
+    }
 
     if (name !== undefined) data.name = name.trim();
     if (description !== undefined)
@@ -1648,9 +1829,14 @@ router.patch("/:teamId", authenticate, async (req, res) => {
       );
     }
 
-    if (name !== undefined || isPrivate !== undefined) {
+    if (
+      name !== undefined ||
+      isPrivate !== undefined ||
+      payoutBy !== undefined
+    ) {
       await invalidateTeamBounties(teamId);
     }
+    if (payoutBy !== undefined) await delCache("stats:totals");
 
     await broadcastTeamEvent(
       "team_updated",
@@ -2597,6 +2783,7 @@ router.post(
           isPaid: false,
           isApproved: true,
           paymentInFlight: false,
+          exportedAt: null, // paid outside the app (Export Completed)
         },
         include: {
           assigneeUser: {
@@ -2622,7 +2809,7 @@ router.post(
       if (bounties.length === 0) {
         return res.status(400).json({
           error:
-            "None of the selected bounties are eligible for payment (must belong to this team, be DONE, approved, and unpaid)",
+            "None of the selected bounties are eligible for payment (must belong to this team, be DONE, approved, unpaid, and not exported)",
         });
       }
 
@@ -2677,6 +2864,7 @@ router.post(
               isApproved: true,
               isPaid: false,
               paymentInFlight: false,
+              exportedAt: null,
             },
             data: { paymentInFlight: true },
           });
@@ -2697,7 +2885,7 @@ router.post(
         if (err !== claimConflict) throw err;
         return res.status(409).json({
           error:
-            "Some of the selected bounties are already being paid by another request. Refresh and try again.",
+            "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
         });
       }
 
@@ -2903,8 +3091,20 @@ router.post(
       if (!record || record.bounty?.teamId !== teamId) {
         return res.status(404).json({ error: "Record not found" });
       }
-      if (record.status !== "UNKNOWN") {
-        return res.status(409).json({ error: "already settled" });
+      const STALE_PENDING_MS = 10 * 60 * 1000;
+
+      if (record.status !== "UNKNOWN" && record.status !== "PENDING") {
+        return res
+          .status(409)
+          .json({ error: `Record is already ${record.status}` });
+      }
+      if (
+        record.status === "PENDING" &&
+        Date.now() - new Date(record.createdAt).getTime() < STALE_PENDING_MS
+      ) {
+        return res.status(409).json({
+          error: "Payment may still be in flight. Try again in a few minutes.",
+        });
       }
 
       const settledAt = new Date();
@@ -2915,7 +3115,7 @@ router.post(
           // Compare-and-swap on UNKNOWN, so two admins resolving the same
           // record can't both apply (one paying, one re-opening).
           const { count } = await tx.transaction.updateMany({
-            where: { id: record.id, status: "UNKNOWN" },
+            where: { id: record.id, status: record.status },
             data:
               outcome === "broadcast"
                 ? {
