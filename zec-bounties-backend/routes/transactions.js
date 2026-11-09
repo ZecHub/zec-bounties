@@ -23,6 +23,10 @@ const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 const { randomUUID } = require("crypto");
 
 const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
+const {
+  loadDecidedProposals,
+  consumeProposals,
+} = require("../utils/payoutProposals");
 
 const path = require("path");
 
@@ -244,11 +248,25 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     const paymentList = [];
     const skipped = [];
 
+    const { usable, rejected } = await loadDecidedProposals(
+      prisma,
+      bounties,
+      req.user.id,
+    );
+
     for (const bounty of bounties) {
-      const payoutAddress =
-        bounty.chain === "MAIN"
-          ? bounty.assigneeUser?.UA_address
-          : bounty.assigneeUser?.z_address;
+      const proposal = usable.get(bounty.id);
+      if (!proposal) {
+        skipped.push({
+          id: bounty.id,
+          title: bounty.title,
+          reason:
+            rejected.get(bounty.id) ||
+            "No decided payout round (needs approvals)",
+        });
+        continue;
+      }
+      const payoutAddress = proposal.recipient;
 
       if (!payoutAddress) {
         skipped.push({
@@ -303,6 +321,12 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         });
 
         if (result.count !== payableIds.length) throw claimConflict;
+        await consumeProposals(
+          tx,
+          paymentList.map((p) => usable.get(p.bountyId)),
+          claimConflict,
+          req.user.id,
+        );
 
         await tx.transaction.createMany({
           data: paymentList.map((p) => ({
@@ -416,6 +440,10 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
           paidAt,
           paymentInFlight: false,
         },
+      }),
+      prisma.payoutProposal.updateMany({
+        where: { bountyId: { in: bountyIds }, status: "EXECUTED" },
+        data: { status: "DECIDED", executedAt: null },
       }),
     ]);
     await Promise.all(payableIds.map((id) => invalidateBounty(id)));
@@ -569,6 +597,11 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
                 }
               : { paymentInFlight: false },
         });
+        if (outcome === "failed")
+          await tx.payoutProposal.updateMany({
+            where: { bountyId: record.bountyId, status: "EXECUTED" },
+            data: { status: "CANCELLED" },
+          });
       });
     } catch (err) {
       if (err !== alreadySettled) throw err;

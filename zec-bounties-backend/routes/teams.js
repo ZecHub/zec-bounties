@@ -24,7 +24,6 @@ const executeZingoCliAddresses = require("../utils/zingo/zingoLibAddresses");
 const executeZingoQuickSend = require("../utils/zingo/zingoLibQuickSend");
 const {
   delCache,
-  invalidateUserDirectory,
   deleteCacheByPattern,
   bumpVersion,
   getCache,
@@ -63,6 +62,11 @@ const {
 const { redactPublicUser } = require("../utils/privacy");
 const { EXPORTABLE_BOUNTY } = require("../utils/exportableBounty");
 const { USER_SELECT_EXPORT } = require("../utils/userSelects");
+const {
+  loadDecidedProposals,
+  consumeProposals,
+  itemFor,
+} = require("../utils/payoutProposals");
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -235,6 +239,13 @@ async function teardownTeamWallet(teamId, wallet) {
 }
 
 async function canDeleteTeamWallet(teamId, req) {
+  if (req.user.role === "ADMIN") return true;
+  const member = await getTeamMember(teamId, req.user.id);
+  return member?.role === "OWNER";
+}
+
+// Granting ADMIN grows the payout-approver pool, so it is owner / global-admin only.
+async function canGrantTeamAdmin(teamId, req) {
   if (req.user.role === "ADMIN") return true;
   const member = await getTeamMember(teamId, req.user.id);
   return member?.role === "OWNER";
@@ -716,7 +727,9 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    await invalidateUserDirectory();
+    // Bust the cached "all users" list — /api/bounties/users won't
+    // reflect this role change until the TTL expires otherwise.
+    await delCache("users:all");
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -1633,7 +1646,9 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    await invalidateUserDirectory();
+    // Bust the cached "all users" list — /api/bounties/users won't
+    // reflect this role change until the TTL expires otherwise.
+    await delCache("users:all");
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -1959,6 +1974,12 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
       });
     }
 
+    if (role === "ADMIN" && !(await canGrantTeamAdmin(teamId, req))) {
+      return res
+        .status(403)
+        .json({ error: "Only the team owner can grant the ADMIN role" });
+    }
+
     const invitedUsers = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, role: true },
@@ -2066,6 +2087,12 @@ router.patch("/:teamId/members/:userId", authenticate, async (req, res) => {
       return res.status(400).json({
         error: "Invalid role",
       });
+    }
+
+    if (role === "ADMIN" && !(await canGrantTeamAdmin(teamId, req))) {
+      return res
+        .status(403)
+        .json({ error: "Only the team owner can grant the ADMIN role" });
     }
 
     // Never let this route modify the current OWNER's row (e.g. demote the
@@ -2663,89 +2690,16 @@ router.get("/:teamId/wallet/sync-status", authenticate, async (req, res) => {
 });
 
 // Send payment from team wallet
-router.post("/:teamId/wallet/pay", authenticate, async (req, res) => {
-  try {
-    const { teamId } = req.params;
-
-    if (!(await requireTeamAdmin(teamId, req, res))) return;
-
-    const { payments } = req.body;
-
-    if (!Array.isArray(payments) || payments.length === 0) {
-      return res.status(400).json({
-        error: "payments array is required",
-      });
-    }
-
-    const wallet = await prisma.teamWallet.findUnique({
-      where: {
-        teamId,
-      },
-    });
-
-    if (!wallet) {
-      return res.status(404).json({
-        error: "No wallet found for this team",
-      });
-    }
-
-    const params = await buildTeamParams(teamId, wallet);
-
-    const paymentList = payments.map((p) => ({
-      address: p.address,
-      amount: Math.round(p.amount * 1e8),
-      memo: p.memo || "",
-    }));
-
-    const sendResult = await executeZingoQuickSend(paymentList, params);
-
-    if (sendResult.error) {
-      return res.status(422).json({
-        success: false,
-        error: "Payment failed",
-        details: sendResult.error,
-      });
-    }
-
-    if (sendResult.timedOut || sendResult.txids.length === 0) {
-      // No confirmation either way — tell the caller to check the wallet
-      // history before retrying, since the send may have gone through.
-      return res.status(502).json({
-        success: false,
-        outcome: "unknown",
-        error: "Payment outcome unknown",
-        details:
-          "zingo did not confirm the send. Check the team wallet's transaction history before retrying.",
-      });
-    }
-
-    await broadcastTeamEvent(
-      "team_payment_sent",
-      { teamId, txids: sendResult.txids },
-      teamId,
-      req.user.id,
-      { membersOnly: true },
-    );
-
-    res.json({
-      success: true,
-      result: sendResult[1],
-    });
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      error: "Failed to send team payment",
-    });
-  }
-});
+router.post("/:teamId/wallet/pay", authenticate, (req, res) =>
+  res.status(410).json({
+    error: "Direct sends are disabled; payouts go through approval rounds",
+  }),
+);
 
 // ─── Team Wallet Payments (bounty payouts) ───────────────────────────────
 
-// Authorize payout for one or more DONE, unpaid, approved bounties belonging
-// to this team, from the team's shared wallet. Same claim-before-send /
-// unknown-outcome handling as /api/transactions/authorize-payment, just
-// scoped to a single team.
+// Authorize payout for DONE, unpaid, approved bounties of this team that have a
+// DECIDED payout round (threshold votes reached), from the team's shared wallet.
 router.post(
   "/:teamId/wallet/authorize-payment",
   authenticate,
@@ -2774,7 +2728,7 @@ router.post(
       const teamParams = await buildTeamParams(teamId, wallet);
       const bountyChainForWallet = wallet.chain === "mainnet" ? "MAIN" : "TEST";
 
-      // Fetch the selected bounties, scoped to THIS team, with their assignee
+      // Fetch the selected bounties, scoped to THIS team, with their assignees
       const bounties = await prisma.bounty.findMany({
         where: {
           id: { in: bountyIds },
@@ -2813,27 +2767,33 @@ router.post(
         });
       }
 
-      // Build payment list, skipping any bounty whose assignee has no address
+      // ── Approval gate ────────────────────────────────────────────────
+      // Only bounties with a DECIDED round whose recipient/amount/chain still
+      // match are payable, and they are paid to the address the approvers locked.
+      const { usable, rejected } = await loadDecidedProposals(
+        prisma,
+        bounties,
+        req.user.id,
+      );
+
       const paymentList = [];
       const skipped = [];
 
       for (const bounty of bounties) {
-        const payoutAddress =
-          bounty.chain === "MAIN"
-            ? bounty.assigneeUser?.UA_address
-            : bounty.assigneeUser?.z_address;
-
-        if (!payoutAddress) {
+        const proposal = usable.get(bounty.id);
+        if (!proposal) {
           skipped.push({
             id: bounty.id,
             title: bounty.title,
-            reason: `Assignee has no ${bounty.chain === "MAIN" ? "UA address" : "z_address"}`,
+            reason:
+              rejected.get(bounty.id) ||
+              "No decided payout round (needs 3 signed votes)",
           });
           continue;
         }
 
         paymentList.push({
-          address: payoutAddress,
+          address: itemFor(proposal, bounty.id).recipient,
           amount: Math.round(bounty.bountyAmount * 1e8), // zatoshis
           memo: `Bounty: ${bounty.title} (ID: ${bounty.id})`,
           bountyId: bounty.id,
@@ -2844,7 +2804,7 @@ router.post(
       if (paymentList.length === 0) {
         return res.status(400).json({
           error:
-            "No payable bounties — all selected assignees are missing addresses",
+            "No payable bounties — none of the selected bounties has a decided payout round",
           skipped,
         });
       }
@@ -2871,6 +2831,14 @@ router.post(
 
           if (result.count !== payableIds.length) throw claimConflict;
 
+          // DECIDED -> EXECUTED: a round can fund exactly one send
+          await consumeProposals(
+            tx,
+            paymentList.map((p) => usable.get(p.bountyId)),
+            claimConflict,
+            req.user.id,
+          );
+
           await tx.transaction.createMany({
             data: paymentList.map((p) => ({
               bountyId: p.bountyId,
@@ -2885,7 +2853,7 @@ router.post(
         if (err !== claimConflict) throw err;
         return res.status(409).json({
           error:
-            "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
+            "Some of the selected bounties are no longer eligible for payment (already paid, in flight, exported or approval changed). Refresh and try again.",
         });
       }
 
@@ -2893,44 +2861,41 @@ router.post(
         `💸 Paying ${paymentList.length} bounties from team "${teamId}" wallet "${wallet.accountName}" (by: ${req.user.id}, batch: ${batchKey})`,
       );
 
+      // Outcome unknown: keep bounties AND rounds locked (no auto-retry) and hand
+      // the decision to a human via the resolve route.
+      const respondUnknown = async (detail, raw) => {
+        console.error(
+          `⚠️ UNKNOWN team payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): ${detail}`,
+        );
+        await prisma.transaction.updateMany({
+          where: { batchKey },
+          data: {
+            status: "UNKNOWN",
+            rawResult: raw || null,
+            errorDetail: detail,
+          },
+        });
+        await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+        return res.status(502).json({
+          success: false,
+          outcome: "unknown",
+          error: "Payment outcome unknown — the send may have completed",
+          details:
+            "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the team wallet's transaction history before taking further action.",
+          batchKey,
+        });
+      };
+
       // ── Send ───────────────────────────────────────────────────────────
       let sendResult;
       try {
         sendResult = await executeZingoQuickSend(paymentList, teamParams);
       } catch (err) {
-        console.error(
-          `⚠️ UNKNOWN team payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): ${err.message}`,
-        );
-        await prisma.transaction.updateMany({
-          where: { batchKey },
-          data: { status: "UNKNOWN" },
-        });
-        return res.status(502).json({
-          success: false,
-          outcome: "unknown",
-          error: "Payment outcome unknown — the send may have completed",
-          details:
-            "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the team wallet's transaction history before taking further action.",
-          batchKey,
-        });
+        return respondUnknown(err.message);
       }
 
       if (sendResult.timedOut) {
-        console.error(
-          `⚠️ UNKNOWN team payment outcome for batch ${batchKey} (bounties: ${payableIds.join(", ")}): send timed out`,
-        );
-        await prisma.transaction.updateMany({
-          where: { batchKey },
-          data: { status: "UNKNOWN" },
-        });
-        return res.status(502).json({
-          success: false,
-          outcome: "unknown",
-          error: "Payment outcome unknown — the send may have completed",
-          details:
-            "The wallet didn't confirm in time. These bounties are locked and will NOT be auto-retried. Check the team wallet's transaction history before taking further action.",
-          batchKey,
-        });
+        return respondUnknown("Send timed out", sendResult.raw);
       }
 
       if (sendResult.error) {
@@ -2951,9 +2916,14 @@ router.post(
         });
       }
 
-      // ── Clean success ──────────────────────────────────────────────────
+      // No error, no timeout, but also no txid: only a txid proves payment.
       const txResult = sendResult[1];
       const txid = sendResult.txids?.[0] ?? txResult?.txid ?? null;
+      if (!txid) {
+        return respondUnknown("Zingo returned no txid", sendResult.raw);
+      }
+
+      // ── Clean success ──────────────────────────────────────────────────
       const paidAt = new Date();
 
       await prisma.$transaction([
@@ -2996,7 +2966,7 @@ router.post(
       res.json({
         success: true,
         result: txResult,
-        txids: sendResult.txids || (txid ? [txid] : []),
+        txids: sendResult.txids?.length ? sendResult.txids : [txid],
         batchKey,
         paidCount: payableIds.length,
         skipped,
@@ -3134,6 +3104,18 @@ router.post(
                 ? { isPaid: true, paymentInFlight: false, paidAt: settledAt }
                 : { paymentInFlight: false },
           });
+
+          // A manual "failed" must not silently re-run an approved payout:
+          // cancel the round so the approvers vote again.
+          if (outcome === "failed") {
+            await tx.payoutProposal.updateMany({
+              where: {
+                bountyIds: { has: record.bountyId },
+                status: "EXECUTED",
+              },
+              data: { status: "CANCELLED" },
+            });
+          }
         });
       } catch (err) {
         if (err !== alreadySettled) throw err;
@@ -3531,8 +3513,8 @@ const serializeTxRecord = (record) => ({
   amountZat: Number(record.amountZat),
 });
 
-// Clean failure before anything reached the network: record it and put the
-// bounties back in the payable set.
+// Clean failure before anything reached the network: record it, put the bounties
+// back in the payable set, and put their approved rounds back to DECIDED.
 async function releaseTeamClaim(batchKey, bountyIds, errorDetail, raw) {
   await prisma.$transaction([
     prisma.transaction.updateMany({
@@ -3547,6 +3529,10 @@ async function releaseTeamClaim(batchKey, bountyIds, errorDetail, raw) {
     prisma.bounty.updateMany({
       where: { id: { in: bountyIds } },
       data: { paymentInFlight: false },
+    }),
+    prisma.payoutProposal.updateMany({
+      where: { bountyIds: { hasSome: bountyIds }, status: "EXECUTED" },
+      data: { status: "DECIDED", executedAt: null },
     }),
   ]);
   await Promise.all(bountyIds.map((id) => invalidateBounty(id)));

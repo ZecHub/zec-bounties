@@ -28,7 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Plus, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, UserPlus, X, Info } from "lucide-react";
 import { confirmedTotal, fmt } from "@/lib/utils";
 import { TeamBanner } from "@/components/teams/team-banner";
 import { NymSendingBanner } from "@/components/nym-sending-indicator";
@@ -700,6 +700,65 @@ function ReviewStatusNote({
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0" />
       <p className="text-xs">{config.text}</p>
+    </div>
+  );
+}
+
+export function DuePaymentsView({
+  team,
+  teamBounties,
+  paidBountyIds,
+  onPaid,
+  onExport,
+  bountiesLoading,
+}: {
+  team: Team;
+  teamBounties: Bounty[];
+  paidBountyIds: Set<string>;
+  onPaid: (bountyIds: string[]) => void;
+  onExport: () => void;
+  bountiesLoading?: boolean;
+}) {
+  const teamPays = team.payoutBy === "TEAM";
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Payments due</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Completed bounties waiting to be paid out.
+          </p>
+        </div>
+        {teamPays && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-fit gap-2"
+            onClick={onExport}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export completed
+          </Button>
+        )}
+      </div>
+
+      {!teamPays && (
+        <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 px-3.5 py-3 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Platform admins handle payouts for this team. You can switch this
+            under Settings → Payouts.
+          </p>
+        </div>
+      )}
+
+      <TeamAuthorizePaymentPanel
+        team={team}
+        teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
+        onPaid={onPaid}
+        bountiesLoading={bountiesLoading}
+      />
     </div>
   );
 }
@@ -2494,36 +2553,13 @@ function TreasuryTab({
       )}
 
       {activeView === "due" && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">Payments due</h2>
-              <p className="text-xs text-muted-foreground">
-                Completed bounties awaiting payout
-              </p>
-            </div>
-            {team.payoutBy === "TEAM" ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                onClick={() => setShowExportModal(true)}
-              >
-                <Download className="h-3.5 w-3.5" />
-                Export Completed
-              </Button>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Payouts for this team are handled by an admin.
-              </p>
-            )}
-          </div>
-          <TeamAuthorizePaymentPanel
-            team={team}
-            teamBounties={teamBounties.filter((b) => !paidBountyIds.has(b.id))}
-            onPaid={handlePaid}
-          />
-        </div>
+        <DuePaymentsView
+          team={team}
+          teamBounties={teamBounties}
+          paidBountyIds={paidBountyIds}
+          onPaid={handlePaid}
+          onExport={() => setShowExportModal(true)}
+        />
       )}
 
       {activeView === "transactions" && (

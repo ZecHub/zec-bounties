@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,6 +15,9 @@ import {
 import { AlertTriangle, CheckCircle2, Coins, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { setNymSending } from "@/components/nym-sending-indicator";
+import { PayoutKeysCard } from "@/components/payout-keys-card";
+import { PayoutOpenCard, PayoutRoundCard } from "@/components/payout-round-row";
+import type { Bounty } from "@/lib/types";
 
 export function AuthorizePaymentPanel() {
   const {
@@ -25,11 +28,24 @@ export function AuthorizePaymentPanel() {
     hasMoreBounties,
     loadMoreBounties,
     bountiesLoading,
+    payoutRounds = {},
+    fetchPayoutRounds,
+    isLoading,
+    currentUser,
   } = useBounty();
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // A round is a batch, so the selection is by round, not by bounty.
+  const [selectedRoundIds, setSelectedRoundIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   // One idempotency key per selection, held stable across retries so a double
   // submit of the same payout is caught by the backend. A different selection
@@ -62,7 +78,7 @@ export function AuthorizePaymentPanel() {
   const activeChain = walletChainToBountyChain(defaultWallet?.chain);
 
   // Exported bounties are paid outside the app (Export Completed).
-  const eligibleBounties = bounties.filter(
+  const payableBounties = bounties.filter(
     (b) =>
       !b.teamId &&
       b.status === "DONE" &&
@@ -92,32 +108,71 @@ export function AuthorizePaymentPanel() {
   // unpaidDoneCount is only tracked server-side for MAIN chain today, so we can
   // only detect "there's more than what's loaded" when paying from a mainnet wallet.
   // Note this also doesn't filter on isApproved, so it can slightly overcount
-  // vs. eligibleBounties if some DONE/unpaid bounties aren't yet approved.
+  // vs. payableBounties if some DONE/unpaid bounties aren't yet approved.
   const totalUnpaidOnChain = activeChain === "MAIN" ? unpaidDoneCount : null;
   const hasUnloadedEligible =
     totalUnpaidOnChain !== null &&
-    totalUnpaidOnChain > eligibleBounties.length &&
+    totalUnpaidOnChain > payableBounties.length &&
     hasMoreBounties;
 
-  const toggleOne = (id: string) => {
-    setSelectedIds((prev) => {
+  // isLoading from context is the auth guard; no timeouts
+  const payableKey = payableBounties
+    .map((b) => b.id)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (isLoading || !currentUser || !payableKey) return;
+    fetchPayoutRounds(payableKey.split(","));
+  }, [isLoading, currentUser?.id, payableKey]);
+
+  const bountyById = new Map(bounties.map((b) => [b.id, b]));
+  const bountiesOf = (r: { bountyIds: string[] }) =>
+    r.bountyIds.map((id) => bountyById.get(id)).filter((b): b is Bounty => !!b);
+
+  const payableIds = new Set(payableBounties.map((b) => b.id));
+  const rounds = Object.values(payoutRounds).filter((r) =>
+    r.bountyIds.some((id) => payableIds.has(id)),
+  );
+  const coveredIds = new Set(rounds.flatMap((r) => r.bountyIds));
+  const uncovered = payableBounties.filter((b) => !coveredIds.has(b.id));
+
+  // Bounties whose assignee has no payout address are left out of a round.
+  const hasAddress = (b: Bounty) =>
+    b.chain === "MAIN"
+      ? !!b.assigneeUser?.UA_address
+      : !!b.assigneeUser?.z_address;
+  const uncoveredNoAddress = uncovered.filter((b) => !hasAddress(b));
+
+  // Ready: decided for ME as the executor (so MY default wallet pays), past the lock delay.
+  const isReady = (r: (typeof rounds)[number]) =>
+    r.status === "DECIDED" &&
+    r.executorId === currentUser?.id &&
+    (!r.executableAt || new Date(r.executableAt).getTime() <= now);
+  const readyRounds = rounds.filter(isReady);
+  const waitingRounds = rounds.filter((r) => !isReady(r));
+
+  const selectedRounds = readyRounds.filter((r) => selectedRoundIds.has(r.id));
+  const selectedIds = new Set(selectedRounds.flatMap((r) => r.bountyIds));
+  const totalSelected = selectedRounds.reduce(
+    (sum, r) => sum + r.totalZat / 1e8,
+    0,
+  );
+
+  const toggleOne = (roundId: string) => {
+    setSelectedRoundIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(roundId) ? next.delete(roundId) : next.add(roundId);
       return next;
     });
   };
 
   const toggleAll = () => {
-    if (selectedIds.size === eligibleBounties.length) {
-      setSelectedIds(new Set());
+    if (selectedRoundIds.size === readyRounds.length) {
+      setSelectedRoundIds(new Set());
     } else {
-      setSelectedIds(new Set(eligibleBounties.map((b) => b.id)));
+      setSelectedRoundIds(new Set(readyRounds.map((r) => r.id)));
     }
   };
-
-  const totalSelected = bounties
-    .filter((b) => selectedIds.has(b.id))
-    .reduce((sum, b) => sum + b.bountyAmount, 0);
 
   const handleConfirmAuthorize = async () => {
     setShowConfirm(false);
@@ -139,7 +194,7 @@ export function AuthorizePaymentPanel() {
         duration: 12000,
       });
       attemptKey.current = null;
-      setSelectedIds(new Set());
+      setSelectedRoundIds(new Set());
     } catch (error: any) {
       const [title, ...rest] = error.message?.split(": ") ?? [];
       const description =
@@ -151,7 +206,10 @@ export function AuthorizePaymentPanel() {
     }
   };
 
-  if (eligibleBounties.length === 0) {
+  const hasReady = readyRounds.length > 0;
+  const hasAwaiting = uncovered.length > 0 || waitingRounds.length > 0;
+
+  if (!hasReady && !hasAwaiting) {
     if (hasUnloadedEligible) {
       return (
         <div className="text-center py-8 text-muted-foreground space-y-3">
@@ -241,13 +299,14 @@ export function AuthorizePaymentPanel() {
         </div>
       )}
 
-      {/* Pagination warning — some eligible bounties loaded, but more exist */}
+      {/* Pagination warning — a round covers what's loaded */}
       {hasUnloadedEligible && (
         <div className="flex items-start gap-2.5 text-sm p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
           <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
           <span className="text-blue-800 dark:text-blue-200 flex-1">
-            Showing {eligibleBounties.length} of {totalUnpaidOnChain} unpaid
-            bounties. "Select all" only selects what's currently loaded.
+            Showing {payableBounties.length} of {totalUnpaidOnChain} unpaid
+            bounties. A payout round only covers what's currently loaded, so
+            load the rest first if you want them in the same round.
           </span>
           <Button
             size="sm"
@@ -264,88 +323,104 @@ export function AuthorizePaymentPanel() {
         </div>
       )}
 
-      {/* Select all + summary */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={selectedIds.size === eligibleBounties.length}
-            onCheckedChange={toggleAll}
-            id="select-all"
-          />
-          <label
-            htmlFor="select-all"
-            className="text-sm font-medium cursor-pointer"
-          >
-            Select all ({eligibleBounties.length})
-          </label>
-        </div>
-        {selectedIds.size > 0 && (
-          <span className="text-sm text-muted-foreground">
-            {selectedIds.size} selected · {totalSelected.toFixed(4)} ZEC
-          </span>
-        )}
-      </div>
-
-      {/* Bounty rows */}
-      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-        {eligibleBounties.map((bounty) => (
-          <div
-            key={bounty.id}
-            onClick={() => toggleOne(bounty.id)}
-            className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-              selectedIds.has(bounty.id)
-                ? "border-primary bg-primary/5"
-                : "hover:bg-muted/50"
-            }`}
-          >
-            <Checkbox
-              checked={selectedIds.has(bounty.id)}
-              onCheckedChange={() => toggleOne(bounty.id)}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{bounty.title}</p>
-              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                {bounty.assigneeUser?.name ?? "Unknown assignee"}
-                {bounty.chain === "MAIN" ? (
-                  bounty.assigneeUser?.UA_address ? (
-                    <span className="text-green-600 flex items-center gap-0.5">
-                      <CheckCircle2 className="w-3 h-3" /> UA set
-                    </span>
-                  ) : (
-                    <span className="text-red-600 flex items-center gap-0.5">
-                      <AlertTriangle className="w-3 h-3" /> No UA
-                    </span>
-                  )
-                ) : bounty.assigneeUser?.z_address ? (
-                  <span className="text-blue-600 flex items-center gap-0.5">
-                    <CheckCircle2 className="w-3 h-3" /> TA set
-                  </span>
-                ) : (
-                  <span className="text-yellow-600 flex items-center gap-0.5">
-                    <AlertTriangle className="w-3 h-3" /> No TA
-                  </span>
-                )}
-              </p>
+      {hasAwaiting && (
+        <div className="space-y-2">
+          <PayoutKeysCard />
+          <p className="text-xs font-medium text-muted-foreground">
+            Awaiting approval
+          </p>
+          {uncoveredNoAddress.length > 0 && (
+            <div className="flex items-start gap-2.5 text-xs p-2.5 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <AlertTriangle className="w-3.5 h-3.5 text-yellow-600 shrink-0 mt-0.5" />
+              <span className="text-yellow-800 dark:text-yellow-200">
+                {uncoveredNoAddress.length} bount
+                {uncoveredNoAddress.length > 1 ? "ies have" : "y has"} an
+                assignee with no payout address and will be left out of the
+                round: {uncoveredNoAddress.map((b) => b.title).join(", ")}
+              </span>
             </div>
-            <span className="text-sm font-mono font-medium shrink-0">
-              {bounty.bountyAmount.toFixed(4)} ZEC
-            </span>
-          </div>
-        ))}
-      </div>
+          )}
+          {uncovered.length > 0 && <PayoutOpenCard bounties={uncovered} />}
+          {waitingRounds.map((r) => (
+            <PayoutRoundCard key={r.id} round={r} bounties={bountiesOf(r)} />
+          ))}
+        </div>
+      )}
 
-      {/* Authorize button */}
-      <Button
-        onClick={() => setShowConfirm(true)}
-        disabled={selectedIds.size === 0 || isProcessing || !defaultWallet}
-        className="w-full"
-        aria-busy={isProcessing}
-      >
-        {isProcessing
-          ? "Sending…"
-          : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
-      </Button>
+      {hasReady && (
+        <>
+          {/* Select all + summary */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={selectedRoundIds.size === readyRounds.length}
+                onCheckedChange={toggleAll}
+                id="select-all"
+              />
+              <label
+                htmlFor="select-all"
+                className="text-sm font-medium cursor-pointer"
+              >
+                Select all ({readyRounds.length})
+              </label>
+            </div>
+            {selectedIds.size > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {selectedIds.size} bount{selectedIds.size === 1 ? "y" : "ies"} ·{" "}
+                {totalSelected.toFixed(4)} ZEC
+              </span>
+            )}
+          </div>
+
+          {/* Approved batches, ready for you to pay */}
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {readyRounds.map((round) => {
+              const list = bountiesOf(round);
+              return (
+                <div
+                  key={round.id}
+                  onClick={() => toggleOne(round.id)}
+                  className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                    selectedRoundIds.has(round.id)
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  <Checkbox
+                    checked={selectedRoundIds.has(round.id)}
+                    onCheckedChange={() => toggleOne(round.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      Batch of {round.bountyIds.length} bount
+                      {round.bountyIds.length === 1 ? "y" : "ies"}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {list.map((b) => b.title).join(", ")}
+                    </p>
+                  </div>
+                  <span className="text-sm font-mono font-medium shrink-0">
+                    {(round.totalZat / 1e8).toFixed(4)} ZEC
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Authorize button */}
+          <Button
+            onClick={() => setShowConfirm(true)}
+            disabled={selectedIds.size === 0 || isProcessing || !defaultWallet}
+            className="w-full"
+            aria-busy={isProcessing}
+          >
+            {isProcessing
+              ? "Sending…"
+              : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
+          </Button>
+        </>
+      )}
 
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
         <AlertDialogContent>
