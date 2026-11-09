@@ -16,65 +16,55 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export async function subscribeToPush() {
-  if (!("serviceWorker" in navigator)) {
-    throw new Error("Service workers are not supported");
+/**
+ * The browser state a user can actually observe. `readPushState` only reads —
+ * it never asks for permission and never creates a subscription, so it is safe
+ * to call on render and from a click handler alike.
+ */
+export type PushState =
+  | "unsupported" // no service worker / Push API / Notification API
+  | "blocked" // permission === "denied" — only the browser UI can undo this
+  | "off" // permission default or granted, but no push subscription exists
+  | "on"; // a live subscription is registered with the browser
+
+export function pushSupported(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    "Notification" in window
+  );
+}
+
+/**
+ * Read the current state without side effects.
+ *
+ * `swReady` is false when no service worker has been registered yet, which is
+ * common on a fresh browser: `navigator.serviceWorker.ready` never resolves
+ * until something registers one, so it must not be awaited blindly here.
+ */
+export async function readPushState(): Promise<PushState> {
+  if (!pushSupported()) return "unsupported";
+  if (Notification.permission === "denied") return "blocked";
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return "off";
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return "off";
+    return Notification.permission === "granted" ? "on" : "off";
+  } catch {
+    return "off";
   }
+}
 
-  if (!("PushManager" in window)) {
-    throw new Error("Push API is not supported");
-  }
-
-  if (!("Notification" in window)) {
-    throw new Error("Notifications are not supported");
-  }
-
-  // Register the service worker first.
-  const registration = await navigator.serviceWorker.register("/sw.js", {
-    scope: "/",
-    updateViaCache: "none",
-  });
-
-  await navigator.serviceWorker.ready;
-
-  // Ask for permission only if the user hasn't decided yet.
-  let permission = Notification.permission;
-
-  if (permission === "default") {
-    permission = await Notification.requestPermission();
-  }
-
-  if (permission !== "granted") {
-    throw new Error(`Notification permission: ${permission}`);
-  }
-
-  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-
-  console.log("VAPID key exists:", !!vapidKey);
-  console.log("VAPID key length:", vapidKey?.length);
-
-  if (!vapidKey) {
-    throw new Error("VAPID public key is missing");
-  }
-
-  const applicationServerKey = urlBase64ToUint8Array(vapidKey);
-
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey,
-    }));
-
+async function postSubscription(subscription: PushSubscription) {
   const token = localStorage.getItem("authToken");
-
   const res = await fetch(`${backendUrl}/api/notifications/push/subscribe`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token && {
-        Authorization: `Bearer ${token}`,
-      }),
+      ...(token && { Authorization: `Bearer ${token}` }),
     },
     body: JSON.stringify(subscription.toJSON()),
   });
@@ -82,33 +72,91 @@ export async function subscribeToPush() {
   if (!res.ok) {
     throw new Error("Failed to register push subscription with server");
   }
-
-  console.log("Push subscription registered successfully");
-
-  return subscription;
 }
 
-export async function unsubscribeFromPush() {
-  const registration = await navigator.serviceWorker.ready;
+/**
+ * Subscribe from an explicit user action.
+ *
+ * Order matters: the subscription is created and confirmed before the backend
+ * is told about it. The old flow wrote a "attempted" timestamp before knowing
+ * whether enrollment worked, which suppressed retries for 14 days even though
+ * the browser had no subscription. Failure is now reported to the caller and
+ * leaves no local state behind, so the retry button works immediately.
+ */
+export async function enablePush(): Promise<PushState> {
+  if (!pushSupported()) return "unsupported";
+  if (Notification.permission === "denied") return "blocked";
 
-  const subscription = await registration.pushManager.getSubscription();
+  const registration = await navigator.serviceWorker.register("/sw.js", {
+    scope: "/",
+    updateViaCache: "none",
+  });
+  await navigator.serviceWorker.ready;
 
-  if (!subscription) return;
+  let permission: NotificationPermission = Notification.permission;
+  if (permission === "default") {
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== "granted") {
+    return permission === "denied" ? "blocked" : "off";
+  }
+
+  const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  if (!vapidKey) {
+    throw new Error("VAPID public key is missing");
+  }
+
+  const existing = await registration.pushManager.getSubscription();
+  const subscription =
+    existing ??
+    (await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    }));
+
+  try {
+    await postSubscription(subscription);
+  } catch (error) {
+    // Registration on our side failed, so the browser subscription is useless:
+    // drop it instead of leaving the UI claiming push is enabled.
+    if (!existing) await subscription.unsubscribe().catch(() => {});
+    throw error;
+  }
+
+  return "on";
+}
+
+/** Back-compat wrapper for existing callers that only want to subscribe. */
+export async function subscribeToPush() {
+  const state = await enablePush();
+  if (state !== "on") {
+    throw new Error(`Notification permission/enrollment: ${state}`);
+  }
+  return true;
+}
+
+export async function disablePush(): Promise<PushState> {
+  if (!pushSupported()) return "unsupported";
+
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = await registration?.pushManager.getSubscription();
+  if (!subscription) return "off";
 
   const endpoint = subscription.endpoint;
-
   await subscription.unsubscribe();
 
   const token = localStorage.getItem("authToken");
-
   await fetch(`${backendUrl}/api/notifications/push/unsubscribe`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token && {
-        Authorization: `Bearer ${token}`,
-      }),
+      ...(token && { Authorization: `Bearer ${token}` }),
     },
     body: JSON.stringify({ endpoint }),
-  });
+  }).catch(() => {});
+
+  return readPushState();
 }
+
+/** Back-compat alias. */
+export const unsubscribeFromPush = disablePush;

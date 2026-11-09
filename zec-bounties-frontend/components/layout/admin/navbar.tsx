@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   Moon,
   Sun,
-  Bell,
   Search,
   Wallet,
   Menu,
@@ -60,6 +59,7 @@ import { WalletTopupModal } from "@/components/wallet-topup-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { cn } from "@/lib/utils";
 import { ThemePicker } from "@/components/theme/theme-picker";
+import { NotificationsInbox } from "@/components/notifications-inbox";
 import {
   NavDivider,
   WalletBalanceGroup,
@@ -318,9 +318,7 @@ export function AdminNavbar({
 
               <ThemePicker />
 
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Bell className="h-4 w-4" />
-              </Button>
+              {currentUser && <NotificationsInbox />}
 
               <NavDivider />
 
@@ -593,10 +591,7 @@ export function AdminNavbar({
 
                   <RoleToggleButton compact />
 
-                  <Button variant="outline" className="gap-2 justify-start">
-                    <Bell className="h-4 w-4" />
-                    Notifications
-                  </Button>
+                  <NotificationsInbox fullWidth />
 
                   <div className="border-t" />
 
