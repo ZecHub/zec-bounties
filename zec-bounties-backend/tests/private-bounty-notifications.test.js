@@ -12,7 +12,9 @@ const anything = new Proxy(function () {}, {
   construct: () => anything,
 });
 const withDefaults = (stubs) =>
-  new Proxy(stubs, { get: (target, key) => (key in target ? target[key] : anything) });
+  new Proxy(stubs, {
+    get: (target, key) => (key in target ? target[key] : anything),
+  });
 
 function loadRoutes(team) {
   const effects = { emails: [], pushes: [], realtime: [], scoped: [] };
@@ -20,7 +22,11 @@ function loadRoutes(team) {
     team: { findUnique: async () => team },
     teamMember: { findUnique: async () => ({ role: "ADMIN" }) },
     bounty: {
-      findUnique: async () => ({ id: "b1", teamId: "team-1", suggestionReviewStatus: "PENDING" }),
+      findUnique: async () => ({
+        id: "b1",
+        teamId: "team-1",
+        suggestionReviewStatus: "PENDING",
+      }),
       updateMany: async () => ({ count: 1 }),
     },
   };
@@ -44,7 +50,8 @@ function loadRoutes(team) {
     requireTaskCreation: (req, res, next) => next(),
     validateBountyChain: () => null,
     canAdministerBounty: async () => true,
-    getBroadcastRecipients: async (bounty) => (bounty.isPrivate ? ["creator", "teammate"] : null),
+    getBroadcastRecipients: async (bounty) =>
+      bounty.isPrivate ? ["creator", "teammate"] : null,
     broadcastBountyEvent: async (...args) => effects.scoped.push(args),
     createBountyWithQuota: async (user, { data }) => ({
       id: "b1",
@@ -61,24 +68,50 @@ function loadRoutes(team) {
   const dependencies = {
     express: {
       Router: () =>
-        new Proxy({}, { get: (_, method) => (url, ...handlers) => { routes[`${method} ${url}`] = handlers; } }),
+        new Proxy(
+          {},
+          {
+            get:
+              (_, method) =>
+              (url, ...handlers) => {
+                routes[`${method} ${url}`] = handlers;
+              },
+          },
+        ),
     },
     "../prisma/client": db,
     "../helpers/email": require("../helpers/email"),
     "../middleware/websocket": withDefaults({
       sendRealtimeUpdate: (...args) => effects.realtime.push(args),
     }),
-    "../utils/suggestionSettings": { getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }) },
+    "../utils/suggestionSettings": {
+      getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
+    },
     "../utils/cache": withDefaults({
       getCache: async () => [
-        { id: "creator", email: "creator@example.com", emailNotifications: true, pushNotifications: true },
-        { id: "teammate", email: "teammate@example.com", emailNotifications: true, pushNotifications: true },
-        { id: "outsider", email: "outsider@example.com", emailNotifications: true, pushNotifications: true },
+        {
+          id: "creator",
+          email: "creator@example.com",
+          emailNotifications: true,
+          pushNotifications: true,
+        },
+        {
+          id: "teammate",
+          email: "teammate@example.com",
+          emailNotifications: true,
+          pushNotifications: true,
+        },
+        {
+          id: "outsider",
+          email: "outsider@example.com",
+          emailNotifications: true,
+          pushNotifications: true,
+        },
       ],
       bumpVersion: async () => {},
     }),
     "../utils/bountyHelpers": helpers,
-    "../utils/bountySuggestionReview": require("../utils/bountySuggestionReview"),
+    "../utils/bountySuggestionReview": require("../utilsppp/bountySuggestionReview"),
   };
   const routes = {};
   const filename = path.join(__dirname, "../routes/bounties.js");
@@ -88,7 +121,8 @@ function loadRoutes(team) {
     {
       module,
       exports: module.exports,
-      require: (name) => (Object.hasOwn(dependencies, name) ? dependencies[name] : anything),
+      require: (name) =>
+        Object.hasOwn(dependencies, name) ? dependencies[name] : anything,
       console: { log() {}, error() {} },
       process: { env: {} },
     },
@@ -127,7 +161,12 @@ const newBounty = {
 };
 
 test("a new private team bounty is emailed and pushed only to its team", async () => {
-  const routes = loadRoutes({ id: "team-1", name: "Team", isVerified: true, isPrivate: true });
+  const routes = loadRoutes({
+    id: "team-1",
+    name: "Team",
+    isVerified: true,
+    isPrivate: true,
+  });
   const res = await routes.call("post /", { user: creator, body: newBounty });
   assert.equal(res.statusCode, 201);
   assert.deepEqual(routes.effects.emails, ["teammate@example.com"]);
@@ -136,10 +175,18 @@ test("a new private team bounty is emailed and pushed only to its team", async (
 });
 
 test("a new public team bounty is still announced", async () => {
-  const routes = loadRoutes({ id: "team-1", name: "Team", isVerified: true, isPrivate: false });
+  const routes = loadRoutes({
+    id: "team-1",
+    name: "Team",
+    isVerified: true,
+    isPrivate: false,
+  });
   const res = await routes.call("post /", { user: creator, body: newBounty });
   assert.equal(res.statusCode, 201);
-  assert.deepEqual(routes.effects.emails, ["teammate@example.com", "outsider@example.com"]);
+  assert.deepEqual(routes.effects.emails, [
+    "teammate@example.com",
+    "outsider@example.com",
+  ]);
   assert.deepEqual(routes.effects.pushes, ["teammate", "outsider"]);
 });
 
@@ -161,7 +208,10 @@ const soloBounty = { ...newBounty, teamId: undefined };
 
 test("an unapproved bounty is not emailed or pushed to anyone", async () => {
   const routes = loadRoutes(null);
-  const res = await routes.call("post /", { user: unverifiedCreator, body: soloBounty });
+  const res = await routes.call("post /", {
+    user: unverifiedCreator,
+    body: soloBounty,
+  });
   assert.equal(res.statusCode, 201);
   assert.equal(res.body.isApproved, false);
   assert.deepEqual(routes.effects.emails, []);
@@ -181,7 +231,10 @@ test("approving a bounty announces it to everyone but its creator", async () => 
   });
   assert.equal(res.statusCode, 200);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(routes.effects.emails, ["teammate@example.com", "outsider@example.com"]);
+  assert.deepEqual(routes.effects.emails, [
+    "teammate@example.com",
+    "outsider@example.com",
+  ]);
   assert.deepEqual(routes.effects.pushes, ["teammate", "outsider"]);
 });
 
@@ -201,12 +254,23 @@ test("approving an already approved bounty does not announce it again", async ()
 });
 
 test("the announcement email escapes the bounty's text", async () => {
-  const routes = loadRoutes({ id: "team-1", name: "Team", isVerified: true, isPrivate: false });
+  const routes = loadRoutes({
+    id: "team-1",
+    name: "Team",
+    isVerified: true,
+    isPrivate: false,
+  });
   await routes.call("post /", {
     user: creator,
-    body: { ...newBounty, title: '<a href="x">Claim</a>', description: "<img src=x>\nline" },
+    body: {
+      ...newBounty,
+      title: '<a href="x">Claim</a>',
+      description: "<img src=x>\nline",
+    },
   });
-  assert.ok(routes.effects.html.includes("&lt;a href=&quot;x&quot;&gt;Claim&lt;/a&gt;"));
+  assert.ok(
+    routes.effects.html.includes("&lt;a href=&quot;x&quot;&gt;Claim&lt;/a&gt;"),
+  );
   assert.ok(routes.effects.html.includes("&lt;img src=x&gt;<br/>line"));
   assert.ok(!routes.effects.html.includes("<img"));
 });

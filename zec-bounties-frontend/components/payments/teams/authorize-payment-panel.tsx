@@ -12,21 +12,172 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  EyeOff,
+  Hourglass,
+  Loader2,
+  Send,
+  Wallet,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { setNymSending } from "@/components/nym-sending-indicator";
 import { PayoutKeysCard } from "@/components/payout-keys-card";
 import { PayoutOpenCard, PayoutRoundCard } from "@/components/payout-round-row";
 import type { Bounty, Team } from "@/lib/types";
 
+const zec = (n: number) => `${n.toFixed(4)} ZEC`;
+
+type Tone = "green" | "amber" | "yellow" | "red" | "muted";
+
+const TONES: Record<Tone, { card: string; icon: string }> = {
+  green: {
+    card: "border-emerald-500/30 bg-emerald-500/5",
+    icon: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  },
+  amber: {
+    card: "border-amber-500/40 bg-amber-500/5",
+    icon: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  },
+  yellow: {
+    card: "border-yellow-500/40 bg-yellow-500/5",
+    icon: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400",
+  },
+  red: {
+    card: "border-destructive/30 bg-destructive/5",
+    icon: "bg-destructive/10 text-destructive",
+  },
+  muted: {
+    card: "bg-card",
+    icon: "bg-muted text-muted-foreground",
+  },
+};
+
+// One of the three header cards (wallet / settlement / hidden).
+function ActivityCard({
+  tone,
+  icon: Icon,
+  title,
+  children,
+  live,
+}: {
+  tone: Tone;
+  icon: React.ElementType;
+  title: React.ReactNode;
+  children: React.ReactNode;
+  live?: boolean;
+}) {
+  const t = TONES[tone];
+  return (
+    <div
+      className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 transition-colors duration-200 hover:border-foreground/20 ${t.card}`}
+    >
+      <span
+        className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${t.icon}`}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        {live && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+            <span className="relative inline-flex h-2 w-2 rounded-full border border-background bg-emerald-500" />
+          </span>
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-semibold leading-tight">
+          {title}
+        </p>
+        <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Awaiting -> Ready "explosion" -----------------------------------------
+const PAY_ANIM_CSS = `
+@keyframes pay-explode {
+  0%   { transform: translateX(0) scale(1); opacity: 1; filter: blur(0); }
+  8%   { transform: translateX(-5px) scale(1); }
+  16%  { transform: translateX(5px) scale(1); }
+  24%  { transform: translateX(-4px) scale(1.01); }
+  32%  { transform: translateX(3px) scale(1.02); opacity: 1; filter: blur(0); }
+  100% { transform: translateX(0) scale(1.28); opacity: 0; filter: blur(10px); }
+}
+@keyframes pay-pop {
+  0%   { transform: scale(0.6); opacity: 0; filter: blur(8px); }
+  60%  { transform: scale(1.04); opacity: 1; filter: blur(0); }
+  100% { transform: scale(1); opacity: 1; filter: blur(0); }
+}
+@keyframes pay-particle {
+  0%   { transform: translate(-50%, -50%) rotate(var(--a)) translateX(0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--a)) translateX(var(--d)) scale(0); opacity: 0; }
+}
+@keyframes pay-ring {
+  0%   { transform: translate(-50%, -50%) scale(0.15); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(3.2); opacity: 0; }
+}
+.pay-explode { animation: pay-explode 520ms cubic-bezier(.4,0,.2,1) forwards; }
+.pay-pop { animation: pay-pop 520ms cubic-bezier(.2,.9,.3,1.2) both; }
+.pay-particle { position: absolute; left: 50%; top: 50%; border-radius: 9999px; animation: pay-particle 750ms cubic-bezier(.1,.8,.3,1) forwards; }
+.pay-ring { position: absolute; left: 50%; top: 50%; width: 140px; height: 140px; border-radius: 9999px; border: 2px solid rgb(16 185 129 / .7); animation: pay-ring 700ms ease-out forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .pay-explode, .pay-pop, .pay-particle, .pay-ring { animation: none !important; }
+  .pay-explode { opacity: 0; }
+}
+`;
+
+const PARTICLE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#34d399", "#60a5fa"];
+const PARTICLES = Array.from({ length: 28 }, (_, i) => ({
+  angle: (360 / 28) * i + (i % 2 ? 6 : 0),
+  dist: 90 + ((i * 37) % 90),
+  size: 4 + ((i * 5) % 6),
+  color: PARTICLE_COLORS[i % PARTICLE_COLORS.length],
+  delay: 150 + ((i * 13) % 80),
+}));
+
+function Burst() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-20"
+    >
+      <span className="pay-ring" style={{ animationDelay: "180ms" }} />
+      {PARTICLES.map((p, i) => (
+        <span
+          key={i}
+          className="pay-particle"
+          style={
+            {
+              "--a": `${p.angle}deg`,
+              "--d": `${p.dist}px`,
+              width: p.size,
+              height: p.size,
+              background: p.color,
+              animationDelay: `${p.delay}ms`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
 export function TeamAuthorizePaymentPanel({
   team,
   teamBounties,
   onPaid,
+  bountiesLoading = false,
 }: {
   team: Team;
   teamBounties: Bounty[];
   onPaid?: (bountyIds: string[]) => void;
+  /** True while the team's bounty list itself is still being fetched. */
+  bountiesLoading?: boolean;
 }) {
   const {
     authorizeTeamDuePayment,
@@ -40,8 +191,10 @@ export function TeamAuthorizePaymentPanel({
   const [selectedRoundIds, setSelectedRoundIds] = useState<Set<string>>(
     new Set(),
   );
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [roundsLoading, setRoundsLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -107,8 +260,30 @@ export function TeamAuthorizePaymentPanel({
     .sort()
     .join(",");
   useEffect(() => {
-    if (isLoading || !currentUser || !payableKey) return;
-    fetchPayoutRounds(payableKey.split(","));
+    if (isLoading || !currentUser) return;
+    if (!payableKey) {
+      setRoundsLoading(false);
+      return;
+    }
+    const keys = new Set(payableKey.split(","));
+    // Rounds already in context for these bounties? Show them straight away
+    // and just refresh in the background; only show the skeleton on a cold load.
+    const cached = Object.values(payoutRounds).some((r) =>
+      r.bountyIds.some((id) => keys.has(id)),
+    );
+    setRoundsLoading(!cached);
+    let cancelled = false;
+    (async () => {
+      try {
+        await fetchPayoutRounds(payableKey.split(","));
+      } catch {
+        /* fall back to whatever we have */
+      }
+      if (!cancelled) setRoundsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isLoading, currentUser?.id, payableKey]);
 
   const bountyById = new Map(teamBounties.map((b) => [b.id, b]));
@@ -120,7 +295,12 @@ export function TeamAuthorizePaymentPanel({
     r.bountyIds.some((id) => payableIds.has(id)),
   );
   const coveredIds = new Set(rounds.flatMap((r) => r.bountyIds));
-  const uncovered = payableBounties.filter((b) => !coveredIds.has(b.id));
+  // Until the rounds have loaded we can't tell which bounties are already in a
+  // round, so every payable bounty would look "uncovered" and briefly flash the
+  // "Open one payout round for all" card. Treat them as unknown while loading.
+  const uncovered = roundsLoading
+    ? []
+    : payableBounties.filter((b) => !coveredIds.has(b.id));
 
   // Ready: decided for ME as the executor, and past the lock delay.
   const isReady = (r: (typeof rounds)[number]) =>
@@ -145,12 +325,20 @@ export function TeamAuthorizePaymentPanel({
     });
   };
 
+  const toggleExpanded = (roundId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(roundId) ? next.delete(roundId) : next.add(roundId);
+      return next;
+    });
+  };
+
+  const allSelected =
+    readyRounds.length > 0 && selectedRoundIds.size === readyRounds.length;
   const toggleAll = () => {
-    if (selectedRoundIds.size === readyRounds.length) {
-      setSelectedRoundIds(new Set());
-    } else {
-      setSelectedRoundIds(new Set(readyRounds.map((r) => r.id)));
-    }
+    setSelectedRoundIds(
+      allSelected ? new Set() : new Set(readyRounds.map((r) => r.id)),
+    );
   };
 
   const handleConfirmAuthorize = async () => {
@@ -199,165 +387,364 @@ export function TeamAuthorizePaymentPanel({
     }
   };
 
+  const awaitingCount = uncovered.length + waitingRounds.length;
   const hasReady = readyRounds.length > 0;
-  const hasAwaiting = uncovered.length > 0 || waitingRounds.length > 0;
-  const hasActivity =
-    hasReady ||
-    hasAwaiting ||
-    blockedBounties.length > 0 ||
-    inFlightBounties.length > 0;
+  const nInFlight = inFlightBounties.length;
+  const nBlocked = blockedBounties.length;
 
-  // Nothing due, nothing blocked, nothing stuck — don't clutter the
-  // Treasury tab with an empty card at all.
-  if (!hasActivity) {
-    return null;
-  }
+  // --- Awaiting / Ready slot -------------------------------------------------
+  // hasReady === "I am the selected executor and the lock delay has passed".
+  // Awaiting shows immediately from local data (no waiting on the network), with
+  // a small "Syncing" hint. Not selected -> nothing else happens. Selected ->
+  // Awaiting explodes into Ready to pay once the rounds arrive. If the data was
+  // already cached on mount, Ready simply appears with no animation.
+  const [showReady, setShowReady] = useState(false);
+  const [bursting, setBursting] = useState(false);
+  const exploded = useRef(false);
+  const everLoaded = useRef(false);
+  const initialReady = useRef<boolean | null>(null);
+  if (initialReady.current === null) initialReady.current = hasReady;
 
-  return (
-    <div className="rounded-xl border bg-card p-4 space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold">Payments due</h3>
-        <p className="text-xs text-muted-foreground">
-          {hasReady
-            ? `${readyRounds.length} approved ${readyRounds.length !== 1 ? "batches" : "batch"} ready for you to pay`
-            : hasAwaiting
-              ? `${payableBounties.length} completed ${payableBounties.length !== 1 ? "bounties" : "bounty"} awaiting a payout round`
-              : "Nothing ready to pay out right now"}
-        </p>
+  useEffect(() => {
+    if (roundsLoading) return;
+    if (!hasReady) {
+      exploded.current = false;
+      everLoaded.current = true;
+      initialReady.current = false;
+      setShowReady(false);
+      setBursting(false);
+      return;
+    }
+    if (exploded.current) return; // already played for this "ready" run
+    exploded.current = true;
+    if (initialReady.current && !everLoaded.current) {
+      everLoaded.current = true;
+      setShowReady(true); // cached: no animation
+      return;
+    }
+    everLoaded.current = true;
+    setBursting(true);
+    // Not cleared on re-run on purpose, so React StrictMode's double effect
+    // can't cancel the animation in dev.
+    setTimeout(() => setShowReady(true), 520);
+    setTimeout(() => setBursting(false), 1300);
+  }, [roundsLoading, hasReady]);
+
+  const readyNow = showReady || (initialReady.current === true && hasReady);
+
+  const awaitingCard = (exploding: boolean, checking: boolean) => (
+    <section
+      className={`flex h-full min-h-[24rem] flex-col overflow-hidden rounded-xl border bg-card ${
+        exploding ? "pay-explode" : ""
+      }`}
+    >
+      <header className="flex items-start justify-between gap-3 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+            <Hourglass className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold leading-tight">
+              Awaiting proposal
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Completed bounties waiting for approvers to sign off on a payout.
+            </p>
+          </div>
+        </div>
+        {checking ? (
+          <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Syncing
+          </span>
+        ) : (
+          awaitingCount > 0 && (
+            <span className="shrink-0 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-blue-700 dark:text-blue-400">
+              {awaitingCount}
+            </span>
+          )
+        )}
+      </header>
+
+      <div className="flex-1 overflow-y-auto border-t">
+        {awaitingCount === 0 && checking ? (
+          // Still syncing: don't flash the "Nothing in review" message.
+          <div className="h-full min-h-[10rem]" />
+        ) : awaitingCount === 0 ? (
+          <div className="flex h-full min-h-[10rem] flex-col items-center justify-center gap-1 px-4 py-8 text-center">
+            <p className="text-sm font-medium">Nothing in review</p>
+            <p className="text-xs text-muted-foreground">
+              New completed bounties will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2 p-3">
+            {uncovered.length > 0 && <PayoutOpenCard bounties={uncovered} />}
+            {waitingRounds.map((r) => (
+              <PayoutRoundCard key={r.id} round={r} bounties={bountiesOf(r)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+
+  const readyCard = (
+    <section className="pay-pop flex h-full min-h-[24rem] flex-col overflow-hidden rounded-xl border bg-card">
+      <header className="flex items-start justify-between gap-3 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <Send className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold leading-tight">
+              Ready to pay
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              You were selected to send these payouts
+              {awaitingCount > 0
+                ? ` · ${awaitingCount} more awaiting proposal`
+                : ""}
+              .
+            </p>
+          </div>
+        </div>
+        <label
+          htmlFor="team-select-all"
+          className="flex shrink-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+        >
+          <Checkbox
+            checked={allSelected}
+            onCheckedChange={toggleAll}
+            id="team-select-all"
+          />
+          All
+        </label>
+      </header>
+
+      <div className="flex-1 space-y-2 overflow-y-auto border-t p-3">
+        {readyRounds.map((round) => {
+          const list = bountiesOf(round);
+          const selected = selectedRoundIds.has(round.id);
+          const expanded = expandedIds.has(round.id);
+          return (
+            <div
+              key={round.id}
+              className={`overflow-hidden rounded-lg border transition-all duration-200 ${
+                selected
+                  ? "border-primary bg-primary/5 shadow-sm"
+                  : "bg-card hover:border-foreground/20"
+              }`}
+            >
+              <div
+                onClick={() => toggleOne(round.id)}
+                className="flex cursor-pointer items-center gap-3 p-3"
+              >
+                <Checkbox
+                  checked={selected}
+                  onCheckedChange={() => toggleOne(round.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">
+                    {round.bountyIds.length} bount
+                    {round.bountyIds.length === 1 ? "y" : "ies"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {list.map((b) => b.title).join(", ")}
+                  </p>
+                </div>
+                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
+                  {zec(round.totalZat / 1e8)}
+                </span>
+                <button
+                  type="button"
+                  aria-label={expanded ? "Hide details" : "Show details"}
+                  aria-expanded={expanded}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpanded(round.id);
+                  }}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform duration-200 ${
+                      expanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {expanded && (
+                <ul className="divide-y border-t bg-background/60 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {list.map((b) => (
+                    <li
+                      key={b.id}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 pl-12 text-sm"
+                    >
+                      <span className="min-w-0 truncate">{b.title}</span>
+                      <span className="flex shrink-0 items-center gap-3">
+                        <span className="text-xs text-muted-foreground">
+                          {b.assigneeUser?.name ?? "Unknown"}
+                        </span>
+                        <span className="font-mono text-xs font-medium tabular-nums">
+                          {zec(b.bountyAmount)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {team.wallet && (
-        <div className="flex items-center gap-2 text-sm p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
-          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-          <span>
-            Paying from{" "}
-            <span className="font-medium">{team.wallet.accountName}</span> (
-            {team.wallet.chain})
-          </span>
+      <footer className="flex items-center justify-between gap-3 border-t bg-muted/30 p-3">
+        <div className="min-w-0 pl-1">
+          {selectedIds.size > 0 ? (
+            <>
+              <p className="text-sm font-semibold tabular-nums">
+                {zec(totalSelected)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {selectedIds.size} bount
+                {selectedIds.size === 1 ? "y" : "ies"} selected
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Select batches to pay out
+            </p>
+          )}
         </div>
-      )}
-
-      {inFlightBounties.length > 0 && (
-        <div className="flex items-start gap-2.5 text-sm p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <span className="text-amber-800 dark:text-amber-200">
-            <span className="font-medium">
-              {inFlightBounties.length} payment
-              {inFlightBounties.length > 1 ? "s" : ""} awaiting settlement
-            </span>{" "}
-            — the wallet didn't confirm the send, so{" "}
-            {inFlightBounties.length > 1 ? "they are" : "it is"} locked against
-            retry. Check the wallet history and resolve from the Transactions
-            tab.
-          </span>
-        </div>
-      )}
-
-      {blockedBounties.length > 0 && (
-        <div className="flex items-start gap-2.5 text-sm p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-          <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
-          <span className="text-yellow-800 dark:text-yellow-200">
-            <span className="font-medium">
-              {blockedBounties.length} bount
-              {blockedBounties.length > 1 ? "ies" : "y"} hidden
-            </span>{" "}
-            — the team wallet is on{" "}
-            <span className="font-medium">{team.wallet?.chain}</span> but{" "}
-            {blockedBounties.length > 1
-              ? "those bounties are"
-              : "that bounty is"}{" "}
-            on{" "}
-            <span className="font-medium">
-              {activeChain === "TEST" ? "mainnet" : "testnet"}
-            </span>
-            .
-          </span>
-        </div>
-      )}
-
-      {hasAwaiting && (
-        <div className="space-y-2">
-          <PayoutKeysCard />
-          <p className="text-xs font-medium text-muted-foreground">
-            Awaiting approval
-          </p>
-          {uncovered.length > 0 && <PayoutOpenCard bounties={uncovered} />}
-          {waitingRounds.map((r) => (
-            <PayoutRoundCard key={r.id} round={r} bounties={bountiesOf(r)} />
-          ))}
-        </div>
-      )}
-
-      {hasReady && (
-        <>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={selectedRoundIds.size === readyRounds.length}
-                onCheckedChange={toggleAll}
-                id="team-select-all"
-              />
-              <label
-                htmlFor="team-select-all"
-                className="text-sm font-medium cursor-pointer"
-              >
-                Select all ({readyRounds.length})
-              </label>
-            </div>
-            {selectedIds.size > 0 && (
-              <span className="text-sm text-muted-foreground">
-                {selectedIds.size} bount{selectedIds.size === 1 ? "y" : "ies"} ·{" "}
-                {totalSelected.toFixed(4)} ZEC
-              </span>
-            )}
-          </div>
-
-          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-            {readyRounds.map((round) => {
-              const list = bountiesOf(round);
-              return (
-                <div
-                  key={round.id}
-                  onClick={() => toggleOne(round.id)}
-                  className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                    selectedRoundIds.has(round.id)
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-muted/50"
-                  }`}
-                >
-                  <Checkbox
-                    checked={selectedRoundIds.has(round.id)}
-                    onCheckedChange={() => toggleOne(round.id)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">
-                      Batch of {round.bountyIds.length} bount
-                      {round.bountyIds.length === 1 ? "y" : "ies"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {list.map((b) => b.title).join(", ")}
-                    </p>
-                  </div>
-                  <span className="text-sm font-mono font-medium shrink-0">
-                    {(round.totalZat / 1e8).toFixed(4)} ZEC
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedRoundIds(new Set())}
+              disabled={isProcessing}
+              className="gap-1 text-muted-foreground"
+            >
+              <X className="h-3.5 w-3.5" /> Clear
+            </Button>
+          )}
           <Button
             onClick={() => setShowConfirm(true)}
             disabled={selectedIds.size === 0 || isProcessing || !team.wallet}
-            className="w-full"
+            className="gap-2"
           >
-            {isProcessing
-              ? "Processing..."
-              : `Authorize ${selectedIds.size > 0 ? `${selectedIds.size} Payment${selectedIds.size > 1 ? "s" : ""}` : "Payment"}`}
+            {isProcessing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4" />
+                Authorize
+                {selectedIds.size > 0 ? ` ${selectedIds.size}` : ""}
+              </>
+            )}
           </Button>
-        </>
-      )}
+        </div>
+      </footer>
+    </section>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* 1. Header row: wallet / settlement / hidden */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {/* Wallet */}
+        {team.wallet ? (
+          <ActivityCard
+            tone="green"
+            icon={Wallet}
+            live
+            title={
+              <>
+                Paying from{" "}
+                <span className="font-bold">{team.wallet.accountName}</span>
+              </>
+            }
+          >
+            <span className="capitalize">{team.wallet.chain}</span> wallet ·
+            payouts are sent from here.
+          </ActivityCard>
+        ) : (
+          <ActivityCard tone="red" icon={Wallet} title="No wallet connected">
+            Add a wallet in the Wallet tab to pay out bounties.
+          </ActivityCard>
+        )}
+
+        {/* Awaiting settlement */}
+        {nInFlight > 0 ? (
+          <ActivityCard
+            tone="amber"
+            icon={AlertTriangle}
+            title={`${nInFlight} payment${nInFlight > 1 ? "s" : ""} awaiting settlement`}
+          >
+            The wallet didn't confirm the send, so{" "}
+            {nInFlight > 1 ? "they are" : "it is"} locked against retry. Check
+            the wallet history and resolve from the Transactions tab.
+          </ActivityCard>
+        ) : (
+          <ActivityCard
+            tone="muted"
+            icon={CheckCircle2}
+            title="No pending settlements"
+          >
+            Every payment sent has been confirmed by the wallet.
+          </ActivityCard>
+        )}
+
+        {/* Hidden (wrong chain) */}
+        {nBlocked > 0 ? (
+          <ActivityCard
+            tone="yellow"
+            icon={EyeOff}
+            title={`${nBlocked} bount${nBlocked > 1 ? "ies" : "y"} hidden`}
+          >
+            The team wallet is on{" "}
+            <span className="font-medium text-foreground">
+              {team.wallet?.chain ?? "an unknown chain"}
+            </span>{" "}
+            but {nBlocked > 1 ? "those bounties are" : "that bounty is"} on{" "}
+            <span className="font-medium text-foreground">
+              {activeChain === "TEST" ? "mainnet" : "testnet"}
+            </span>
+            .
+          </ActivityCard>
+        ) : (
+          <ActivityCard
+            tone="muted"
+            icon={CheckCircle2}
+            title="No hidden bounties"
+          >
+            All completed bounties match the wallet's chain.
+          </ActivityCard>
+        )}
+      </div>
+
+      {/* 2. Passkeys + (skeleton -> Awaiting | BOOM -> Ready), same slot */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
+        <PayoutKeysCard />
+
+        <div className="relative h-full">
+          <style>{PAY_ANIM_CSS}</style>
+
+          {readyNow
+            ? readyCard
+            : awaitingCard(
+                hasReady && bursting,
+                (roundsLoading || bountiesLoading) && !hasReady,
+              )}
+
+          {bursting && <Burst />}
+        </div>
+      </div>
 
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
         <AlertDialogContent>
@@ -385,7 +772,7 @@ export function TeamAuthorizePaymentPanel({
                   .
                 </p>
 
-                <div className="rounded-lg border bg-muted/40 divide-y max-h-48 overflow-y-auto">
+                <div className="max-h-48 divide-y overflow-y-auto rounded-lg border bg-muted/40">
                   {teamBounties
                     .filter((b) => selectedIds.has(b.id))
                     .map((b) => (
@@ -393,10 +780,10 @@ export function TeamAuthorizePaymentPanel({
                         key={b.id}
                         className="flex items-center justify-between px-3 py-2 text-sm"
                       >
-                        <span className="truncate text-foreground font-medium max-w-[60%]">
+                        <span className="max-w-[60%] truncate font-medium text-foreground">
                           {b.title}
                         </span>
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex shrink-0 items-center gap-2">
                           <span className="text-xs text-muted-foreground">
                             {b.assigneeUser?.name ?? "Unknown"}
                           </span>
@@ -408,7 +795,7 @@ export function TeamAuthorizePaymentPanel({
                     ))}
                 </div>
 
-                <p className="text-xs text-destructive font-medium">
+                <p className="text-xs font-medium text-destructive">
                   This action cannot be undone.
                 </p>
               </div>
@@ -425,7 +812,7 @@ export function TeamAuthorizePaymentPanel({
             >
               {isProcessing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...
                 </>
               ) : (

@@ -19,11 +19,7 @@ const {
 } = require("../helpers/zcash/zcashHelper.js");
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
-const {
-  delCache,
-  invalidateUserDirectory,
-  deleteCacheByPattern,
-} = require("../utils/cache");
+const { delCache, deleteCacheByPattern } = require("../utils/cache");
 const { sendUserUpdated } = require("../middleware/websocket");
 const { OtpStore } = require("../helpers/recoveryOtp");
 const {
@@ -130,24 +126,24 @@ router.get("/github/callback", async (req, res) => {
     );
 
     const githubUser = userResponse.data;
-const githubId = githubUser.id.toString();
-const primaryEmail = verifiedPrimaryEmail(emailResponse.data);
-if (!primaryEmail) {
-  console.log("No verified primary email for GitHub user");
-  return res.redirect(`${FRONTEND_URL}/login?error=no_email`);
-}
+    const githubId = githubUser.id.toString();
+    const primaryEmail = verifiedPrimaryEmail(emailResponse.data);
+    if (!primaryEmail) {
+      console.log("No verified primary email for GitHub user");
+      return res.redirect(`${FRONTEND_URL}/login?error=no_email`);
+    }
 
-// 1. Key on the immutable GitHub ID first.
-let user = await prisma.user.findFirst({ where: { githubId } });
-if (isOtherGithubAccount(user, githubId)) {
-  console.log("Email belongs to an account linked to another GitHub user");
-  return res.redirect(`${FRONTEND_URL}/login?error=account_mismatch`);
-}
+    // 1. Key on the immutable GitHub ID first.
+    let user = await prisma.user.findFirst({ where: { githubId } });
+    if (isOtherGithubAccount(user, githubId)) {
+      console.log("Email belongs to an account linked to another GitHub user");
+      return res.redirect(`${FRONTEND_URL}/login?error=account_mismatch`);
+    }
 
-if (!user) {
-  const byEmail = await prisma.user.findFirst({
-    where: { email: { equals: primaryEmail, mode: "insensitive" } },
-  });
+    if (!user) {
+      const byEmail = await prisma.user.findFirst({
+        where: { email: { equals: primaryEmail, mode: "insensitive" } },
+      });
 
       if (byEmail) {
         // Existing account (e.g. a migrated legacy one) with no GitHub link yet.
@@ -171,7 +167,6 @@ if (!user) {
           role: "CLIENT",
         },
       });
-      await invalidateUserDirectory();
     }
 
     const token = signSessionToken(user);
@@ -782,7 +777,7 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
     });
 
     await Promise.all([
-      invalidateUserDirectory(),
+      delCache("users:all"),
       deleteCacheByPattern("bounties:*"),
       deleteCacheByPattern("bounty:*"),
       deleteCacheByPattern("assignees:*"),
@@ -837,7 +832,7 @@ router.patch("/select-role", authenticate, async (req, res) => {
       },
     });
 
-    await invalidateUserDirectory();
+    await delCache("users:all");
 
     sendUserUpdated(req.user.id, updated);
 
