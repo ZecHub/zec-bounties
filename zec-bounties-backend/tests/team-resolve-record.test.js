@@ -198,6 +198,19 @@ describe("POST /:teamId/wallet/payment-records/:id/resolve", () => {
     assert.equal(status, 409);
   });
 
+  it("refuses a PENDING record whose send may still be in flight", async () => {
+    // A PENDING send can be queued behind another on the shared wallet process
+    // for longer than any age heuristic; resolving it "failed" would re-open
+    // the bounty and double-pay a send that later goes through. Only UNKNOWN is
+    // resolvable (mirrors the admin resolver).
+    records[0].status = "PENDING";
+    const { status, body } = await resolve({ outcome: "failed", confirm: true });
+    assert.equal(status, 409);
+    assert.match(body.error, /in flight/);
+    assert.equal(records[0].status, "PENDING");
+    assert.equal(bounties[0].isPaid, false);
+  });
+
   it("applies only one of two concurrent resolutions", async () => {
     // Force both requests to read UNKNOWN before either settles, so the
     // regression is deterministic: the base route (unconditional update)

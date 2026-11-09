@@ -3091,19 +3091,19 @@ router.post(
       if (!record || record.bounty?.teamId !== teamId) {
         return res.status(404).json({ error: "Record not found" });
       }
-      const STALE_PENDING_MS = 10 * 60 * 1000;
-
-      if (record.status !== "UNKNOWN" && record.status !== "PENDING") {
-        return res
-          .status(409)
-          .json({ error: `Record is already ${record.status}` });
-      }
-      if (
-        record.status === "PENDING" &&
-        Date.now() - new Date(record.createdAt).getTime() < STALE_PENDING_MS
-      ) {
+      // Only an UNKNOWN row (a send whose outcome we couldn't observe) is
+      // resolvable. PENDING is deliberately excluded: its send may still be
+      // queued behind other sends on the shared wallet process, and the send's
+      // own timeout only starts once it is written, so age says nothing about
+      // whether it is still live -- resolving it "failed" by age could re-open
+      // and double-pay a send that later goes through. Mirrors the admin
+      // resolver in routes/transactions.js.
+      if (record.status !== "UNKNOWN") {
         return res.status(409).json({
-          error: "Payment may still be in flight. Try again in a few minutes.",
+          error:
+            record.status === "PENDING"
+              ? "This send may still be in flight and cannot be resolved manually yet"
+              : `Record is already ${record.status}`,
         });
       }
 
