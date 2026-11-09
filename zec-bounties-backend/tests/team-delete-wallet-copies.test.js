@@ -75,6 +75,11 @@ function createDb() {
       update: async ({ where, data }) => ({ id: where.id, ...data }),
       deleteMany: async () => ({ count: 0 }),
     },
+    // Team delete now voids the team's unpaid bounties first; this fixture has
+    // none, so a no-op stub keeps the wallet-copy assertions unchanged.
+    bounty: {
+      updateMany: async () => ({ count: 0 }),
+    },
   };
 }
 

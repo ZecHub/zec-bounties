@@ -351,6 +351,20 @@ function serializeTeam(team) {
   };
 }
 
+// A team's bounties must not outlive the team as orphaned, payable platform
+// bounties. Bounty.team is ON DELETE SET NULL, so deleting a team keeps its
+// bounties' state (DONE / isApproved / assignee / amount) with teamId nulled —
+// dropping any DONE, approved, unpaid one straight into the platform payout
+// queue (routes/transactions.js selects `teamId: null` with no creator-role
+// filter), to be paid from the platform wallet. Cancel every unpaid bounty of
+// the team before it (and its wallet) are torn down.
+async function voidTeamBounties(teamId) {
+  await prisma.bounty.updateMany({
+    where: { teamId, isPaid: false },
+    data: { status: "CANCELLED", paymentInFlight: false },
+  });
+}
+
 /**
  * Cascade-delete a team: tear down its Zcash wallet (if any) and remove
  * the team record. Used when converting a TEAM user to HUNTER.
@@ -362,6 +376,8 @@ async function deleteTeamCascade(teamId) {
   });
 
   if (!team) return;
+
+  await voidTeamBounties(teamId);
 
   if (team.wallet) {
     const params = await prisma.zcashParams.findFirst({
@@ -1904,6 +1920,8 @@ router.delete("/:teamId", authenticate, async (req, res) => {
         });
       }
     }
+
+    await voidTeamBounties(teamId);
 
     await prisma.team.delete({
       where: {
