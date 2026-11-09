@@ -2656,9 +2656,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       // pointless connect/401/retry loop for logged-out users.
       if (!token) return;
 
-      ws = new WebSocket(
-        `${backendWebSpocketUrl}?token=${encodeURIComponent(token)}`,
-      );
+      // Carry the session token in the WebSocket subprotocol, never the query
+      // string, so the 7-day bearer does not land in server access logs on
+      // every reconnect. Browsers can't set custom headers on a WS handshake,
+      // so the subprotocol field is the one place the token can ride.
+      ws = new WebSocket(backendWebSpocketUrl, [token]);
 
       ws.onopen = () => {
         retryDelay = 1000; // reset backoff on successful connect

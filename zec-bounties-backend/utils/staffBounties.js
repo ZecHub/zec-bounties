@@ -155,24 +155,30 @@ function buildStaffView(
     CANCELLED: 0,
   };
   let zecEarned = 0;
+  let zecCompleted = 0;
   for (const row of all) {
     if (statusCounts[row.status] != null) statusCounts[row.status] += 1;
-    if (
-      row.status === "DONE" &&
-      (row.isPaid || row.exportedAt) &&
-      row.relations.includes("assigned")
-    ) {
-      zecEarned += Number(row.bountyAmount) || 0;
+    if (row.status === "DONE" && row.relations.includes("assigned")) {
+      const amt = Number(row.bountyAmount) || 0;
+      zecCompleted += amt;
+      if (row.isPaid || row.exportedAt) {
+        zecEarned += amt;
+      }
     }
   }
   return {
     userId: user.id,
-    displayName: user.nickname || user.name,
+    name: user.name,
+    nickname: user.nickname || null,
+    // Prefer the same name the KPI userlist shows. Fall back to nickname.
+    // When they differ, the UI can show both so staff aren't guessing.
+    displayName: user.name || user.nickname || "Unknown",
     joinedAt: user.createdAt,
     chain,
     limit: STAFF_PAGE_LIMIT,
     bountyCount: all.length,
     zecEarned,
+    zecCompleted,
     statusCounts,
     open: openPage.rows,
     openTotal: openPage.total,

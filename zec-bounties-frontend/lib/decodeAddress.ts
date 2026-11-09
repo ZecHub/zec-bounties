@@ -12,7 +12,10 @@ export async function initAddressDecoder() {
   if (wasmInitialized) return;
   try {
     const mod: ZaddrModuleAny =
-      await import("@elemental-zcash/zaddr_wasm_parser");
+      await import(
+        /* webpackIgnore: true */
+        '@elemental-zcash/zaddr_wasm_parser'
+      );
     if (typeof mod.initWasm === "function") {
       await mod.initWasm();
     }

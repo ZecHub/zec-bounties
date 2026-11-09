@@ -75,6 +75,7 @@ function loadAuthRoutes() {
       verifiedPrimaryEmail: (emails) => emails[0].email,
       isOtherGithubAccount: () => false,
     },
+    "../helpers/authRedirect": require("../helpers/authRedirect"),
   };
   const filename = path.join(__dirname, "../routes/auth.js");
   const module = { exports: {} };

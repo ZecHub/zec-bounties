@@ -9,3 +9,6 @@ export const backendWebSpocketUrl =
     : "ws://localhost:9000";
 
 export const IS_DEV = process.env.NODE_ENV !== "production";
+
+// Permanent invite to the Discord support server.
+export const discordInviteUrl = "https://discord.gg/d4Dcn3GPGE";

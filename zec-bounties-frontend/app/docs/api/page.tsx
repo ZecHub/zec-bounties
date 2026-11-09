@@ -19,7 +19,7 @@ const METHOD: Record<string, string> = {
 const AUTH_ROWS = [
   ["GET", "/auth/github", "Public", "Start GitHub login"],
   ["GET", "/auth/github/callback", "Public", "OAuth callback"],
-  ["GET", "/auth/discord", "Public", "Start Discord connect"],
+  ["GET", "/auth/discord", "Signed in", "Start Discord connect (returns the OAuth URL as JSON)"],
   ["DELETE", "/auth/discord", "Signed in", "Disconnect Discord"],
   ["GET", "/auth/me", "Session", "Current user"],
   ["PATCH", "/auth/update-nickname", "Signed in", "Set nickname"],
