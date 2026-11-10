@@ -2,10 +2,9 @@
   "name": "my-v0-project",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "yarn@4.18.1",
   "scripts": {
-    "build": "next build --webpack",
-    "dev": "next dev --webpack",
+    "build": "next build",
+    "dev": "next dev",
     "lint": "eslint .",
     "start": "next start",
     "test:a11y": "playwright test tests/accessibility",
