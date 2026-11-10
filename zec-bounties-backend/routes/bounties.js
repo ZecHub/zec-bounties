@@ -1712,21 +1712,19 @@ router.get("/my-submissions", authenticate, async (req, res) => {
   }
 });
 
-// ─── Get submissions (creator / admin / assignee) ─────────────────────────────
+// ─── Get submissions (creator / admin / team admin / assignee) ───────────────
 router.get("/:id/submissions", authenticate, async (req, res) => {
   try {
     const { id: bountyId } = req.params;
     const userId = req.user.id;
-    const userRole = req.user.role;
 
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, createdBy: true, assignee: true },
+      select: { id: true, createdBy: true, assignee: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
-    const isCreatorOrAdmin =
-      bounty.createdBy === userId || userRole === "ADMIN";
+    const isCreatorOrAdmin = await canManageBounty(bounty, req.user);
 
     let isAssignee = false;
     if (!isCreatorOrAdmin) {
@@ -2540,16 +2538,16 @@ router.delete(
   },
 );
 
-// ─── Applications for a bounty (admin / creator) ──────────────────────────────
+// ─── Applications for a bounty (admin / creator / team admin) ────────────────
 router.get("/:bountyId/applications", authenticate, async (req, res) => {
   try {
     const { bountyId } = req.params;
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, createdBy: true },
+      select: { id: true, createdBy: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-    if (req.user.role !== "ADMIN" && bounty.createdBy !== req.user.id) {
+    if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -3151,17 +3149,8 @@ router.get("/:id/activity", authenticate, async (req, res) => {
       select: { id: true, createdBy: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-
-    // Same audience as publishActivity: global admin, creator, team OWNER/ADMIN
-    let allowed = req.user.role === "ADMIN" || bounty.createdBy === req.user.id;
-    if (!allowed && bounty.teamId) {
-      const member = await prisma.teamMember.findUnique({
-        where: {
-          teamId_userId: { teamId: bounty.teamId, userId: req.user.id },
-        },
-        select: { role: true },
-      });
-      allowed = Boolean(member && ["OWNER", "ADMIN"].includes(member.role));
+    if (!(await canManageBounty(bounty, req.user))) {
+      return res.status(403).json({ error: "Access denied" });
     }
     if (!allowed) return res.status(403).json({ error: "Access denied" });
 
