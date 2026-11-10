@@ -94,6 +94,11 @@ const bumpVersion = async (namespace) => {
   }
 };
 
+
+const invalidateUserDirectory = async () => {
+  await delCache("users:all", "users:public");
+};
+
 module.exports = {
   getCache,
   setCache,
@@ -101,5 +106,6 @@ module.exports = {
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
+  invalidateUserDirectory,
   TTL,
 };

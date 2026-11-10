@@ -8,7 +8,7 @@ Admins set this under Admin → Settings → Suggestion settings. Three modes:
 
 - **Closed** — no hunter suggestions are accepted. The New Bounty button is disabled.
 - **Open** — any onboarded hunter may suggest, still subject to the weekly limit and any per-user block.
-- **Threshold** — a hunter must have completed at least X bounties (DONE as assignee) before they can suggest. X is set by admins; the default is 5.
+- **Threshold** — a hunter must have completed at least X bounties (DONE as assignee), hold any specialty badge (DAO Member, Node Runner, Developer, etc.), or have a star badge override of at least X. X is set by admins; the default is 5.
 
 Changes take effect immediately. No restart is required.
 

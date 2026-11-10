@@ -16,7 +16,19 @@ let records;
 const matches = (row, where = {}) =>
   Object.entries(where).every(([key, value]) => row[key] === value);
 
+stub("utils/payoutProposals", {
+  loadDecidedProposals: async () => ({
+    usable: new Map([["b1", { bountyIds: ["b1"], recipient: "u1fixture" }]]),
+    rejected: new Map(),
+  }),
+  consumeProposals: async () => {},
+});
+
 const prisma = {
+  payoutProposal: {
+    updateMany: async () => ({ count: 0 }),
+    findMany: async () => [],
+  },
   bounty: {
     update: async ({ where, data }) =>
       Object.assign(bounties.find((b) => b.id === where.id), data),
