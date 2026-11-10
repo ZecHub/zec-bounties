@@ -6,6 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  allowedDevOrigins: ["127.0.0.1"],
   serverExternalPackages: ['@elemental-zcash/zaddr_wasm_parser'],
   experimental: {
     serverComponentsExternalPackages: ['@elemental-zcash/zaddr_wasm_parser'],
