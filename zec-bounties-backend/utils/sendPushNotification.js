@@ -1,10 +1,11 @@
 const webpush = require("./pushNotifications");
+const { isAllowedPushEndpoint } = require("./pushEndpoint");
 
-const ALLOWED = new Set(["fcm.googleapis.com","updates.push.services.mozilla.com","web.push.apple.com"]);
 async function sendPushNotification(subscription, notification) {
+  // false makes notifyUser delete the row, which also clears rows saved
+  // before /push/subscribe checked the endpoint.
+  if (!isAllowedPushEndpoint(subscription.endpoint)) return false;
   try {
-    const host = new URL(subscription.endpoint).host;
-    if (!ALLOWED.has(host)) return false;
     await webpush.sendNotification(
       {
         endpoint: subscription.endpoint,

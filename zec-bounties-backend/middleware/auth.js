@@ -85,18 +85,9 @@ const optionalAuthenticate = async (req, res, next) => {
   next();
 };
 
-
-function isTeamOrAdmin(req, res, next) {
-  if (req.user?.role === "ADMIN" || req.user?.role === "TEAM") {
-    return next();
-  }
-  return res.status(403).json({ error: "Team or admin access required" });
-}
-
 module.exports = {
   authenticate,
   isAdmin,
-  isTeamOrAdmin,
   optionalAuthenticate,
   signSessionToken,
   loadAuthUser,
