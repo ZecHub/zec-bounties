@@ -1,7 +1,7 @@
 const express = require("express");
 const prisma = require("../prisma/client");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { delCache, bumpVersion } = require("../utils/cache");
+const { delCache, bumpVersion, invalidateUserDirectory } = require("../utils/cache");
 const { userIdentityWhere } = require("../utils/userIdentity");
 const { rawAddressFields } = require("../helpers/publicProfileAddress");
 const { receiversForUser } = require("../helpers/addressReceivers");
@@ -306,9 +306,14 @@ router.get("/:idOrNickname/public", async (req, res) => {
     const key = String(req.params.idOrNickname || "").trim();
     if (!key) return res.status(400).json({ error: "User id required" });
 
-    const resolved = await resolveStaffUser(prisma, key, PUBLIC_PROFILE_SELECT, {
-      matchName: false,
-    });
+    const resolved = await resolveStaffUser(
+      prisma,
+      key,
+      PUBLIC_PROFILE_SELECT,
+      {
+        matchName: false,
+      },
+    );
     if (!resolved.user) {
       return res.status(resolved.status).json({ error: resolved.error });
     }
@@ -621,7 +626,7 @@ router.patch("/me/profile", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all").catch(() => {});
+    await invalidateUserDirectory().catch(() => {});
     if (data.profileVisibility) {
       // Bust leaderboard (and any other privacy-scoped) cache so redaction
       // reflects the new flags immediately.

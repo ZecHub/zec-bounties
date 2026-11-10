@@ -14,10 +14,10 @@ const {
   getCache,
   setCache,
   delCache,
-  invalidateUserDirectory,
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
+  invalidateUserDirectory,
   TTL,
 } = require("../utils/cache");
 const sendMail = require("../utils/sendMail");
@@ -227,6 +227,29 @@ function getAvatarOverrideTier(badges) {
   return null;
 }
 
+// Specialty badges that grant suggestion eligibility in threshold mode.
+// Keep in sync with frontend SPECIALTY / ASSIGNABLE_BADGES (+ miner).
+const SPECIALTY_BADGE_KEYS = new Set([
+  "admin",
+  "dao-member",
+  "node-runner",
+  "researcher",
+  "designer",
+  "developer",
+  "translator",
+  "writer",
+  "hackathon-participant",
+  "hackathon-winner",
+  "miner",
+]);
+
+function hasSpecialtyBadge(badges) {
+  if (!Array.isArray(badges)) return false;
+  return badges.some((b) => typeof b === "string" && SPECIALTY_BADGE_KEYS.has(b));
+}
+
+
+
 async function isGoldStarOrAbove(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -259,6 +282,16 @@ async function hasCompletedEnoughToPost(userId) {
     where: { id: userId },
     select: { badges: true },
   });
+
+  // Any specialty badge grants eligibility (in addition to star override / real count).
+  if (hasSpecialtyBadge(user?.badges)) {
+    return {
+      allowed: true,
+      completed: threshold, // treat as met for UI progress
+      required: threshold,
+      mode,
+    };
+  }
 
   const overrideTier = getAvatarOverrideTier(user?.badges);
   if (overrideTier !== null) {
@@ -3119,6 +3152,7 @@ router.get("/:id/activity", authenticate, async (req, res) => {
     if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
+    if (!allowed) return res.status(403).json({ error: "Access denied" });
 
     const activity = await prisma.bountyActivity.findMany({
       where: { bountyId: bounty.id },

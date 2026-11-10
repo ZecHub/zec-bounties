@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { RxDiscordLogo } from "react-icons/rx";
+import { discordInviteUrl } from "@/lib/configENV";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Ban, Compass, Plus, Trophy } from "lucide-react";
@@ -17,6 +19,7 @@ interface Slide {
     label: string;
     href?: string;
     onClick?: () => void;
+    external?: boolean;
     icon: React.ReactNode;
   };
 }
@@ -88,6 +91,19 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
         ) : (
           <Plus className="h-4 w-4" />
         ),
+      },
+    },
+    {
+      id: "discord",
+      eyebrow: "New on Discord",
+      title: "A new server for bounties",
+      description: "Join the server and get support from the team.",
+      gradient: "from-chart-1/20 via-chart-1/5 to-transparent",
+      cta: {
+        label: "Join the server",
+        href: discordInviteUrl,
+        external: true,
+        icon: <RxDiscordLogo className="h-4 w-4" />,
       },
     },
   ];
@@ -249,12 +265,26 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
 
               <div className="flex shrink-0 items-center gap-3 pb-2 imd:pb-0">
                 {slide.cta.href && !slide.cta.onClick ? (
-                  <Link href={slide.cta.href} draggable={false}>
-                    <Button className="rounded-full shadow-lg shadow-primary/20">
-                      {slide.cta.icon}
-                      <span className="ml-2">{slide.cta.label}</span>
-                    </Button>
-                  </Link>
+                  slide.cta.external ? (
+                    <a
+                      href={slide.cta.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      draggable={false}
+                    >
+                      <Button className="rounded-full shadow-lg shadow-primary/20">
+                        {slide.cta.icon}
+                        <span className="ml-2">{slide.cta.label}</span>
+                      </Button>
+                    </a>
+                  ) : (
+                    <Link href={slide.cta.href} draggable={false}>
+                      <Button className="rounded-full shadow-lg shadow-primary/20">
+                        {slide.cta.icon}
+                        <span className="ml-2">{slide.cta.label}</span>
+                      </Button>
+                    </Link>
+                  )
                 ) : (
                   <Button
                     onClick={() => handleCtaClick(slide)}

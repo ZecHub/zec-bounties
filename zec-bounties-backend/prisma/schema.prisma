@@ -60,6 +60,7 @@ model User {
   communities          CommunityMember[] @relation("UserCommunities")
   teamVerifications    TeamVerification[] @relation("TeamVerificationsByAdmin")
   bountyActivity    BountyActivity[]    @relation("BountyActivityActor")
+  approverKeys  ApproverKey[]
 
 
 }
@@ -243,9 +244,107 @@ model Team {
   verifications TeamVerification[] @relation("TeamVerifications")
   payoutBy PayoutBy @default(ADMIN)
 
+  payoutProposals     PayoutProposal[]
+
 
   @@map("teams")
 }
+
+// Add to schema.prisma (and add `approverKeys ApproverKey[]` to model User).
+// If PayoutProposal/PayoutVote already hold rows, delete them first (they're from an
+// earlier design): DELETE FROM "PayoutVote"; DELETE FROM "PayoutProposal";
+
+model PayoutProposal {
+  id            String         @id @default(cuid())
+  teamId        String?
+  team          Team?          @relation(fields: [teamId], references: [id])
+  createdById   String
+  chain         Chain
+  threshold     Int
+  nonce         String                       // random per round, inside every signed vote
+  items         Json                         // [{ bountyId, payeeId, recipient, amountZat }] locked at creation; covered by every signature
+  bountyIds     String[]                     // same bounty ids, queryable (uniqueness checks, lookups)
+  approverKeys  Json                         // { userId: [{ id, credentialId, publicKey, transports }] } pinned at creation
+  status        ProposalStatus @default(OPEN)
+  executorId    String?
+  decidedAt     DateTime?
+  executableAt  DateTime?
+  expiresAt     DateTime
+  executedAt    DateTime?
+  cancelledById String?
+  createdAt     DateTime       @default(now())
+  votes         PayoutVote[]
+
+  @@index([teamId, status])
+}
+
+enum ProposalStatus {
+  OPEN
+  DECIDED
+  EXECUTED
+  CANCELLED
+  EXPIRED
+}
+
+model PayoutVote {
+  id          String         @id @default(cuid())
+  proposalId  String
+  proposal    PayoutProposal @relation(fields: [proposalId], references: [id])
+  signerId    String
+  candidateId String
+  voteNonce   String
+  keyId       String
+  assertion   Json                           // the passkey's signed WebAuthn assertion
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([proposalId, signerId])
+  @@index([proposalId, candidateId])
+}
+
+model ApproverKey {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String[]
+  label        String?
+  createdAt    DateTime  @default(now())
+  activatesAt  DateTime
+  revokedAt    DateTime?
+  revokedById  String?
+
+  @@index([userId])
+}
+
+model PayoutChallenge {
+  id          String   @id @default(cuid())
+  userId      String
+  kind        String                          // "reg" | "vote"
+  proposalId  String?
+  candidateId String?
+  voteNonce   String?
+  challenge   String
+  expiresAt   DateTime
+
+  @@index([userId, kind])
+}
+
+model PayoutAudit {
+  id         Int      @id @default(autoincrement())
+  at         DateTime
+  event      String
+  actorId    String?
+  bountyId   String?
+  proposalId String?
+  data       Json
+  prevHash   String
+  hash       String
+}
+
+
 
 model TeamVerification {
   id          String   @id @default(cuid())

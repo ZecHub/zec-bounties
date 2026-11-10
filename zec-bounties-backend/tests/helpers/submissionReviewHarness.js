@@ -5,18 +5,22 @@ const vm = require("node:vm");
 function load(relativePath, dependencies) {
   const filename = path.join(__dirname, "../..", relativePath);
   const module = { exports: {} };
-  vm.runInNewContext(fs.readFileSync(filename, "utf8"), {
-    module,
-    exports: module.exports,
-    require(name) {
-      if (Object.hasOwn(dependencies, name)) return dependencies[name];
-      throw new Error(`Unexpected dependency: ${name}`);
+  vm.runInNewContext(
+    fs.readFileSync(filename, "utf8"),
+    {
+      module,
+      exports: module.exports,
+      require(name) {
+        if (Object.hasOwn(dependencies, name)) return dependencies[name];
+        throw new Error(`Unexpected dependency: ${name}`);
+      },
+      process: { env: { NODE_ENV: "test" } },
+      console: { log() {}, error() {} },
+      // Delayed cache invalidation is unrelated to review correctness.
+      setTimeout() {},
     },
-    process: { env: { NODE_ENV: "test" } },
-    console: { log() {}, error() {} },
-    // Delayed cache invalidation is unrelated to review correctness.
-    setTimeout() {},
-  }, { filename });
+    { filename },
+  );
   return module.exports;
 }
 
@@ -35,25 +39,40 @@ function loadSubmissionReviewRoute(prisma) {
     "./cache": cache,
     "./sendMail": noOp,
     "./notifyUser": noOp,
-    "../middleware/websocket": { sendRealtimeUpdate: (...args) => effects.broadcasts.push(args) },
+    "../middleware/websocket": {
+      sendRealtimeUpdate: (...args) => effects.broadcasts.push(args),
+    },
   });
   let handler;
-  const router = Object.fromEntries(["get", "post", "put", "delete", "patch"].map(method => [method,
-    (url, ...callbacks) => {
-      if (method === "patch" && url === "/submissions/:submissionId/review") handler = callbacks.at(-1);
-    },
-  ]));
+  const router = Object.fromEntries(
+    ["get", "post", "put", "delete", "patch"].map((method) => [
+      method,
+      (url, ...callbacks) => {
+        if (method === "patch" && url === "/submissions/:submissionId/review")
+          handler = callbacks.at(-1);
+      },
+    ]),
+  );
   load("routes/bounties.js", {
     express: { Router: () => router },
     "../prisma/client": prisma,
     "../helpers/email": {},
-    "../middleware/auth": { authenticate: noOp, isAdmin: noOp, optionalAuthenticate: noOp },
-    "../middleware/websocket": { sendRealtimeUpdate: (...args) => effects.broadcasts.push(args) },
+    "../middleware/auth": {
+      authenticate: noOp,
+      isAdmin: noOp,
+      optionalAuthenticate: noOp,
+    },
+    "../middleware/websocket": {
+      sendRealtimeUpdate: (...args) => effects.broadcasts.push(args),
+    },
     "../utils/cache": cache,
     "../utils/sendMail": noOp,
     "../utils/notifyUser": noOp,
     "../utils/discord/discordNotify": {},
-    "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: noOp, notifyBountyState: noOp },
+    "../utils/discord/discordAssignWebhook": {
+      notifyBountyAssignees: noOp,
+      notifyBountyState: noOp,
+    },
     "../utils/constants": {},
     "../utils/exportableBounty": require("../../utils/exportableBounty"),
     "../helpers/validateBounty": {},
@@ -76,8 +95,14 @@ function loadSubmissionReviewRoute(prisma) {
       const req = { user, params: { submissionId }, body };
       const res = {
         statusCode: 200,
-        status(code) { this.statusCode = code; return this; },
-        json(body) { this.body = body; return this; },
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        json(body) {
+          this.body = body;
+          return this;
+        },
       };
       await handler(req, res);
       return res;

@@ -16,6 +16,7 @@
     "@grpc/grpc-js": "^1.14.1",
     "@grpc/proto-loader": "^0.8.0",
     "@prisma/client": "^6.16.0",
+    "@simplewebauthn/server": "^14.0.3",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.11.1",
     "cargo-cp-artifact": "^0.1",
