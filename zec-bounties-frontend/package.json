@@ -4,8 +4,8 @@
   "private": true,
   "packageManager": "yarn@4.18.1",
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
+    "build": "next build --webpack",
+    "dev": "next dev --webpack",
     "lint": "eslint .",
     "start": "next start",
     "test:a11y": "playwright test tests/accessibility",
