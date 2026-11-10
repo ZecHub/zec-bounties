@@ -91,13 +91,88 @@ function mount(kind) {
     }) };
     if (id.startsWith("@/components/ui/") || id === "lucide-react" || id === "../ZecToUsd") return components;
     if (id === "@/components/repo-filter" || id === "@/components/bounty-chat") return components;
+    if (id === "@/components/bounty-edit-modal") return loadTs("components/bounty-edit-modal.tsx", innerId => {
+      if (innerId === "react") return {
+        useState(initial) {
+          const i = cursor++;
+          if (!(i in state)) state[i] = initial;
+          return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
+        },
+        useEffect(fn, deps) {
+          const i = effectCursor++;
+          const rec = effects[i] || (effects[i] = { deps: NODEPS });
+          rec.fn = fn;
+          rec.nextDeps = deps;
+        },
+        useMemo(fn) { return fn(); },
+      };
+      if (innerId === "react/jsx-runtime") {
+        const jsx = (type, props) => ({ type, props });
+        return { jsx, jsxs: jsx, Fragment: "Fragment" };
+      }
+      if (innerId.startsWith("@/components/ui/") || innerId === "lucide-react" || innerId === "../ZecToUsd" || innerId === "@/components/ZecToUsd") return components;
+      if (innerId === "@/components/repo-filter" || innerId === "@/components/bounty-chat") return components;
+      if (innerId === "next/link") return { __esModule: true, default: "Link" };
+      if (innerId === "@/lib/utils") return utils;
+      if (innerId === "@/lib/displayName") return { displayName: user => user.name };
+      if (innerId === "@/lib/configENV") return { IS_DEV: false };
+      if (innerId === "@/lib/bounty-context") return { useBounty: () => ({
+        currentUser: { id: "admin", role: "ADMIN" },
+        fetchBountyActivity: async () => [],
+        fetchTeamDirectory: () => ({ then(resolve) { resolve([]); return this; }, finally(fn) { fn(); return this; } }),
+        nonAdminUsers: [{ id: "hunter", name: "Hunter", UA_address: "fixture", z_address: "fixture" }],
+        updateBounty: async () => {},
+      }) };
+      if (innerId === "@/lib/repos") return { REPOS: [] };
+      if (innerId === "@/lib/types") return {};
+      throw new Error("Unexpected bounty-edit-modal dependency: " + innerId);
+    });
     if (id === "next/link") return { __esModule: true, default: "Link" };
     if (id === "@/lib/repos") return loadTs("lib/repos.ts", dependency => {
       throw new Error(`Unexpected repos dependency: ${dependency}`);
     });
     throw new Error(`Unexpected modal dependency: ${id}`);
   });
-  const Component = kind === "admin" ? exports.EditBountyModal : exports.TeamsEditBountyModal;
+  const shared = loadTs("components/bounty-edit-modal.tsx", id => {
+    if (id === "react") return {
+      useState(initial) {
+        const i = cursor++;
+        if (!(i in state)) state[i] = initial;
+        return [state[i], value => { state[i] = typeof value === "function" ? value(state[i]) : value; }];
+      },
+      useEffect(fn, deps) {
+        const i = effectCursor++;
+        const rec = effects[i] || (effects[i] = { deps: NODEPS });
+        rec.fn = fn;
+        rec.nextDeps = deps;
+      },
+      useMemo(fn) { return fn(); },
+    };
+    if (id === "react/jsx-runtime") {
+      const jsx = (type, props) => ({ type, props });
+      return { jsx, jsxs: jsx, Fragment: "Fragment" };
+    }
+    if (id.startsWith("@/components/ui/") || id === "lucide-react" || id === "@/components/ZecToUsd") return components;
+    if (id === "@/components/repo-filter" || id === "@/components/bounty-chat") return components;
+    if (id === "next/link") return { __esModule: true, default: "Link" };
+    if (id === "@/lib/utils") return utils;
+    if (id === "@/lib/displayName") return { displayName: user => user.name };
+    if (id === "@/lib/configENV") return { IS_DEV: false };
+    if (id === "@/lib/bounty-context") return { useBounty: () => ({
+      currentUser: { id: "admin", role: "ADMIN" },
+      fetchBountyActivity: async () => [],
+      fetchTeamDirectory: () => ({ then(r) { r([{ id: "hunter", name: "Hunter", hasUnifiedAddress: true, hasShieldedAddress: true }]); return this; }, finally(fn) { fn(); return this; } }),
+      nonAdminUsers: [{ id: "hunter", name: "Hunter", UA_address: "fixture", z_address: "fixture" }],
+      updateBounty: async (_id, body) => {
+        payload = JSON.parse(JSON.stringify(body));
+        response = await h.request("edit", payload);
+      },
+    }) };
+    if (id === "@/lib/repos") return { REPOS: [] };
+    if (id === "@/lib/types") return {};
+    throw new Error("Unexpected shared modal dependency: " + id);
+  });
+  const Component = (props) => shared.BountyEditModal({ variant: kind === "admin" ? "admin" : "team", ...props });
   function render() {
     let tree;
     // Render, then flush effects whose deps changed, re-rendering until the
@@ -124,11 +199,11 @@ function mount(kind) {
     }
     return tree;
   }
-  function find(predicate, node = render()) {
-    if (!node || typeof node !== "object") return;
-    if (Array.isArray(node)) return node.map(child => find(predicate, child)).find(Boolean);
+  function find(predicate, node = render(), depth = 0) {
+    if (!node || typeof node !== "object" || depth > 80) return;
+    if (Array.isArray(node)) return node.map(child => find(predicate, child, depth + 1)).find(Boolean);
     if (predicate(node)) return node;
-    return find(predicate, node.props?.children ?? null);
+    return find(predicate, node.props?.children ?? null, depth + 1);
   }
   return {
     bounty, find,
@@ -157,7 +232,7 @@ for (const timezone of ["UTC", "Pacific/Honolulu"]) {
     test(`${kind} in ${timezone}: expired deadline permits assignee payload`, async () => {
       process.env.TZ = timezone;
       const form = mount(kind);
-      form.find(node => node.type === "button" && node.props.children?.includes?.("assignees"))
+      form.find(node => (node.type === "button" || node.type === "Button") && JSON.stringify(node.props?.children ?? "").includes("assignees"))
         .props.onClick();
       form.find(node => node.type === "button" && node.props.onClick?.toString().includes("toggleUser(user.id)"))
         .props.onClick();
