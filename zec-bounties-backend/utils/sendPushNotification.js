@@ -1,7 +1,10 @@
 const webpush = require("./pushNotifications");
 
+const ALLOWED = new Set(["fcm.googleapis.com","updates.push.services.mozilla.com","web.push.apple.com"]);
 async function sendPushNotification(subscription, notification) {
   try {
+    const host = new URL(subscription.endpoint).host;
+    if (!ALLOWED.has(host)) return false;
     await webpush.sendNotification(
       {
         endpoint: subscription.endpoint,
