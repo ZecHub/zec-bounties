@@ -1,7 +1,7 @@
 const express = require("express");
 const prisma = require("../prisma/client");
 const { authenticate, isAdmin } = require("../middleware/auth");
-const { delCache, bumpVersion } = require("../utils/cache");
+const { delCache, bumpVersion, invalidateUserDirectory } = require("../utils/cache");
 const { userIdentityWhere } = require("../utils/userIdentity");
 const { rawAddressFields } = require("../helpers/publicProfileAddress");
 const { receiversForUser } = require("../helpers/addressReceivers");
@@ -626,7 +626,7 @@ router.patch("/me/profile", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all").catch(() => {});
+    await invalidateUserDirectory().catch(() => {});
     if (data.profileVisibility) {
       // Bust leaderboard (and any other privacy-scoped) cache so redaction
       // reflects the new flags immediately.

@@ -1,4 +1,4 @@
-const { redactBroadcastPayload } = require("../utilsppp/privacy");
+const { redactBroadcastPayload } = require("../utils/privacy");
 
 const clients = new Map(); // userId -> { ws, userId, userName }
 

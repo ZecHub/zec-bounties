@@ -36,6 +36,11 @@ function makeReadBarrier(parties) {
 }
 
 const fakePrisma = {
+  payoutProposal: {
+    updateMany: async () => ({ count: 0 }),
+    findMany: async () => [],
+    findFirst: async () => null,
+  },
   transaction: {
     findUnique: async ({ where }) => {
       const r = records.find((x) => x.id === where.id);
@@ -107,6 +112,14 @@ stub("utils/cache.js", {
     exports: { setVapidDetails() {}, sendNotification: async () => {}, generateVAPIDKeys: () => ({}) },
   };
 }
+
+stub("utils/payoutProposals", {
+  loadDecidedProposals: async () => ({
+    usable: new Map(),
+    rejected: new Map(),
+  }),
+  consumeProposals: async () => {},
+});
 
 const express = require("express");
 const router = require("../routes/teams");

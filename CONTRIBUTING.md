@@ -19,7 +19,7 @@ For large or risky changes (auth, payouts, privacy, schema, multi-file features)
 
 To be paid, the work needs an approved bounty. Hunters can suggest one on the platform if their account is allowed to (see [Bounty suggestions](docs/bounty-suggestions.md)); admins and team users can create bounties directly. Link the PR as the deliverable.
 
-Admins decide who can suggest: nobody (closed), any onboarded hunter (open), or hunters with at least a set number of completed bounties (threshold, 5 by default). If the New Bounty button is disabled, its tooltip tells you why.
+Admins decide who can suggest: nobody (closed), any onboarded hunter (open), or hunters with at least a set number of completed bounties, any specialty badge, or a sufficient star badge override (threshold, 5 by default). If the New Bounty button is disabled, its tooltip tells you why.
 
 To suggest a bounty:
 
