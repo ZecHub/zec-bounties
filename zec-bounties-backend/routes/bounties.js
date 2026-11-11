@@ -2927,6 +2927,9 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
     const bounties = await prisma.bounty.findMany({
       where: ADMIN_EXPORTABLE_BOUNTY,
       include: {
+        // The modal's Type badge and the CSV's "Team" column read team.name
+        // and print "Platform" when it is missing.
+        team: { select: { id: true, name: true } },
         assigneeUser: {
           select: USER_SELECT_EXPORT,
         },
