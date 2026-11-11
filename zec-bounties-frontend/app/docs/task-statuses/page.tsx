@@ -63,7 +63,8 @@ export default function TaskStatusesPage() {
         </Status>
         <Status name="Cancelled">
           The bounty is closed without a payout. This happens when an admin
-          removes its approval, a suggestion is declined, or all assignees are
+          removes its approval, a suggestion is declined, a suggestion is
+          withdrawn by the hunter who posted it, or all assignees are
           removed. Adding an assignee
           again moves it back to In Progress.
         </Status>
