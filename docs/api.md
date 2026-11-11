@@ -98,6 +98,7 @@ All require a bearer token.
 | GET | `/api/bounties/:id/submissions` | Submissions on a bounty you can see |
 | GET | `/api/bounties/:bountyId/applications` | Applications on a bounty you can review |
 | PUT | `/api/bounties/applications/:applicationId` | Accept or reject an application |
+| DELETE | `/api/bounties/applications/:applicationId` | Withdraw your pending application |
 | POST | `/api/bounties` | Create a bounty |
 | POST | `/api/bounties/:id/assignees` | Assign a hunter |
 | DELETE | `/api/bounties/:id/assignees/:userId` | Remove an assignee |

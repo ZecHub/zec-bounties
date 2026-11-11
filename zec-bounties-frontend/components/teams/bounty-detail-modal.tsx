@@ -9,6 +9,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -51,6 +61,7 @@ export function TeamBountyDetailModal({
   const {
     currentUser,
     applyToBounty,
+    withdrawApplication,
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
@@ -58,6 +69,8 @@ export function TeamBountyDetailModal({
 
   const [applicationMessage, setApplicationMessage] = useState("");
   const [isApplying, setIsApplying] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrl, setDeliverableUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -210,6 +223,22 @@ export function TeamBountyDetailModal({
       toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!userApplication) return;
+
+    setIsWithdrawOpen(false);
+    setIsWithdrawing(true);
+    try {
+      await withdrawApplication(userApplication.id);
+      toast.success("Application withdrawn");
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      toast.error(getErrorMessage(error, "Failed to withdraw application"));
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -600,6 +629,17 @@ export function TeamBountyDetailModal({
                         ? "Your application was not selected for this bounty."
                         : "Your application is being reviewed by the bounty creator."}
                   </p>
+                  {userApplication?.status === "pending" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setIsWithdrawOpen(true)}
+                      disabled={isWithdrawing}
+                    >
+                      {isWithdrawing ? "Withdrawing…" : "Withdraw application"}
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -731,6 +771,27 @@ export function TeamBountyDetailModal({
             )}
           </div>
         </div>
+
+        {/* Withdraw confirmation */}
+        <AlertDialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw application</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to withdraw this application? You can
+                apply again after withdrawing.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isWithdrawing}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleWithdraw} disabled={isWithdrawing}>
+                {isWithdrawing ? "Withdrawing…" : "Withdraw"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

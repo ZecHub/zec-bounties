@@ -9,6 +9,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -134,6 +144,7 @@ export function BountyDetailModal({
     currentUser,
     updateBounty,
     applyToBounty,
+    withdrawApplication,
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
@@ -145,6 +156,8 @@ export function BountyDetailModal({
   const [applicationMessage, setApplicationMessage] = useState("");
   const [applicationError, setApplicationError] = useState("");
   const [isApplying, setIsApplying] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrls, setDeliverableUrls] = useState<string[]>([""]);
   const [submissionErrors, setSubmissionErrors] = useState<{
@@ -536,6 +549,22 @@ export function BountyDetailModal({
       toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!userApplication) return;
+
+    setIsWithdrawOpen(false);
+    setIsWithdrawing(true);
+    try {
+      await withdrawApplication(userApplication.id);
+      toast.success("Application withdrawn");
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      toast.error(getErrorMessage(error, "Failed to withdraw application"));
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -1403,6 +1432,17 @@ export function BountyDetailModal({
                     ? `Under review · applied ${format(new Date(userApplication.appliedAt), "MMM d")}`
                     : "Under review"}
             </p>
+            {userApplication?.status === "pending" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full mt-1"
+                onClick={() => setIsWithdrawOpen(true)}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? "Withdrawing…" : "Withdraw application"}
+              </Button>
+            )}
           </section>
         )}
 
@@ -1415,6 +1455,30 @@ export function BountyDetailModal({
               closed={bounty.status === "DONE"}
             />
           )}
+
+        {/* Withdraw confirmation */}
+        <AlertDialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw application</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to withdraw this application? You can
+                apply again after withdrawing.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isWithdrawing}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleWithdraw}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? "Withdrawing…" : "Withdraw"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
