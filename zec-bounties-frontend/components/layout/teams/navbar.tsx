@@ -185,7 +185,7 @@ export function TeamNavbar({
               </Link>
 
               <Link
-                href="/teams/bounties"
+                href="/my-bounties"
                 className="transition-colors hover:text-primary"
               >
                 Bounties
@@ -372,7 +372,7 @@ export function TeamNavbar({
                         </Link>
 
                         <Link
-                          href="/teams/bounties"
+                          href="/my-bounties"
                           className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
