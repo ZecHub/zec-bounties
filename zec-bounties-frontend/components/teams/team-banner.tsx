@@ -187,7 +187,7 @@ export function TeamBanner({
           <img
             src={bannerUrl!}
             alt="Team banner"
-            className="h-full w-full object-fill imd:object-cover"
+            className="h-full w-full object-cover object-center"
           />
         )}
 
@@ -215,6 +215,10 @@ export function TeamBanner({
               <ImageIcon className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
                 PNG, JPEG, WEBP, or SVG. Max 15MB.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Recommended size: 1920 × 640 px (3:1). The banner is
+                center-cropped to fit.
               </p>
               <input
                 ref={fileInputRef}
