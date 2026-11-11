@@ -1661,7 +1661,8 @@ function BountyProgramTab({
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
       <div className="min-w-0 flex-1">
         <h2 className="mb-4 text-sm font-semibold text-muted-foreground">
-          {teamBounties.length} bounties
+          {teamBounties.length}{" "}
+          {teamBounties.length === 1 ? "bounty" : "bounties"}
         </h2>
 
         {teamBountiesLoading ? (
@@ -1968,7 +1969,8 @@ function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted-foreground">
-          {team.members.length} members
+          {team.members.length}{" "}
+          {team.members.length === 1 ? "member" : "members"}
         </h2>
         {canManage && (
           <Button
