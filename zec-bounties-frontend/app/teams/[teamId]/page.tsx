@@ -14,7 +14,7 @@ import type {
   SyncStatus,
   BountyStatus,
 } from "@/lib/types";
-import { getUserRole } from "../page";
+import { getUserRole } from "@/lib/team-role";
 import { TeamsNewBountyModal } from "@/components/teams/new-bounty-modal";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { TeamNavbar } from "@/components/layout/teams/navbar";
@@ -704,7 +704,7 @@ function ReviewStatusNote({
   );
 }
 
-export function DuePaymentsView({
+function DuePaymentsView({
   team,
   teamBounties,
   paidBountyIds,

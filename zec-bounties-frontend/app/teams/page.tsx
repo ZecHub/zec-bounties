@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
 import type { Team } from "@/lib/types";
+import { getUserRole } from "@/lib/team-role";
 import { TeamNavbar } from "@/components/layout/teams/navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,16 +56,6 @@ const GRADIENT_PRESETS = [
 function gradientFor(teamId: string) {
   const hash = teamId.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
   return GRADIENT_PRESETS[hash % GRADIENT_PRESETS.length];
-}
-
-export function getUserRole(
-  team: Team,
-  userId: string,
-  isGlobalAdmin: boolean,
-): string {
-  const member = team.members.find((m) => m.userId === userId);
-  if (member) return member.role;
-  return isGlobalAdmin ? "ADMIN" : "MEMBER";
 }
 
 export default function TeamsPage() {
