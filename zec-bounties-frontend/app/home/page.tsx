@@ -148,6 +148,7 @@ function HomeContent() {
   const [filterLoadError, setFilterLoadError] = useState(false);
   const [filterLoadRetry, setFilterLoadRetry] = useState(0);
   const filterLoadStarted = useRef(false);
+  const filterLoadVersion = useRef(0);
   const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
@@ -357,25 +358,35 @@ function HomeContent() {
   };
 
   useEffect(() => {
-    if (activeTeamId) return;
+    filterLoadStarted.current = false;
+    filterLoadVersion.current += 1;
+    setFilterLoadError(false);
+  }, [activeTeamId, requiresCompleteResults]);
+
+  useEffect(() => {
     if (!requiresCompleteResults) {
       filterLoadStarted.current = false;
       setFilterLoadError(false);
       return;
     }
-    if (!hasMoreBounties || bountiesLoading || filterLoadStarted.current)
+    if (!sourceHasMore || sourceLoading || filterLoadStarted.current)
       return;
 
     filterLoadStarted.current = true;
+    const version = ++filterLoadVersion.current;
     setFilterLoadError(false);
-    void loadAllBounties().then((loaded) => {
-      if (!loaded) setFilterLoadError(true);
+    const load = activeTeamId
+      ? fetchTeamBounties(activeTeamId, { all: true })
+      : loadAllBounties();
+    void load.then((loaded) => {
+      if (version === filterLoadVersion.current && !loaded) setFilterLoadError(true);
     });
   }, [
     requiresCompleteResults,
-    hasMoreBounties,
-    bountiesLoading,
+    sourceHasMore,
+    sourceLoading,
     loadAllBounties,
+    fetchTeamBounties,
     filterLoadRetry,
     activeTeamId,
   ]);
@@ -534,8 +545,8 @@ function HomeContent() {
                     onClear={clearFilters}
                     applyLabel={`Show ${filteredBounties.length} bounties`}
                     loading={
-                      bountiesLoading &&
-                      hasMoreBounties &&
+                      sourceLoading &&
+                      sourceHasMore &&
                       requiresCompleteResults
                     }
                   >
@@ -768,7 +779,7 @@ function HomeContent() {
               {requiresCompleteResults && (
                 <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span aria-live="polite">
-                    {bountiesLoading && hasMoreBounties
+                    {sourceLoading && sourceHasMore
                       ? "Loading all bounties for complete filter results…"
                       : filterLoadError
                         ? "Could not load all bounties. Showing the results currently available."

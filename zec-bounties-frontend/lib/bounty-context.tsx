@@ -456,8 +456,8 @@ interface BountyContextType {
   teamBountiesHasMore: Record<string, boolean>;
   fetchTeamBounties: (
     teamId: string,
-    opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL" },
-  ) => Promise<void>;
+    opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL"; all?: boolean },
+  ) => Promise<boolean>;
   loadMoreTeamBounties: (teamId: string) => Promise<void>;
   fetchTeamWalletBalance: (teamId: string) => Promise<any | null>;
   communities: Community[];
@@ -611,6 +611,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   // Ref, not state — read inside the long-lived WS message handler below
   // without worrying about stale closures.
   const teamBountiesPageRef = useRef<Record<string, number>>({});
+  const teamBountiesRequestRef = useRef<Record<string, number>>({});
 
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
@@ -1771,31 +1772,43 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const fetchTeamBounties = async (
     teamId: string,
-    opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL" },
+    opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL"; all?: boolean },
   ) => {
-    const reset = opts?.reset ?? true;
+    const reset = opts?.all || (opts?.reset ?? true);
+    const requestId = (teamBountiesRequestRef.current[teamId] ?? 0) + 1;
+    teamBountiesRequestRef.current[teamId] = requestId;
+    const updatesAtStart = new Map(bountyUpdates.current);
 
     setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: true }));
     try {
-      const page = reset ? 1 : (teamBountiesPageRef.current[teamId] ?? 1);
+      let page = reset ? 1 : (teamBountiesPageRef.current[teamId] ?? 1);
       const resolvedChain =
         opts?.chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
+      const collected = new Map<string, Bounty>();
+      let total = 0;
 
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: "50", // backend's hard cap — see note on hasMore below
-        chain: resolvedChain,
-      });
+      while (true) {
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: "50", // backend's hard cap
+          chain: resolvedChain,
+        });
 
-      const res = await fetch(
-        `${backendUrl}/api/teams/${teamId}/bounties?${params}`,
-        { headers: getAuthHeaders() },
-      );
-      if (!res.ok) throw new Error("Failed to fetch team bounties");
+        const res = await fetch(
+          `${backendUrl}/api/teams/${teamId}/bounties?${params}`,
+          { headers: getAuthHeaders() },
+        );
+        if (!res.ok) throw new Error("Failed to fetch team bounties");
 
-      const data = await res.json();
-      const incoming: Bounty[] = data.data ?? [];
-      const total: number = data.total ?? incoming.length;
+        const data = await res.json();
+        if (teamBountiesRequestRef.current[teamId] !== requestId) return false;
+        const incoming: Bounty[] = data.data ?? [];
+        total = data.total ?? incoming.length;
+        for (const bounty of incoming) collected.set(bounty.id, bounty);
+        if (!opts?.all || incoming.length < 50 || page * 50 >= total) break;
+        page += 1;
+      }
+      const incoming = reconcileFetchedBounties([...collected.values()], updatesAtStart);
 
       setTeamBounties((prev) => {
         const existing = reset ? [] : (prev[teamId] ?? []);
@@ -1805,17 +1818,21 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
         setTeamBountiesHasMore((hprev) => ({
           ...hprev,
-          [teamId]: incoming.length > 0 && merged.length < total,
+          [teamId]: !opts?.all && incoming.length > 0 && merged.length < total,
         }));
 
         return { ...prev, [teamId]: merged };
       });
 
       teamBountiesPageRef.current[teamId] = page + 1;
+      return true;
     } catch (error) {
       console.error("Failed to fetch team bounties:", error);
+      return false;
     } finally {
-      setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: false }));
+      if (teamBountiesRequestRef.current[teamId] === requestId) {
+        setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: false }));
+      }
     }
   };
 

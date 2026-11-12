@@ -38,10 +38,14 @@ async function openBoard(
     rows?: ReturnType<typeof bounty>[];
     teams?: Array<{ id: string; name: string }>;
     path?: string;
+    failTeamPageOnce?: number;
+    beforeTeamResponse?: (teamId: string, page: number) => Promise<number | void>;
   } = {},
 ) {
   const rows = options.rows ?? Array.from({ length: count }, (_, i) => bounty(i + 1));
   const requestedPages: number[] = [];
+  const requestedTeamPages: number[] = [];
+  let failedTeamPage = false;
   let socket: WebSocketRoute | undefined;
 
   await page.addInitScript((user) => {
@@ -78,11 +82,20 @@ async function openBoard(
     if (teamBountiesMatch) {
       const teamId = teamBountiesMatch[1];
       const teamRows = rows.filter((row) => row.teamId === teamId);
+      const pageNumber = Number(url.searchParams.get("page"));
+      const limit = Number(url.searchParams.get("limit"));
+      requestedTeamPages.push(pageNumber);
+      const responseStatus = await options.beforeTeamResponse?.(teamId, pageNumber);
+      if (responseStatus) return route.fulfill({ status: responseStatus, json: {} });
+      if (pageNumber === options.failTeamPageOnce && !failedTeamPage) {
+        failedTeamPage = true;
+        return route.fulfill({ status: 503, json: { message: "Fixture retry" } });
+      }
       json = {
-        data: teamRows,
+        data: teamRows.slice((pageNumber - 1) * limit, pageNumber * limit),
         total: teamRows.length,
-        page: 1,
-        limit: 50,
+        page: pageNumber,
+        limit,
       };
     }
     if (url.pathname === "/api/bounties") {
@@ -100,7 +113,7 @@ async function openBoard(
   });
 
   await page.goto(options.path ?? "/home");
-  await expect(page.getByRole("heading", { name: "All Bounties" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: / Bounties$/ })).toBeVisible();
   await expect.poll(() => Boolean(socket)).toBe(true);
 
   // React Strict Mode may run the initial fetch twice in development.
@@ -110,6 +123,7 @@ async function openBoard(
   return {
     rows,
     requestedPages,
+    requestedTeamPages,
     send: (type: string, payload: unknown = {}) =>
       socket!.send(JSON.stringify({ type, payload })),
   };
@@ -219,6 +233,96 @@ test("combines shareable bounty filters and keeps them when reopened on mobile",
   await page.getByRole("button", { name: "Clear all" }).click();
   await expect(cards(page)).toHaveCount(10);
   await expect(page).toHaveURL("http://127.0.0.1:3127/home");
+});
+
+function paginatedTeamRows() {
+  return Array.from({ length: 51 }, (_, i) => ({
+    ...bounty(i + 1),
+    title: i === 50 ? "Pagination bounty 51 needle" : bounty(i + 1).title,
+    bountyAmount: i === 50 ? 5 : 0.01,
+    teamId: "team-a",
+    team: { id: "team-a", name: "Alpha Team" },
+  }));
+}
+
+test("team search finds a matching bounty after the first fifty", async ({ page }, testInfo) => {
+  const fixture = await openBoard(page, 51, {
+    rows: paginatedTeamRows(), teams: [{ id: "team-a", name: "Alpha Team" }],
+    path: "/home?team=team-a&q=needle",
+  });
+  await expect(page.getByText("Pagination bounty 51 needle", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 matching bounties", { exact: true })).toBeVisible();
+  expect(fixture.requestedTeamPages).toContain(2);
+  expect(fixture.requestedPages).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("team-search-complete.png") });
+});
+
+test("team reward sorting considers bounties after the first fifty", async ({ page }) => {
+  const fixture = await openBoard(page, 51, {
+    rows: paginatedTeamRows(), teams: [{ id: "team-a", name: "Alpha Team" }],
+    path: "/home?team=team-a&sort=highest_reward",
+  });
+  await expect(page.getByText(/^Pagination bounty/).first()).toHaveText("Pagination bounty 51 needle");
+  await expect(page.getByText("51 matching bounties", { exact: true })).toBeVisible();
+  expect(fixture.requestedTeamPages).toContain(2);
+});
+
+test("team filter pagination reports failure and retries without dropping the filter", async ({ page }) => {
+  const fixture = await openBoard(page, 51, {
+    rows: paginatedTeamRows(), teams: [{ id: "team-a", name: "Alpha Team" }],
+    path: "/home?team=team-a&q=needle", failTeamPageOnce: 2,
+  });
+  await expect(page.getByText("Could not load all bounties. Showing the results currently available.")).toBeVisible();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText("Pagination bounty 51 needle", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 matching bounties", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/team=team-a&q=needle/);
+  expect(fixture.requestedTeamPages.filter(n => n === 2)).toHaveLength(2);
+});
+
+test("team search ignores a previous team's late failure", async ({ page }) => {
+  let release!: () => void;
+  let started!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const requested = new Promise<void>(resolve => { started = resolve; });
+  const rows = [...paginatedTeamRows(), ...paginatedTeamRows().map(row => ({
+    ...row, id: `beta-${row.id}`, title: `Beta ${row.title}`,
+    teamId: "team-b", team: { id: "team-b", name: "Beta Team" },
+  }))];
+  await openBoard(page, rows.length, {
+    rows, teams: [{ id: "team-a", name: "Alpha Team" }, { id: "team-b", name: "Beta Team" }],
+    path: "/home?team=team-a&q=needle",
+    beforeTeamResponse: async (team, pageNumber) => {
+      if (team === "team-a" && pageNumber === 2) {
+        started();
+        await pending;
+        return 503;
+      }
+    },
+  });
+  await requested;
+  await selectFilter(page, "Team", "Beta Team");
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("Beta Pagination bounty 51 needle", { exact: true })).toBeVisible();
+  const failedResponse = page.waitForResponse(r => r.url().includes("/team-a/bounties?") && r.status() === 503);
+  release();
+  await failedResponse;
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("1 matching bounties", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+});
+
+test("team without a complete-result filter retains ordinary load-more pagination", async ({ page }) => {
+  const fixture = await openBoard(page, 51, {
+    rows: paginatedTeamRows(), teams: [{ id: "team-a", name: "Alpha Team" }],
+    path: "/home?team=team-a",
+  });
+  await expect(page.getByText(/^Pagination bounty/)).toHaveCount(50);
+  expect(fixture.requestedTeamPages).not.toContain(2);
+  await scrollForMore(page);
+  await expect(page.getByText(/^Pagination bounty/)).toHaveCount(51);
+  expect(fixture.requestedTeamPages).toContain(2);
+  await expect(loadMore(page)).toHaveCount(0);
 });
 
 test("sorts the full bounty set by reward and deadline", async ({ page }) => {
