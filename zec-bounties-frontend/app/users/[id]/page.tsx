@@ -17,6 +17,7 @@ import { Loader2, Lock, Github, ArrowLeft, Settings } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
 import { BadgeIcons } from "@/components/badges/badge-icons";
 import {
+  type StaffBountyRow,
   StaffBountyView,
   StaffViewCard,
 } from "@/components/profile/staff-view-card";
@@ -51,6 +52,14 @@ function PrivatePlaceholder({ label }: { label: string }) {
       <Lock className="w-3.5 h-3.5 shrink-0" />
       <span>{label} is private</span>
     </div>
+  );
+}
+
+function mergeStaffPage(previous: StaffBountyRow[], page: StaffBountyRow[]) {
+  // The endpoint returns both lists, even when only one offset changed.
+  // Replace repeated rows in place so the other list is not appended twice.
+  return Array.from(
+    new Map([...previous, ...page].map((row) => [row.id, row])).values(),
   );
 }
 
@@ -183,9 +192,11 @@ export default function PublicUserProfilePage() {
               return data;
             return {
               ...data,
-              open: staffOpenOffset ? [...prev.open, ...data.open] : data.open,
+              open: staffOpenOffset
+                ? mergeStaffPage(prev.open, data.open)
+                : data.open,
               history: staffHistoryOffset
-                ? [...prev.history, ...data.history]
+                ? mergeStaffPage(prev.history, data.history)
                 : data.history,
             };
           });
