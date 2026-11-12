@@ -16,6 +16,7 @@ export default defineConfig({
   projects: [
     { name: "pagination", testDir: "./tests/pagination", use: { ...devices["Desktop Chrome"] } },
     { name: "status-sync", testDir: "./tests/status-sync", use: { ...devices["Desktop Chrome"] } },
+    { name: "leaderboard", testDir: "./tests/leaderboard", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
     command: "yarn dev --hostname 127.0.0.1 --port 3127",

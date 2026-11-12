@@ -715,6 +715,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const leaderboardRequestId = useRef(0);
 
   // Helper function to get auth headers
   const getAuthHeaders = () => {
@@ -830,6 +831,8 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     chain?: "MAIN" | "TEST" | "ALL";
     limit?: number;
   }) => {
+    // An earlier range can finish after the currently selected one.
+    const requestId = ++leaderboardRequestId.current;
     setLeaderboardLoading(true);
     try {
       const query = new URLSearchParams();
@@ -845,12 +848,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to fetch leaderboard");
 
       const data = await res.json();
-      setLeaderboard(data);
+      if (requestId === leaderboardRequestId.current) setLeaderboard(data);
     } catch (error) {
+      if (requestId !== leaderboardRequestId.current) return;
       console.error("Failed to fetch leaderboard:", error);
       setLeaderboard([]);
     } finally {
-      setLeaderboardLoading(false);
+      if (requestId === leaderboardRequestId.current) setLeaderboardLoading(false);
     }
   };
 
