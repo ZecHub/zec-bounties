@@ -1058,6 +1058,23 @@ router.post(
       const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
       const resolvedAssignee =
         canAssignOthers && assignee !== "none" ? assignee : null;
+
+      // For a private team, the assignee must be a current member of the team.
+      // The created bounty inherits `isPrivate: team.isPrivate`, and a caller's
+      // assigned bounties are returned by GET /api/bounties/mine without the
+      // canViewPrivateBounty gate, so a non-member set as assignee here could
+      // read the private bounty's content. This mirrors the membership
+      // requirement already enforced when replacing assignees via
+      // POST /api/bounties/:id/assignees.
+      if (resolvedAssignee && team.isPrivate) {
+        const assigneeMembership = await getTeamMember(teamId, resolvedAssignee);
+        if (!assigneeMembership) {
+          return res.status(400).json({
+            error:
+              "Assignees of a private team's bounties must be members of the team",
+          });
+        }
+      }
       const bounty = await createBountyWithQuota(req.user, {
         data: {
           title,

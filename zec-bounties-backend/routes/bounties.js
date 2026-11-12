@@ -2951,7 +2951,23 @@ router.get("/mine", authenticate, async (req, res) => {
       },
     });
 
-    res.json({ data: bounties, total: bounties.length });
+    // A user can be the `assignee` of a private team bounty without being
+    // authorised to view that team's private bounties (e.g. after being
+    // removed from the team, or if assigned as a non-member). The single-
+    // bounty route gates on canViewPrivateBounty, which does NOT grant
+    // assignees access; without the same gate here, /mine would leak the
+    // private title/description/amount to such a caller. Filter every private
+    // row through the canonical visibility check. ADMIN short-circuits inside
+    // canViewPrivateBounty, and for non-admins the list is bounded to their
+    // own created/assigned bounties, so the per-row lookups stay cheap.
+    const visibleBounties = [];
+    for (const bounty of bounties) {
+      if (!bounty.isPrivate || (await canViewPrivateBounty(bounty, req.user))) {
+        visibleBounties.push(bounty);
+      }
+    }
+
+    res.json({ data: visibleBounties, total: visibleBounties.length });
   } catch (error) {
     console.error("Error fetching my bounties:", error);
     res.status(500).json({ error: "Failed to fetch your bounties" });
