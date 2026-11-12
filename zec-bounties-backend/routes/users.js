@@ -1,6 +1,6 @@
 const express = require("express");
 const prisma = require("../prisma/client");
-const { authenticate, isAdmin } = require("../middleware/auth");
+const { authenticate, isAdmin, loadAuthUser } = require("../middleware/auth");
 const { delCache, bumpVersion } = require("../utils/cache");
 const { userIdentityWhere } = require("../utils/userIdentity");
 const { rawAddressFields } = require("../helpers/publicProfileAddress");
@@ -324,8 +324,16 @@ router.get("/:idOrNickname/public", async (req, res) => {
           authHeader.split(" ")[1],
           process.env.JWT_SECRET,
         );
-        isOwner = decoded.id === user.id;
-        isAdmin = decoded.role === "ADMIN";
+        // Derive admin status from the caller's *live* DB role, not the
+        // token's role claim. Tokens live 7 days, so a demoted admin would
+        // otherwise keep admin-only "full profile" access (raw payout
+        // addresses of every user) until the token expired. This mirrors
+        // how `authenticate` reloads the role via loadAuthUser everywhere else.
+        const caller = await loadAuthUser(decoded.id);
+        if (caller) {
+          isOwner = caller.id === user.id;
+          isAdmin = caller.role === "ADMIN";
+        }
       } catch {
         /* public access */
       }
