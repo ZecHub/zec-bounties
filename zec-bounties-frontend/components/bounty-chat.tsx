@@ -284,6 +284,7 @@ export function BountyChat({
             size="icon"
             className="h-7 w-7"
             aria-label="Remove image"
+            disabled={isSending}
             onClick={() => {
               setSelectedImage(null);
               setPreviewUrl(null);
@@ -306,6 +307,7 @@ export function BountyChat({
           accept="image/png,image/jpeg,image/webp,image/gif"
           className="sr-only"
           onChange={handleImageChange}
+          disabled={isSending}
         />
         <Button
           type="button"
@@ -327,6 +329,7 @@ export function BountyChat({
           maxLength={2000}
           rows={1}
           aria-label="Chat message"
+          disabled={isSending}
         />
         <Button
           type="submit"
