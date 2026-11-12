@@ -125,7 +125,12 @@ function renderDescriptionWithLinks(text: string) {
   );
 }
 
-export function BountyDetailModal({
+export function BountyDetailModal(props: BountyDetailModalProps) {
+  // A different bounty must not inherit edit state or late request results.
+  return <BountyDetailModalContent key={props.bounty?.id} {...props} />;
+}
+
+function BountyDetailModalContent({
   bounty: bountyProp,
   open,
   onOpenChange,
@@ -179,15 +184,6 @@ export function BountyDetailModal({
   const [bEditDate, setBEditDate] = useState("");
 
   const bounty = bountyProp ? { ...bountyProp, ...bountyOverrides } : null;
-
-  // Drop local overrides when a different bounty is opened
-  useEffect(() => {
-    setBountyOverrides({});
-    setIsEditingBounty(false);
-    setWorkSubmissions([]);
-    setAssigneesExpanded(false);
-    setDescExpanded(false);
-  }, [bountyProp?.id]);
 
   // Measure the full description height (and keep it fresh on resize)
   useEffect(() => {
