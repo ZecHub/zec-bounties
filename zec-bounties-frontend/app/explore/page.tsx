@@ -28,6 +28,7 @@ function ExploreContent() {
     communitiesLoading,
     fetchCommunities,
     favoriteTeamIds,
+    pendingFavoriteTeamIds,
     favoriteTeamsLoading,
     toggleFavoriteTeam,
   } = useBounty();
@@ -201,6 +202,8 @@ function ExploreContent() {
 
                       <button
                         type="button"
+                        disabled={pendingFavoriteTeamIds.has(team.id)}
+                        aria-busy={pendingFavoriteTeamIds.has(team.id)}
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleFavoriteTeam(team.id);
@@ -210,7 +213,7 @@ function ExploreContent() {
                             ? "Remove from favorites"
                             : "Add to favorites"
                         }
-                        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-primary"
+                        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-primary disabled:cursor-wait disabled:opacity-50"
                       >
                         <Star
                           className={`h-4 w-4 ${

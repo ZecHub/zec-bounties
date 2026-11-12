@@ -526,6 +526,7 @@ interface BountyContextType {
 
   // Favorites
   favoriteTeamIds: Set<string>;
+  pendingFavoriteTeamIds: Set<string>;
   favoriteTeamsLoading: boolean;
   fetchFavoriteTeams: () => Promise<void>;
   toggleFavoriteTeam: (teamId: string) => Promise<void>;
@@ -664,6 +665,10 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     new Set(),
   );
   const [favoriteTeamsLoading, setFavoriteTeamsLoading] = useState(false);
+  const favoriteUpdatesInFlight = useRef(new Set<string>());
+  const [pendingFavoriteTeamIds, setPendingFavoriteTeamIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [teamPaymentIDs, setTeamPaymentIDs] = useState<string[] | undefined>(
     undefined,
@@ -3420,7 +3425,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleFavoriteTeam = async (teamId: string): Promise<void> => {
-    if (!currentUser) return;
+    if (!currentUser || favoriteUpdatesInFlight.current.has(teamId)) return;
+
+    // A second toggle can reach the server before the first and leave the
+    // optimistic state out of sync. Guard immediately, before React rerenders.
+    favoriteUpdatesInFlight.current.add(teamId);
+    setPendingFavoriteTeamIds(new Set(favoriteUpdatesInFlight.current));
 
     const wasFavorited = favoriteTeamIds.has(teamId);
 
@@ -3445,6 +3455,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         wasFavorited ? next.add(teamId) : next.delete(teamId);
         return next;
       });
+    } finally {
+      favoriteUpdatesInFlight.current.delete(teamId);
+      setPendingFavoriteTeamIds(new Set(favoriteUpdatesInFlight.current));
     }
   };
 
@@ -4600,6 +4613,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         fetchTeamCommunity,
         fetchTeamDirectory,
         favoriteTeamIds,
+        pendingFavoriteTeamIds,
         favoriteTeamsLoading,
         fetchFavoriteTeams,
         toggleFavoriteTeam,

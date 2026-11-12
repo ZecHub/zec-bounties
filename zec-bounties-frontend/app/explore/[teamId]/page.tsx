@@ -230,7 +230,7 @@ function TeamOverviewContent() {
   const params = useParams<{ teamId: string }>();
   const teamId = params?.teamId;
 
-  const { favoriteTeamIds, toggleFavoriteTeam } = useBounty();
+  const { favoriteTeamIds, pendingFavoriteTeamIds, toggleFavoriteTeam } = useBounty();
 
   const [team, setTeam] = useState<TeamOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -350,6 +350,8 @@ function TeamOverviewContent() {
                   variant={isFavorited ? "default" : "outline"}
                   size="sm"
                   onClick={() => toggleFavoriteTeam(team.id)}
+                  disabled={pendingFavoriteTeamIds.has(team.id)}
+                  aria-busy={pendingFavoriteTeamIds.has(team.id)}
                   aria-pressed={isFavorited}
                 >
                   <Star
