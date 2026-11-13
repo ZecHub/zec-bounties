@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   assignedDoneWhere,
+  earnedDoneWhere,
   recentCompletedWhere,
   recentCreatedWhere,
 } = require("../utils/profileBounties");
@@ -80,4 +81,17 @@ test("counts are unchanged: assignedDoneWhere has no privacy term", () => {
     chain: "MAIN",
     OR: [{ assignee: "u1" }, { assignees: { some: { userId: "u1" } } }],
   });
+});
+
+test("earnings count only the paid assignee, not co-assignees who did not win", () => {
+  // Marking a multi-assignee bounty Done keeps every roster row but pays only the
+  // winner, who becomes `assignee` (routes/bounties.js status route).
+  const contest = { ...base, id: "contest", assignee: "winner", assigneeIds: ["winner", "runner-up"] };
+  const solo = { ...base, id: "solo", assignee: "runner-up", assigneeIds: ["runner-up"] };
+  const testnet = { ...solo, id: "test", chain: "TEST" };
+  const done = [contest, solo, testnet];
+  const earned = (user) => done.filter((b) => matches(earnedDoneWhere(user, "MAIN"), b)).map((b) => b.id);
+  assert.deepEqual(earned("winner"), ["contest"]);
+  assert.deepEqual(earned("runner-up"), ["solo"]);
+  assert.equal(matches(earnedDoneWhere("runner-up", "MAIN"), { ...solo, status: "IN_REVIEW" }), false);
 });
