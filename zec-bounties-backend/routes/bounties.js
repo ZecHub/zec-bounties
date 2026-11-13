@@ -3152,7 +3152,6 @@ router.get("/:id/activity", authenticate, async (req, res) => {
     if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
-    if (!allowed) return res.status(403).json({ error: "Access denied" });
 
     const activity = await prisma.bountyActivity.findMany({
       where: { bountyId: bounty.id },
