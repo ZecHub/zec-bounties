@@ -88,13 +88,19 @@ export default function TeamsPage() {
   }, [currentUser?.id]);
 
   const stats = useMemo(() => {
-    const totalMembers = teams.reduce((sum, t) => sum + t.members.length, 0);
+    const teamIds = new Set(teams.map((t) => t.id));
+    const memberIds = new Set<string>();
+    for (const t of teams) {
+      for (const m of t.members) memberIds.add(m.userId);
+    }
     const totalActive = bounties.filter(
       (b) =>
-        !!b.teamId && (b.status === "IN_PROGRESS" || b.status === "IN_REVIEW"),
+        !!b.teamId &&
+        teamIds.has(b.teamId) &&
+        (b.status === "IN_PROGRESS" || b.status === "IN_REVIEW"),
     ).length;
     const withWallet = teams.filter((t) => !!t.wallet).length;
-    return { totalMembers, totalActive, withWallet };
+    return { totalMembers: memberIds.size, totalActive, withWallet };
   }, [teams, bounties]);
 
   // Make the team's wallet the active one before entering the team console,
