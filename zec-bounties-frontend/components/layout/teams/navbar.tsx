@@ -189,7 +189,7 @@ export function TeamNavbar({
               </Link>
 
               <Link
-                href="/teams/bounties"
+                href="/my-bounties"
                 className="transition-colors hover:text-primary"
               >
                 Bounties
