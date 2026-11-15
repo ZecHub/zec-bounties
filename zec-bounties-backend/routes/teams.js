@@ -26,6 +26,7 @@ const {
   delCache,
   deleteCacheByPattern,
   bumpVersion,
+  invalidateUserDirectory,
   getCache,
   setCache,
   getVersion,
@@ -727,9 +728,7 @@ router.patch("/convert-role/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    // Bust the cached "all users" list — /api/bounties/users won't
-    // reflect this role change until the TTL expires otherwise.
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);
@@ -1646,9 +1645,7 @@ router.patch("/convert-to-hunter/:userId", authenticate, async (req, res) => {
       select: AUTH_USER_SELECT,
     });
 
-    // Bust the cached "all users" list — /api/bounties/users won't
-    // reflect this role change until the TTL expires otherwise.
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     for (const teamId of deletedTeamIds) {
       sendRealtimeUpdate("team_deleted", { id: teamId }, req.user.id);

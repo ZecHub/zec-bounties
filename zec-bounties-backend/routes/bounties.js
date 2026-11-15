@@ -5,7 +5,6 @@ const { escapeHtml, formatEmailText } = require("../helpers/email");
 const router = express.Router();
 const {
   authenticate,
-  isTeamOrAdmin,
   isAdmin,
   optionalAuthenticate,
   signSessionToken,
@@ -18,6 +17,7 @@ const {
   deleteCacheByPattern,
   getVersion,
   bumpVersion,
+  invalidateUserDirectory,
   TTL,
 } = require("../utils/cache");
 const sendMail = require("../utils/sendMail");
@@ -227,6 +227,29 @@ function getAvatarOverrideTier(badges) {
   return null;
 }
 
+// Specialty badges that grant suggestion eligibility in threshold mode.
+// Keep in sync with frontend SPECIALTY / ASSIGNABLE_BADGES (+ miner).
+const SPECIALTY_BADGE_KEYS = new Set([
+  "admin",
+  "dao-member",
+  "node-runner",
+  "researcher",
+  "designer",
+  "developer",
+  "translator",
+  "writer",
+  "hackathon-participant",
+  "hackathon-winner",
+  "miner",
+]);
+
+function hasSpecialtyBadge(badges) {
+  if (!Array.isArray(badges)) return false;
+  return badges.some((b) => typeof b === "string" && SPECIALTY_BADGE_KEYS.has(b));
+}
+
+
+
 async function isGoldStarOrAbove(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -259,6 +282,16 @@ async function hasCompletedEnoughToPost(userId) {
     where: { id: userId },
     select: { badges: true },
   });
+
+  // Any specialty badge grants eligibility (in addition to star override / real count).
+  if (hasSpecialtyBadge(user?.badges)) {
+    return {
+      allowed: true,
+      completed: threshold, // treat as met for UI progress
+      required: threshold,
+      mode,
+    };
+  }
 
   const overrideTier = getAvatarOverrideTier(user?.badges);
   if (overrideTier !== null) {
@@ -1679,21 +1712,19 @@ router.get("/my-submissions", authenticate, async (req, res) => {
   }
 });
 
-// ─── Get submissions (creator / admin / assignee) ─────────────────────────────
+// ─── Get submissions (creator / admin / team admin / assignee) ───────────────
 router.get("/:id/submissions", authenticate, async (req, res) => {
   try {
     const { id: bountyId } = req.params;
     const userId = req.user.id;
-    const userRole = req.user.role;
 
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, createdBy: true, assignee: true },
+      select: { id: true, createdBy: true, assignee: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
-    const isCreatorOrAdmin =
-      bounty.createdBy === userId || userRole === "ADMIN";
+    const isCreatorOrAdmin = await canManageBounty(bounty, req.user);
 
     let isAssignee = false;
     if (!isCreatorOrAdmin) {
@@ -2271,33 +2302,6 @@ router.get("/users/full", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-router.get("/users/teams", authenticate, isTeamOrAdmin, async (req, res) => {
-  try {
-    const cacheKey = "users:teams";
-    const cached = await getCache(cacheKey);
-    if (cached) return res.json(cached);
-
-    const users = await prisma.user.findMany({
-      where: { role: { not: "ADMIN" } },
-      select: {
-        id: true,
-        name: true,
-        nickname: true,
-        email: true,
-        role: true,
-        avatar: true,
-        z_address: true,
-        UA_address: true,
-      },
-    });
-
-    await setCache(cacheKey, users, TTL.USERS);
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.patch(
   "/users/:id/task-access",
   authenticate,
@@ -2363,7 +2367,7 @@ router.patch("/switch-role", authenticate, async (req, res) => {
         UA_address: true,
       },
     });
-    await delCache("users:all");
+    await invalidateUserDirectory();
     const token = signSessionToken(updated);
     res.json({ user: updated, token });
   } catch (error) {
@@ -2534,16 +2538,16 @@ router.delete(
   },
 );
 
-// ─── Applications for a bounty (admin / creator) ──────────────────────────────
+// ─── Applications for a bounty (admin / creator / team admin) ────────────────
 router.get("/:bountyId/applications", authenticate, async (req, res) => {
   try {
     const { bountyId } = req.params;
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { id: true, createdBy: true },
+      select: { id: true, createdBy: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-    if (req.user.role !== "ADMIN" && bounty.createdBy !== req.user.id) {
+    if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -3145,17 +3149,8 @@ router.get("/:id/activity", authenticate, async (req, res) => {
       select: { id: true, createdBy: true, teamId: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
-
-    // Same audience as publishActivity: global admin, creator, team OWNER/ADMIN
-    let allowed = req.user.role === "ADMIN" || bounty.createdBy === req.user.id;
-    if (!allowed && bounty.teamId) {
-      const member = await prisma.teamMember.findUnique({
-        where: {
-          teamId_userId: { teamId: bounty.teamId, userId: req.user.id },
-        },
-        select: { role: true },
-      });
-      allowed = Boolean(member && ["OWNER", "ADMIN"].includes(member.role));
+    if (!(await canManageBounty(bounty, req.user))) {
+      return res.status(403).json({ error: "Access denied" });
     }
     if (!allowed) return res.status(403).json({ error: "Access denied" });
 

@@ -1,6 +1,10 @@
 const webpush = require("./pushNotifications");
+const { isAllowedPushEndpoint } = require("./pushEndpoint");
 
 async function sendPushNotification(subscription, notification) {
+  // false makes notifyUser delete the row, which also clears rows saved
+  // before /push/subscribe checked the endpoint.
+  if (!isAllowedPushEndpoint(subscription.endpoint)) return false;
   try {
     await webpush.sendNotification(
       {

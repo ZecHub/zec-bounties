@@ -23,6 +23,14 @@ const matches = (row, where = {}) =>
       : row[key] === cond,
   );
 
+stub("utils/payoutProposals", {
+  loadDecidedProposals: async () => ({
+    usable: new Map([["b1", { bountyIds: ["b1"], recipient: "u1fixture" }]]),
+    rejected: new Map(),
+  }),
+  consumeProposals: async () => {},
+});
+
 const prisma = {
   bounty: {
     findMany: async ({ where }) =>
@@ -32,6 +40,11 @@ const prisma = {
       hit.forEach((b) => Object.assign(b, data));
       return { count: hit.length };
     },
+  },
+  payoutProposal: {
+    findMany: async () => [{ bountyIds: ["b1"], recipient: "u1fixture", status: "DECIDED", amount: 1 }],
+    updateMany: async () => ({ count: 0 }),
+    findFirst: async () => null,
   },
   transaction: {
     createMany: async ({ data }) => {

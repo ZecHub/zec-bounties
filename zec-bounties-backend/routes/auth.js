@@ -20,7 +20,7 @@ const {
 } = require("../helpers/zcash/zcashHelper.js");
 const sendMail = require("../utils/sendMail");
 const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
-const { delCache, deleteCacheByPattern } = require("../utils/cache");
+const { delCache, deleteCacheByPattern, invalidateUserDirectory } = require("../utils/cache");
 const { sendUserUpdated } = require("../middleware/websocket");
 const { OtpStore } = require("../helpers/recoveryOtp");
 const {
@@ -169,6 +169,8 @@ router.get("/github/callback", async (req, res) => {
         },
       });
     }
+    await invalidateUserDirectory();
+
 
     const token = signSessionToken(user);
 
@@ -256,7 +258,7 @@ router.get("/discord/callback", async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
     sendUserUpdated(userId, updated);
 
     res.redirect(`${FRONTEND_URL}/profile?discord=success`);
@@ -292,7 +294,7 @@ router.delete("/discord", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
     sendUserUpdated(req.user.id, updated);
 
     res.json({ user: updated });
@@ -392,7 +394,7 @@ router.patch("/update-email-notifications", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     sendUserUpdated(req.user.id, updated);
 
@@ -501,7 +503,7 @@ router.patch("/update-zaddress", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     res.json({
       message: "Z-address updated successfully",
@@ -707,7 +709,7 @@ router.patch("/update-ua-address", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     res.json({
       message: "Mainnet address updated",
@@ -771,7 +773,7 @@ router.patch("/update-nickname", authenticate, async (req, res) => {
     });
 
     await Promise.all([
-      delCache("users:all"),
+      invalidateUserDirectory(),
       deleteCacheByPattern("bounties:*"),
       deleteCacheByPattern("bounty:*"),
       deleteCacheByPattern("assignees:*"),
@@ -826,7 +828,7 @@ router.patch("/select-role", authenticate, async (req, res) => {
       },
     });
 
-    await delCache("users:all");
+    await invalidateUserDirectory();
 
     sendUserUpdated(req.user.id, updated);
 

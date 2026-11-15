@@ -77,7 +77,12 @@ function pageStaffRows(rows, offset, limit = STAFF_PAGE_LIMIT) {
 // Resolves a profile key in a fixed order: id, then the unique nickname, then
 // a display name only when exactly one user has it. The public profile route
 // passes its own select.
-async function resolveStaffUser(prisma, key, select = STAFF_USER_SELECT) {
+async function resolveStaffUser(
+  prisma,
+  key,
+  select = STAFF_USER_SELECT,
+  options = {},
+) {
   const byId = await prisma.user.findUnique({
     where: { id: key },
     select,
@@ -89,6 +94,12 @@ async function resolveStaffUser(prisma, key, select = STAFF_USER_SELECT) {
     select,
   });
   if (byNickname) return { user: byNickname };
+
+  // Public profile must not be discoverable by real name. Staff search
+  // still matches a unique display name.
+  if (options.matchName === false) {
+    return { status: 404, error: "User not found" };
+  }
 
   const byName = await prisma.user.findMany({
     where: { name: key },

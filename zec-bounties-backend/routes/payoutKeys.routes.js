@@ -57,6 +57,20 @@ async function requireApprover(user) {
     throw httpError(403, "Only payout approvers can register passkeys");
 }
 
+// Whose pending keys this user may veto. Global admins vet everyone. A team owner/admin
+// vets their own teams' approvers but not global admins: anyone can create a team, and
+// a global admin's key also approves platform payouts. Admins vet each other.
+async function vetoableIds(user) {
+  const colleagues = await getColleagueApprovers(prisma, user);
+  if (user.role === "ADMIN") return colleagues;
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const adminIds = new Set(admins.map((a) => a.id));
+  return colleagues.filter((id) => !adminIds.has(id));
+}
+
 // My keys, plus other approvers' still-pending keys (so you can veto a suspicious one)
 router.get(
   "/",
@@ -67,7 +81,7 @@ router.get(
       where: { userId: req.user.id, revokedAt: null },
       orderBy: { createdAt: "desc" },
     });
-    const colleagues = await getColleagueApprovers(prisma, req.user);
+    const colleagues = await vetoableIds(req.user);
     const pending = await prisma.approverKey.findMany({
       where: {
         userId: { in: colleagues },
@@ -167,7 +181,8 @@ router.post(
   }),
 );
 
-// Revoke: the owner any time; another approver only while the key is still pending.
+// Revoke: the owner any time; another approver (see vetoableIds) only while the key is
+// still pending.
 router.delete(
   "/:id",
   authenticate,
@@ -183,7 +198,7 @@ router.delete(
 
     const own = key.userId === req.user.id;
     if (!own) {
-      const colleagues = await getColleagueApprovers(prisma, req.user);
+      const colleagues = await vetoableIds(req.user);
       if (!colleagues.includes(key.userId)) throw httpError(403, "Not allowed");
       if (key.activatesAt <= new Date())
         throw httpError(

@@ -59,6 +59,14 @@ function createHarness({ defaults }) {
     "../helpers/zcash/walletConnection": require("../helpers/zcash/walletConnection"),
     crypto: require("node:crypto"),
     "../middleware/websocket": { sendRealtimeUpdate() {}, sendToUser() {} },
+    "../utils/payoutProposals": {
+      loadDecidedProposals: async () => ({ usable: new Map([["b1", { bountyId: "b1", recipient: "u1fixtureaddress", amount: 1 }]]), rejected: new Map() }),
+      consumeProposals: async () => {},
+      itemFor: () => ({}),
+      notifyApprovers: async () => {},
+      getEligibleApprovers: async () => [],
+      isApprover: () => false,
+    },
     path,
   };
   const filename = path.join(__dirname, "../routes/transactions.js");

@@ -79,6 +79,10 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
       aggregate: async () => ({ _sum: { bountyAmount: 1 }, _count: { id: 1 } }),
       groupBy: async () => [{ status: bounty.status, _count: { id: 1 } }],
     },
+    payoutProposal: {
+      updateMany: async () => ({ count: 0 }),
+      findMany: async () => [],
+    },
     transaction: {
       createMany: async ({ data }) => { records.push(...data); return { count: data.length }; },
       updateMany: async ({ where, data }) => {
@@ -113,6 +117,17 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
       setSuggestionSettings: async () => ({ mode: "open", threshold: 0 }),
       invalidateSuggestionSettingsCache: () => {},
       VALID_MODES: new Set(["closed", "open", "threshold"]),
+    },
+    "../utils/payoutProposals": {
+      loadDecidedProposals: async () => ({ usable: new Map([["b1", { bountyId: "b1", recipient: "u1fixtureaddress", amount: 1 }]]), rejected: new Map() }),
+      consumeProposals: async () => {},
+      itemFor: () => ({}),
+      notifyApprovers: async () => {},
+      getEligibleApprovers: async () => [],
+      isApprover: () => false,
+      getColleagueApprovers: async () => [],
+      snapshotApprovers: async () => [],
+      verifiedTally: () => 0,
     },
     "../helpers/clearBountyChat": { clearBountyChat: forbidden, isTransitionToDone: () => false },
     "../utils/sendMail": forbidden, "../utils/notifyUser": forbidden,
