@@ -37,8 +37,8 @@ const serializeTxRecord = (record) => ({
   amountZat: Number(record.amountZat),
 });
 
-// Clean failure before anything reached the network: record it and put the
-// bounties back in the payable set.
+// Clean failure before anything reached the network: record it, put the
+// bounties back in the payable set, and put their approved rounds back to DECIDED.
 async function releaseClaim(batchKey, bountyIds, errorDetail, raw) {
   await prisma.$transaction([
     prisma.transaction.updateMany({
@@ -53,6 +53,10 @@ async function releaseClaim(batchKey, bountyIds, errorDetail, raw) {
     prisma.bounty.updateMany({
       where: { id: { in: bountyIds } },
       data: { paymentInFlight: false },
+    }),
+    prisma.payoutProposal.updateMany({
+      where: { bountyIds: { hasSome: bountyIds }, status: "EXECUTED" },
+      data: { status: "DECIDED", executedAt: null },
     }),
   ]);
   await Promise.all(bountyIds.map((id) => invalidateBounty(id)));
@@ -441,10 +445,6 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
           paymentInFlight: false,
         },
       }),
-      prisma.payoutProposal.updateMany({
-        where: { bountyId: { in: bountyIds }, status: "EXECUTED" },
-        data: { status: "DECIDED", executedAt: null },
-      }),
     ]);
     await Promise.all(payableIds.map((id) => invalidateBounty(id)));
     // Fire-and-forget: let the Discord bot know these bounties are paid
@@ -599,7 +599,7 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
         });
         if (outcome === "failed")
           await tx.payoutProposal.updateMany({
-            where: { bountyId: record.bountyId, status: "EXECUTED" },
+            where: { bountyIds: { has: record.bountyId }, status: "EXECUTED" },
             data: { status: "CANCELLED" },
           });
       });

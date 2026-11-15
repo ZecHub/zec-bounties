@@ -36,24 +36,39 @@ function bounty(id, fields = {}) {
   };
 }
 
-function createDb(bounties) {
+function createDb(
+  bounties,
+  teams = { "team-1": { id: "team-1", name: "Team One", payoutBy: "ADMIN" } },
+) {
   const records = [];
   const matches = (row, where = {}) =>
     Object.entries(where).every(([key, value]) => {
       if (key === "OR" && Array.isArray(value)) {
         return value.some((clause) => matches(row, clause));
       }
+      // `team: {...}` relation filter: no match for a bounty without a team.
+      if (key === "team") {
+        return !!teams[row.teamId] && matches(teams[row.teamId], value);
+      }
       if (value && typeof value === "object" && "in" in value) {
         return value.in.includes(row[key]);
       }
       return row[key] === value;
     });
+  const withIncludes = (b, include = {}) => {
+    const row = { ...b };
+    if (include.team) {
+      const team = teams[b.teamId];
+      row.team = team ? { id: team.id, name: team.name } : null;
+    }
+    return row;
+  };
   const db = {
     bounties,
     records,
     bounty: {
-      findMany: async ({ where }) =>
-        bounties.filter((b) => matches(b, where)).map((b) => ({ ...b })),
+      findMany: async ({ where, include }) =>
+        bounties.filter((b) => matches(b, where)).map((b) => withIncludes(b, include)),
       updateMany: async ({ where, data }) => {
         const hit = bounties.filter((b) => matches(b, where));
         hit.forEach((b) => Object.assign(b, data));
@@ -240,4 +255,29 @@ test("marking an export stamps only bounties the export list offers", async () =
   assert.deepEqual(stamped, listed);
   assert.deepEqual(stamped, ["due"]);
   assert.deepEqual(res.body.acceptedIds, ["due"]);
+});
+
+// The modal's Type badge and the CSV's "Team" column read row.team.name and
+// fall back to "Platform" when it is missing, so the list must carry it.
+test("the export list names the team of each team bounty", async () => {
+  const db = createDb([bounty("platform"), bounty("team", { teamId: "team-1" })]);
+  const bounties = loadRoutes("bounties.js", db);
+  const res = await bounties.call("get /export-completed", {});
+
+  assert.equal(res.statusCode, 200);
+  const byId = Object.fromEntries(res.body.data.map((b) => [b.id, b]));
+  assert.deepEqual(Object.keys(byId).sort(), ["platform", "team"]);
+  assert.deepEqual(byId.team.team, { id: "team-1", name: "Team One" });
+  assert.equal(byId.platform.team ?? null, null);
+});
+
+test("the admin export list leaves out teams that pay their own bounties", async () => {
+  const db = createDb(
+    [bounty("platform"), bounty("self-paid", { teamId: "team-2" })],
+    { "team-2": { id: "team-2", name: "Team Two", payoutBy: "TEAM" } },
+  );
+  const bounties = loadRoutes("bounties.js", db);
+  const res = await bounties.call("get /export-completed", {});
+
+  assert.deepEqual(res.body.data.map((b) => b.id), ["platform"]);
 });

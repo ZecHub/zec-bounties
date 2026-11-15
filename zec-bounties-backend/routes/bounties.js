@@ -905,6 +905,7 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         title: true,
         teamId: true,
         createdBy: true,
+        assignees: { select: { userId: true } },
       },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
@@ -915,9 +916,14 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
       });
     }
 
-    if (userIds.length > 0) {
+    // Check only the people being added. Someone already on the roster (an
+    // accepted applicant, or a member who has since left the community) can
+    // stay; otherwise the roster can't be edited or trimmed to the winner.
+    const currentIds = new Set(bounty.assignees.map((a) => a.userId));
+    const addedIds = [...new Set(userIds)].filter((id) => !currentIds.has(id));
+    if (addedIds.length > 0) {
       const where = {
-        id: { in: userIds },
+        id: { in: addedIds },
         role: { not: "ADMIN" },
         ...(bounty.teamId && {
           OR: [
@@ -930,7 +936,7 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
         where,
         select: { id: true, z_address: true, UA_address: true },
       });
-      if (found.length !== new Set(userIds).size) {
+      if (found.length !== addedIds.length) {
         return res.status(400).json({
           error: "Assignees must belong to this team or its community",
         });
@@ -2927,6 +2933,9 @@ router.get("/export-completed", authenticate, isAdmin, async (req, res) => {
     const bounties = await prisma.bounty.findMany({
       where: ADMIN_EXPORTABLE_BOUNTY,
       include: {
+        // The modal's Type badge and the CSV's "Team" column read team.name
+        // and print "Platform" when it is missing.
+        team: { select: { id: true, name: true } },
         assigneeUser: {
           select: USER_SELECT_EXPORT,
         },
@@ -3152,7 +3161,6 @@ router.get("/:id/activity", authenticate, async (req, res) => {
     if (!(await canManageBounty(bounty, req.user))) {
       return res.status(403).json({ error: "Access denied" });
     }
-    if (!allowed) return res.status(403).json({ error: "Access denied" });
 
     const activity = await prisma.bountyActivity.findMany({
       where: { bountyId: bounty.id },
