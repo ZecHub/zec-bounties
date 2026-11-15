@@ -10,7 +10,11 @@ import {
   Wallet,
   Menu,
   LogIn,
-  BarChart3,
+  Building2,
+  ListTodo,
+  CircleUserRound,
+  Shield,
+  LogOut,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -179,7 +183,7 @@ export function TeamNavbar({
               {/* Dashboard Link - Visible to everyone */}
               <Link
                 href="/teams"
-                className="flex items-center gap-1.5 transition-colors hover:text-primary"
+                className="transition-colors hover:text-primary"
               >
                 Teams
               </Link>
@@ -367,31 +371,34 @@ export function TeamNavbar({
                           className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
-                          <BarChart3 className="h-4 w-4" />
+                          <Building2 className="h-4 w-4" />
                           Teams
                         </Link>
 
                         <Link
                           href="/teams/bounties"
-                          className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                          className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
+                          <ListTodo className="h-4 w-4" />
                           My Bounties
                         </Link>
                         <Link
                           href="/teams/profile"
-                          className="px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
+                          className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md hover:bg-accent transition-colors"
                           onClick={() => setMobileMenuOpen(false)}
                         >
+                          <CircleUserRound className="h-4 w-4" />
                           Profile
                         </Link>
 
                         {isTeam && (
                           <Link
                             href="/admin"
-                            className="px-3 py-2 text-sm font-bold text-primary rounded-md hover:bg-accent transition-colors"
+                            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-primary rounded-md hover:bg-accent transition-colors"
                             onClick={() => setMobileMenuOpen(false)}
                           >
+                            <Shield className="h-4 w-4" />
                             Admin Console
                           </Link>
                         )}
@@ -451,8 +458,11 @@ export function TeamNavbar({
                           className="justify-start text-destructive"
                           asChild
                         >
-                          <div onClick={logout} className="cursor-pointer">
-                            Log out
+                          <div
+                            onClick={logout}
+                            className="flex cursor-pointer items-center gap-2"
+                          >
+                            <LogOut className="h-4 w-4" /> Log out
                           </div>
                         </Button>
                       </div>
