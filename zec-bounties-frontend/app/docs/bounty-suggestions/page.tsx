@@ -70,6 +70,21 @@ export default function BountySuggestionsDocsPage() {
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-xl font-semibold">Withdrawing a suggestion</h2>
+        <p className="text-sm text-muted-foreground">
+          While a suggestion is still pending, the hunter who posted it can
+          withdraw it from the bounty page. The bounty is closed, not deleted,
+          and it can no longer be approved or delivered. An optional reason (up
+          to 500 characters) is stored for the reviewers.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          One weekly creation slot is returned per calendar week. Withdrawing a
+          second suggestion in the same week still closes it, but that
+          week&apos;s slot is not returned.
+        </p>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-xl font-semibold">Related</h2>
         <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
           <li>

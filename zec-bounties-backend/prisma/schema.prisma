@@ -102,6 +102,7 @@ model Bounty {
   discordThreadId  String?
   suggestionReviewStatus String?
   suggestionReviewReason String?
+  quotaRefundedAt   DateTime?
   targetRepo       String?
   dueSoonReminderSentAt DateTime?
   overdueReminderSentAt DateTime?
@@ -112,6 +113,7 @@ model Bounty {
 
   @@index([status])
   @@index([createdBy])
+  @@index([createdBy, dateCreated])
   @@index([assignee])
   @@index([dateCreated])
   @@index([isPaid, paidAt])
