@@ -434,7 +434,7 @@ export function TeamAuthorizePaymentPanel({
 
   const awaitingCard = (exploding: boolean, checking: boolean) => (
     <section
-      className={`flex h-full min-h-[24rem] flex-col overflow-hidden rounded-xl border bg-card ${
+      className={`flex min-h-[18rem] flex-1 flex-col overflow-hidden rounded-xl border bg-card ${
         exploding ? "pay-explode" : ""
       }`}
     >
@@ -732,15 +732,20 @@ export function TeamAuthorizePaymentPanel({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
         <PayoutKeysCard />
 
-        <div className="relative h-full">
+        <div className="relative flex h-full flex-col gap-4">
           <style>{PAY_ANIM_CSS}</style>
 
-          {readyNow
-            ? readyCard
-            : awaitingCard(
-                hasReady && bursting,
-                (roundsLoading || bountiesLoading) && !hasReady,
-              )}
+          {readyNow ? (
+            <>
+              {readyCard}
+              {awaitingCount > 0 && awaitingCard(false, false)}
+            </>
+          ) : (
+            awaitingCard(
+              hasReady && bursting,
+              (roundsLoading || bountiesLoading) && !hasReady,
+            )
+          )}
 
           {bursting && <Burst />}
         </div>

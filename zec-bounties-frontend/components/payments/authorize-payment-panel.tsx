@@ -136,13 +136,6 @@ export function AuthorizePaymentPanel() {
   const coveredIds = new Set(rounds.flatMap((r) => r.bountyIds));
   const uncovered = payableBounties.filter((b) => !coveredIds.has(b.id));
 
-  // Bounties whose assignee has no payout address are left out of a round.
-  const hasAddress = (b: Bounty) =>
-    b.chain === "MAIN"
-      ? !!b.assigneeUser?.UA_address
-      : !!b.assigneeUser?.z_address;
-  const uncoveredNoAddress = uncovered.filter((b) => !hasAddress(b));
-
   // Ready: decided for ME as the executor (so MY default wallet pays), past the lock delay.
   const isReady = (r: (typeof rounds)[number]) =>
     r.status === "DECIDED" &&
@@ -329,17 +322,6 @@ export function AuthorizePaymentPanel() {
           <p className="text-xs font-medium text-muted-foreground">
             Awaiting approval
           </p>
-          {uncoveredNoAddress.length > 0 && (
-            <div className="flex items-start gap-2.5 text-xs p-2.5 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-              <AlertTriangle className="w-3.5 h-3.5 text-yellow-600 shrink-0 mt-0.5" />
-              <span className="text-yellow-800 dark:text-yellow-200">
-                {uncoveredNoAddress.length} bount
-                {uncoveredNoAddress.length > 1 ? "ies have" : "y has"} an
-                assignee with no payout address and will be left out of the
-                round: {uncoveredNoAddress.map((b) => b.title).join(", ")}
-              </span>
-            </div>
-          )}
           {uncovered.length > 0 && <PayoutOpenCard bounties={uncovered} />}
           {waitingRounds.map((r) => (
             <PayoutRoundCard key={r.id} round={r} bounties={bountiesOf(r)} />
