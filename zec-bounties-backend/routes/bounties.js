@@ -3166,7 +3166,7 @@ router.get("/:id/activity", authenticate, async (req, res) => {
       where: { bountyId: bounty.id },
       orderBy: { createdAt: "desc" },
       take: 200,
-      include: { actor: { select: USER_SELECT_BASIC } },
+      include: { actor: { select: USER_SELECT } },
     });
     res.json(activity);
   } catch (err) {
