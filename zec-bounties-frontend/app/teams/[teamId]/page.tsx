@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
 import type {
@@ -27,6 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  FilterPanel,
+  FilterSection,
+  FilterChip,
+  FilterSelect,
+  FilterSwitch,
+} from "@/components/filter-panel";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Plus, UserPlus, X, Info } from "lucide-react";
 import { confirmedTotal, fmt } from "@/lib/utils";
@@ -468,6 +475,31 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+const STATUS_FILTERS: {
+  status: BountyStatus | "ALL";
+  label: string;
+  dotColor?: string;
+}[] = [
+  { status: "ALL", label: "All" },
+  { status: "TO_DO", label: "Todo", dotColor: statusDotColor("TO_DO") },
+  {
+    status: "IN_PROGRESS",
+    label: "In Progress",
+    dotColor: statusDotColor("IN_PROGRESS"),
+  },
+  {
+    status: "IN_REVIEW",
+    label: "In Review",
+    dotColor: statusDotColor("IN_REVIEW"),
+  },
+  { status: "DONE", label: "Done", dotColor: statusDotColor("DONE") },
+  {
+    status: "CANCELLED",
+    label: "Cancelled",
+    dotColor: statusDotColor("CANCELLED"),
+  },
+];
+
 function statusDotColor(status: Bounty["status"]) {
   switch (status) {
     case "TO_DO":
@@ -776,6 +808,7 @@ function OverviewTab({
 }) {
   const {
     currentUser,
+    categories,
     fetchTeamApplications,
     fetchTeamSubmissions,
     acceptApplication,
@@ -802,6 +835,57 @@ function OverviewTab({
   const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
+
+  const [statusFilter, setStatusFilter] = useState<BountyStatus | "ALL">("ALL");
+  const [categoryFilter, setCategoryFilter] = useState<string | "ALL">("ALL");
+  const [showCancelled, setShowCancelled] = useState(false);
+  const [suggestionOnly, setSuggestionOnly] = useState(false);
+
+  const pendingSuggestionCount = teamBounties.filter(
+    (b) => b.suggestionReviewStatus === "PENDING",
+  ).length;
+
+  const filteredBounties = useMemo(() => {
+    let result =
+      statusFilter === "ALL"
+        ? teamBounties
+        : teamBounties.filter((b) => b.status === statusFilter);
+
+    if (statusFilter === "ALL" && !showCancelled) {
+      result = result.filter((b) => b.status !== "CANCELLED");
+    }
+    if (categoryFilter !== "ALL") {
+      result = result.filter((b) => b.categoryId === categoryFilter);
+    }
+    if (suggestionOnly) {
+      result = result.filter((b) => b.suggestionReviewStatus === "PENDING");
+    }
+    return result;
+  }, [
+    teamBounties,
+    statusFilter,
+    categoryFilter,
+    showCancelled,
+    suggestionOnly,
+  ]);
+
+  const activeFilterCount =
+    (statusFilter !== "ALL" ? 1 : 0) +
+    (categoryFilter !== "ALL" ? 1 : 0) +
+    (showCancelled ? 1 : 0) +
+    (suggestionOnly ? 1 : 0);
+
+  const statusCountFor = (status: BountyStatus | "ALL") =>
+    status === "ALL"
+      ? teamBounties.length
+      : teamBounties.filter((b) => b.status === status).length;
+
+  const resetFilters = () => {
+    setStatusFilter("ALL");
+    setCategoryFilter("ALL");
+    setShowCancelled(false);
+    setSuggestionOnly(false);
+  };
 
   const loadActivity = async () => {
     const [apps, subs] = await Promise.all([
@@ -998,9 +1082,60 @@ function OverviewTab({
           <div>
             <h2 className="text-sm font-semibold">Team bounties</h2>
             <p className="text-xs text-muted-foreground">
-              Every bounty posted under {team.name}
+              {filteredBounties.length} of {teamBounties.length} posted under{" "}
+              {team.name}
             </p>
           </div>
+
+          <FilterPanel
+            activeCount={activeFilterCount}
+            onClear={resetFilters}
+            applyLabel={`Show ${filteredBounties.length} bounties`}
+          >
+            <FilterSection label="Status">
+              <div className="flex flex-wrap gap-2">
+                {STATUS_FILTERS.map((f) => (
+                  <FilterChip
+                    key={f.status}
+                    active={statusFilter === f.status}
+                    onClick={() => setStatusFilter(f.status)}
+                    dotClassName={f.dotColor}
+                    count={statusCountFor(f.status)}
+                  >
+                    {f.label}
+                  </FilterChip>
+                ))}
+              </div>
+            </FilterSection>
+
+            <FilterSelect
+              label="Category"
+              value={categoryFilter === "ALL" ? "" : categoryFilter}
+              options={[
+                { value: "", label: "All Categories" },
+                ...categories.map((c) => ({ value: c.name, label: c.name })),
+              ]}
+              onChange={(v) => setCategoryFilter(v === "" ? "ALL" : v)}
+            />
+
+            <div className="space-y-2">
+              <FilterSwitch
+                id="team-show-cancelled"
+                label="Show cancelled"
+                checked={showCancelled}
+                onCheckedChange={setShowCancelled}
+              />
+              {(pendingSuggestionCount > 0 || suggestionOnly) && (
+                <FilterSwitch
+                  id="team-suggestion-only"
+                  label="Suggestion review only"
+                  hint={`${pendingSuggestionCount} pending`}
+                  checked={suggestionOnly}
+                  onCheckedChange={setSuggestionOnly}
+                />
+              )}
+            </div>
+          </FilterPanel>
         </div>
 
         <Table>
@@ -1046,6 +1181,25 @@ function OverviewTab({
                   <p className="mt-1 text-xs text-muted-foreground">
                     Bounties posted under {team.name} will show up here.
                   </p>
+                </TableCell>
+              </TableRow>
+            ) : filteredBounties.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={canManage ? 8 : 7}
+                  className="text-center py-12"
+                >
+                  <p className="text-sm text-muted-foreground">
+                    No bounties match these filters.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={resetFilters}
+                  >
+                    Clear filters
+                  </Button>
                 </TableCell>
               </TableRow>
             ) : (
