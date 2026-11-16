@@ -119,9 +119,9 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
       VALID_MODES: new Set(["closed", "open", "threshold"]),
     },
     "../utils/payoutProposals": {
-      loadDecidedProposals: async () => ({ usable: new Map([["b1", { bountyId: "b1", recipient: "u1fixtureaddress", amount: 1 }]]), rejected: new Map() }),
+      loadDecidedProposals: async () => ({ usable: new Map([["b1", { bountyIds: ["b1"], items: [{ bountyId: "b1", payeeId: "u1", recipient: "u1fixtureaddress", amountZat: "100000000" }] }]]), rejected: new Map() }),
       consumeProposals: async () => {},
-      itemFor: () => ({}),
+      itemFor: (round, bountyId) => (round.items || []).find((i) => i.bountyId === bountyId),
       notifyApprovers: async () => {},
       getEligibleApprovers: async () => [],
       isApprover: () => false,
