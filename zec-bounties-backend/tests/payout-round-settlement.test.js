@@ -115,7 +115,18 @@ stub("utils/payoutProposals.js", {
       const round = rounds.find(
         (r) => r.status === "DECIDED" && r.bountyIds.includes(bounty.id),
       );
-      if (round) usable.set(bounty.id, { ...round, recipient: "u1recipient" });
+      if (round)
+        usable.set(bounty.id, {
+          ...round,
+          items: [
+            {
+              bountyId: bounty.id,
+              payeeId: "u1",
+              recipient: "u1recipient",
+              amountZat: "100000000",
+            },
+          ],
+        });
     }
     return { usable, rejected: new Map() };
   },
@@ -126,6 +137,8 @@ stub("utils/payoutProposals.js", {
         { status: "EXECUTED", executedAt: new Date() },
       );
   },
+  itemFor: (round, bountyId) =>
+    (round.items || []).find((i) => i.bountyId === bountyId),
 });
 let adminWallet;
 stub("helpers/zcash/zcashHelper.js", {
