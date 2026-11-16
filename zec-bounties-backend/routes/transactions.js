@@ -26,6 +26,7 @@ const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
 const {
   loadDecidedProposals,
   consumeProposals,
+  itemFor,
 } = require("../utils/payoutProposals");
 
 const path = require("path");
@@ -270,7 +271,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         });
         continue;
       }
-      const payoutAddress = proposal.recipient;
+      const payoutAddress = itemFor(proposal, bounty.id).recipient;
 
       if (!payoutAddress) {
         skipped.push({
