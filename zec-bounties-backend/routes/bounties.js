@@ -180,6 +180,17 @@ async function canViewPrivateBounty(bounty, user) {
   if (!user) return false;
   if (user.role === "ADMIN") return true;
   if (bounty.createdBy === user.id) return true;
+
+  // An assignee can always see a bounty they are assigned to, whether it is
+  // individually private or owned by a private team they are not a member of.
+  // Covers the legacy single `assignee` field and the `bountyAssignee` roster.
+  if (bounty.assignee === user.id) return true;
+  const assignment = await prisma.bountyAssignee.findUnique({
+    where: { bountyId_userId: { bountyId: bounty.id, userId: user.id } },
+    select: { userId: true },
+  });
+  if (assignment) return true;
+
   if (!bounty.teamId) return false;
 
   const teamMember = await prisma.teamMember.findUnique({
@@ -630,6 +641,19 @@ router.get("/", optionalAuthenticate, async (req, res) => {
                   {
                     isPrivate: true,
                     createdBy: userId,
+                  },
+
+                  // Assignees can see any private bounty they are assigned to,
+                  // whether individually private or owned by a private team
+                  // they do not belong to. Covers the legacy `assignee` field
+                  // and the `bountyAssignee` roster.
+                  {
+                    isPrivate: true,
+                    assignee: userId,
+                  },
+                  {
+                    isPrivate: true,
+                    assignees: { some: { userId } },
                   },
 
                   // Members can see bounties owned by their private team.
