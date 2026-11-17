@@ -185,6 +185,8 @@ model WorkSubmission {
   id             String    @id @default(cuid())
   bountyId       String
   submittedBy    String
+  filedBy     String?   
+  editedAt    DateTime? 
   description    String
   deliverableUrl String?
   submittedAt    DateTime  @default(now())
