@@ -4,7 +4,13 @@ import { Backend, admin, bounty, column, hunter } from "./fixtures";
 test("bounty approval applies the response without reloading the list", async ({ page }) => {
   const api = new Backend();
   api.rows[0] = bounty(1, "TO_DO");
+  // /admin reloads the list with the admin's ALL chain 250 ms after mount.
+  // Count list calls only once that load has been answered.
+  const adminLoad = page.waitForResponse(res =>
+    new URL(res.url()).pathname === "/api/bounties" && new URL(res.url()).searchParams.get("chain") === "ALL",
+  );
   await api.open(page, "/admin", admin);
+  await adminLoad;
   const pagesBefore = api.listCalls(page).length;
   const actions = page.getByRole("button", { name: "Actions for Status bounty 1", exact: true });
 
