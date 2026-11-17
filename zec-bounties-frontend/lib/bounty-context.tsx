@@ -344,6 +344,7 @@ interface BountyContextType {
     submissionData: {
       description: string;
       deliverableUrl?: string;
+      onBehalfOf?: string;
     },
   ) => Promise<void>;
 
@@ -2170,6 +2171,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     submissionData: {
       description: string;
       deliverableUrl?: string;
+      onBehalfOf?: string;
     },
   ) => {
     if (!currentUser) throw new Error("User not authenticated");
@@ -2188,6 +2190,19 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const result = await res.json();
       applyBountyUpdate(result.bounty);
+
+      if (currentUser.role === "ADMIN") {
+        const created: WorkSubmission = result.workSubmission;
+        setAllSubmissions((prev) =>
+          prev.some((s) => s.id === created.id) ? prev : [created, ...prev],
+        );
+        setBountySubmissions((prev) => ({
+          ...prev,
+          [bountyId]: (prev[bountyId] || []).some((s) => s.id === created.id)
+            ? prev[bountyId]
+            : [created, ...(prev[bountyId] || [])],
+        }));
+      }
     } catch (error) {
       console.error("Failed to submit work:", error);
       throw error;
