@@ -259,6 +259,8 @@ export interface WorkSubmission {
   submitterUser?: User; // Populated user data
   reviewerUser?: User; // Populated user data
   bounty?: { id: string; title: string };
+  filedBy?: string | null;
+  editedAt?: string | null;
 }
 
 export interface BountyAssignee {
