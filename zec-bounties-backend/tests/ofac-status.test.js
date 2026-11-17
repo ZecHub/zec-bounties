@@ -176,3 +176,44 @@ test("the OFAC status must be a boolean, and the user must exist", async () => {
   });
   assert.equal(missing.status, 404);
 });
+
+// OFAC also lists crypto addresses, so a check covers the payout address it
+// was made for. A new address puts the user back to pending; saving the same
+// address again keeps the check.
+const PAYOUT_ROUTES = [
+  {
+    route: "patch /update-zaddress",
+    field: "z_address",
+    first: "zs1" + "q".repeat(75),
+    second: "zs1" + "p".repeat(75),
+  },
+  {
+    route: "patch /update-ua-address",
+    field: "UA_address",
+    first: "u1" + "q".repeat(100),
+    second: "u1" + "p".repeat(100),
+  },
+];
+
+for (const { route, field, first, second } of PAYOUT_ROUTES) {
+  test(`changing ${field} clears the OFAC check, re-saving it does not`, async () => {
+    const app = loadAuthRoutes();
+    let res = await app.call(route, { token: "hunter", body: { [field]: first } });
+    assert.equal(res.status, 200);
+    assert.equal(app.db.users.hunter[field], first);
+
+    app.db.users.hunter.ofacVerified = true;
+    res = await app.call(route, { token: "hunter", body: { [field]: first } });
+    assert.equal(res.status, 200);
+    assert.equal(app.db.users.hunter.ofacVerified, true, "same address: check kept");
+
+    res = await app.call(route, { token: "hunter", body: { [field]: second } });
+    assert.equal(res.status, 200);
+    assert.equal(app.db.users.hunter[field], second);
+    assert.equal(
+      app.db.users.hunter.ofacVerified,
+      false,
+      "new address: back to pending",
+    );
+  });
+}
