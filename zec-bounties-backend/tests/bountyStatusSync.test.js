@@ -115,6 +115,10 @@ function fixture(status = "IN_PROGRESS", submissionStatus = "pending") {
     "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: async () => {}, notifyBountyState: async () => {} },
     "../utils/constants": {},
     "../utils/exportableBounty": require("../utils/exportableBounty"),
+    "../utils/zecUsdQuote": {
+      getZecUsdQuote: async () => ({ rate: 100, source: "test", quotedAt: new Date(0).toISOString(), stale: false }),
+      usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+    },
     "../helpers/validateBounty": {},
     "../utils/bountySuggestionReview": require("../utils/bountySuggestionReview"),
     "../utils/userSelects": require("../utils/userSelects"),

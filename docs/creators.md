@@ -28,7 +28,7 @@ Request changes or approve.
 After approval, payment can be triggered (one-click or batched by admins).
 Funds are sent as a shielded transaction to the assignee’s registered UA.
 A transaction ID is stored for transparency.
-If the ZEC/USD spot has moved ≥ 20% or more than 7 days have passed, edit the ZEC reward before paying so the implied USD band still holds — [Bounty amounts](bounty-amounts.md).
+The ZEC reward is snapshotted to USD at creation and re-quoted automatically when the payout round opens — [Bounty amounts](bounty-amounts.md).
 
 ## Writing a good bounty
 

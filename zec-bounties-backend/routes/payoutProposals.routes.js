@@ -30,6 +30,7 @@ const {
   verifiedTally,
   notifyApprovers,
 } = require("../utils/payoutProposals");
+const { getZecUsdQuote } = require("../utils/zecUsdQuote");
 
 const router = express.Router();
 const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -116,6 +117,16 @@ router.post(
       throw httpError(400, `bountyIds must be 1 to ${MAX_BATCH} bounty ids`);
     const ids = [...new Set(bountyIds)].sort();
 
+    // One quote for the whole batch. If every source is down the persisted
+    // last-known quote is returned with stale=true.
+    let quote = null;
+    let quoteError = null;
+    try {
+      quote = await getZecUsdQuote();
+    } catch (err) {
+      quoteError = err;
+    }
+
     const out = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Bounty" WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`;
       const bounties = await tx.bounty.findMany({
@@ -185,12 +196,49 @@ router.post(
           `Not enough approvers have an active passkey (${approverIds.length}/${PAYOUT_THRESHOLD})`,
         );
 
+      // USD-tracked bounties are repriced from their creation-date USD value.
+      // Legacy rows (rewardUsd === null) keep their current ZEC amount.
+      const usdBounties = picked.filter((b) => b.rewardUsd != null);
+      if (usdBounties.length > 0 && !quote) {
+        throw httpError(
+          503,
+          quoteError?.message || "No ZEC/USD price available",
+        );
+      }
+
+      const repriced = [];
+      for (const b of usdBounties) {
+        const zecAmount = Number(b.rewardUsd) / Number(quote.rate);
+        b.bountyAmount = zecAmount;
+        repriced.push(
+          tx.bounty.update({
+            where: { id: b.id },
+            data: { bountyAmount: zecAmount },
+          }),
+        );
+      }
+      await Promise.all(repriced);
+
       const items = picked.map((b) => ({
         bountyId: b.id,
         payeeId: b.assigneeUser.id,
         recipient: addressFor(b.assigneeUser, b.chain),
         amountZat: toZat(b.bountyAmount).toString(),
       }));
+
+      const quotePayload = quote
+        ? {
+            rate: Number(quote.rate),
+            source: quote.source,
+            quotedAt: quote.quotedAt,
+            stale: Boolean(quote.stale),
+            usd: usdBounties.map((b) => ({
+              bountyId: b.id,
+              rewardUsd: Number(b.rewardUsd),
+              zec: Number(b.bountyAmount),
+            })),
+          }
+        : null;
 
       const proposal = await tx.payoutProposal.create({
         data: {
@@ -202,6 +250,7 @@ router.post(
           items,
           bountyIds: items.map((i) => i.bountyId),
           approverKeys: snap,
+          quote: quotePayload,
           status: "OPEN",
           expiresAt: new Date(Date.now() + EXPIRY_MS),
         },
@@ -214,6 +263,7 @@ router.post(
           teamId,
           totalZat: totalZatOf(items),
           items,
+          quote: quotePayload,
           approvers: approverIds,
           keys: Object.values(snap)
             .flat()

@@ -129,6 +129,10 @@ function loadRoute(prisma) {
     "../utils/privacy": require(path.join(backend, "utils/privacy")),
     "../utils/bountySuggestionReview": require(path.join(backend, "utils/bountySuggestionReview")),
     "../utils/exportableBounty": require(path.join(backend, "utils/exportableBounty")),
+    "../utils/zecUsdQuote": {
+      getZecUsdQuote: async () => ({ rate: 100, source: "test", quotedAt: new Date(0).toISOString(), stale: false }),
+      usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+    },
     // Real activity rows. Passing a client skips the unawaited fan-out, which
     // could outlive the test schema.
     "../utils/bountyActivity": {

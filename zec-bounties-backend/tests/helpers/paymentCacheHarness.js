@@ -134,6 +134,10 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
     "../utils/discord/discordNotify": {}, "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: noOp, notifyBountyState: noOp },
     "../utils/constants": {},
     "../utils/exportableBounty": require("../../utils/exportableBounty"),
+    "../utils/zecUsdQuote": {
+      getZecUsdQuote: async () => ({ rate: 100, source: "test", quotedAt: new Date(0).toISOString(), stale: false }),
+      usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+    },
     "../helpers/db-query": {},
     "../zcash/init": {}, "../helpers/zcash/zcashHelper": {},
     "../helpers/zcash/resolvePayingWallet": {},

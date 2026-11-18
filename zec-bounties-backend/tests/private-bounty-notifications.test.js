@@ -112,6 +112,15 @@ function loadRoutes(team) {
     }),
     "../utils/bountyHelpers": helpers,
     "../utils/bountySuggestionReview": require("../utils/bountySuggestionReview"),
+    "../utils/zecUsdQuote": {
+      getZecUsdQuote: async () => ({
+        rate: 100,
+        source: "test",
+        quotedAt: new Date(0).toISOString(),
+        stale: false,
+      }),
+      usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+    },
   };
   const routes = {};
   const filename = path.join(__dirname, "../routes/bounties.js");

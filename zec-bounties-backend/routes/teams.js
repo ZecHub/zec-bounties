@@ -63,6 +63,7 @@ const {
 const { redactPublicUser } = require("../utils/privacy");
 const { EXPORTABLE_BOUNTY } = require("../utils/exportableBounty");
 const { USER_SELECT_EXPORT } = require("../utils/userSelects");
+const { getZecUsdQuote, usdValueForZec } = require("../utils/zecUsdQuote");
 const {
   loadDecidedProposals,
   consumeProposals,
@@ -1070,11 +1071,25 @@ router.post(
       const canAssignOthers = ["ADMIN", "TEAM"].includes(req.user.role);
       const resolvedAssignee =
         canAssignOthers && assignee !== "none" ? assignee : null;
+      const parsedBountyAmount = parseFloat(bountyAmount);
+      let quote;
+      try {
+        quote = await getZecUsdQuote();
+      } catch (err) {
+        return res.status(503).json({
+          error:
+            "ZEC/USD pricing is temporarily unavailable. Try again shortly.",
+        });
+      }
+
       const bounty = await createBountyWithQuota(req.user, {
         data: {
           title,
           description,
-          bountyAmount: parseFloat(bountyAmount),
+          bountyAmount: parsedBountyAmount,
+          rewardUsd: usdValueForZec(parsedBountyAmount, quote.rate),
+          rewardUsdRate: quote.rate,
+          rewardUsdQuotedAt: new Date(quote.quotedAt),
           timeToComplete: new Date(timeToComplete),
           createdBy: req.user.id,
           assignee: resolvedAssignee,

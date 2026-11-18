@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useBounty, type PayoutRound } from "@/lib/bounty-context";
 import { displayName } from "@/lib/displayName";
@@ -107,6 +107,14 @@ export function PayoutRoundCard({
   };
   const voteCount = (id: string) =>
     round.tally.find((t) => t.candidateId === id)?.votes ?? 0;
+  const rateMoved =
+    round.quote != null &&
+    bounties.some((b) => {
+      if (!b.rewardUsdRate || b.rewardUsdRate <= 0) return false;
+      return (
+        Math.abs(round.quote!.rate - b.rewardUsdRate) / b.rewardUsdRate >= 0.2
+      );
+    });
 
   const cancelBtn = round.canVote &&
     (round.status === "OPEN" || round.status === "DECIDED") && (
@@ -132,6 +140,29 @@ export function PayoutRoundCard({
         </span>
       </div>
       <BountyList bounties={bounties} />
+
+      {round.quote && (
+        <div className="rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-xs">
+          <p className="text-muted-foreground">
+            Priced at ${round.quote.rate.toLocaleString()} / ZEC via{" "}
+            {round.quote.source} ·{" "}
+            {new Date(round.quote.quotedAt).toLocaleString()}
+          </p>
+          {round.quote.stale && (
+            <p className="mt-1 flex items-center gap-1 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3" />
+              Using the last known price; live sources were unavailable.
+            </p>
+          )}
+          {rateMoved && (
+            <p className="mt-1 flex items-center gap-1 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3" />
+              ZEC moved 20% or more since these rewards were set. Amounts were
+              repriced from their USD value.
+            </p>
+          )}
+        </div>
+      )}
 
       {round.status === "OPEN" ? (
         <>

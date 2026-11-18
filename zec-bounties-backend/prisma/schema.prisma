@@ -70,6 +70,9 @@ model Bounty {
   title             String
   description       String
   bountyAmount      Float
+  rewardUsd         Float?
+  rewardUsdRate     Float?
+  rewardUsdQuotedAt DateTime?
   dateCreated       DateTime            @default(now())
   timeToComplete    DateTime
   status            Status              @default(TO_DO)
@@ -267,6 +270,7 @@ model PayoutProposal {
   items         Json                         // [{ bountyId, payeeId, recipient, amountZat }] locked at creation; covered by every signature
   bountyIds     String[]                     // same bounty ids, queryable (uniqueness checks, lookups)
   approverKeys  Json                         // { userId: [{ id, credentialId, publicKey, transports }] } pinned at creation
+  quote         Json?                        // ZEC/USD quote used to reprice USD-tracked bounties at open
   status        ProposalStatus @default(OPEN)
   executorId    String?
   decidedAt     DateTime?

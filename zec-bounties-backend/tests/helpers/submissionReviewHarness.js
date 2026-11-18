@@ -75,6 +75,10 @@ function loadSubmissionReviewRoute(prisma) {
     },
     "../utils/constants": {},
     "../utils/exportableBounty": require("../../utils/exportableBounty"),
+    "../utils/zecUsdQuote": {
+      getZecUsdQuote: async () => ({ rate: 100, source: "test", quotedAt: new Date(0).toISOString(), stale: false }),
+      usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+    },
     "../helpers/validateBounty": {},
     "../utils/userSelects": require("../../utils/userSelects"),
     "../utils/privacy": require("../../utils/privacy"),

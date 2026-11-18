@@ -22,6 +22,7 @@ function fixture() {
     bountyActivity: { create: async () => ({ id: "act1" }) },
     team: { findUnique: async () => ({ id: "team1", name: "Fixture", isVerified: true, isPrivate: false }) },
     teamMember: { findUnique: async () => null },
+    payoutProposal: { findFirst: async () => null },
     $transaction: async (fn) => (typeof fn === "function" ? fn(db) : Promise.all(fn)),
   };
   const db = new Proxy(real, {

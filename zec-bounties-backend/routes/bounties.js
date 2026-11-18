@@ -72,6 +72,10 @@ const {
 const { logActivity, publishActivity } = require("../utils/bountyActivity");
 const { redactPublicUser } = require("../utils/privacy");
 const {
+  getZecUsdQuote,
+  usdValueForZec,
+} = require("../utils/zecUsdQuote");
+const {
   ADMIN_EXPORTABLE_BOUNTY,
   ADMIN_PAYOUT_SCOPE,
 } = require("../utils/exportableBounty");
@@ -496,11 +500,25 @@ router.post("/", authenticate, requireTaskCreation, async (req, res) => {
     const resolvedIsApproved =
       req.user.role === "ADMIN" || (team !== null && !isHunter);
 
+    const parsedBountyAmount = parseFloat(bountyAmount);
+    let quote;
+    try {
+      quote = await getZecUsdQuote();
+    } catch (err) {
+      return res.status(503).json({
+        error:
+          "ZEC/USD pricing is temporarily unavailable. Try again shortly.",
+      });
+    }
+
     const bounty = await createBountyWithQuota(req.user, {
       data: {
         title,
         description,
-        bountyAmount: parseFloat(bountyAmount),
+        bountyAmount: parsedBountyAmount,
+        rewardUsd: usdValueForZec(parsedBountyAmount, quote.rate),
+        rewardUsdRate: quote.rate,
+        rewardUsdQuotedAt: new Date(quote.quotedAt),
         timeToComplete: new Date(timeToComplete),
         createdBy: req.user.id,
         assignee: resolvedAssignee,
@@ -3265,6 +3283,7 @@ router.put("/:id", authenticate, async (req, res) => {
     const existing = await prisma.bounty.findUnique({
       where: { id: req.params.id },
       select: {
+        id: true,
         createdBy: true,
         teamId: true,
         chain: true,
@@ -3327,6 +3346,19 @@ router.put("/:id", authenticate, async (req, res) => {
       if (!(await canAdministerBounty(existing, req.user))) {
         return res.status(403).json({
           error: "Only admins can change the assignee or reward amount",
+        });
+      }
+      const activeRound = await prisma.payoutProposal.findFirst({
+        where: {
+          bountyIds: { hasSome: [existing.id] },
+          status: { in: ["OPEN", "DECIDED"] },
+        },
+        select: { id: true },
+      });
+      if (activeRound) {
+        return res.status(409).json({
+          error:
+            "Reward and assignee cannot be changed while a payout round is open or decided. Cancel the round first.",
         });
       }
       if (
@@ -3442,6 +3474,27 @@ router.put("/:id", authenticate, async (req, res) => {
     }
     if (req.body.targetRepo === "") req.body.targetRepo = null;
 
+    const amountChanged =
+      bountyAmount !== undefined &&
+      Number(bountyAmount) !== Number(existing.bountyAmount);
+    let rewardUsdUpdate = {};
+    if (amountChanged) {
+      let quote;
+      try {
+        quote = await getZecUsdQuote();
+      } catch (err) {
+        return res.status(503).json({
+          error:
+            "ZEC/USD pricing is temporarily unavailable. Try again shortly.",
+        });
+      }
+      rewardUsdUpdate = {
+        rewardUsd: usdValueForZec(bountyAmount, quote.rate),
+        rewardUsdRate: quote.rate,
+        rewardUsdQuotedAt: new Date(quote.quotedAt),
+      };
+    }
+
     const updated = await prisma.bounty.update({
       where: { id: req.params.id },
       data: {
@@ -3450,6 +3503,7 @@ router.put("/:id", authenticate, async (req, res) => {
         ...(req.body.bountyAmount !== undefined && {
           bountyAmount: Number(req.body.bountyAmount),
         }),
+        ...rewardUsdUpdate,
         ...(req.body.timeToComplete && {
           timeToComplete: new Date(req.body.timeToComplete),
         }),

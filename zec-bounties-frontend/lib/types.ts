@@ -150,6 +150,9 @@ export interface Bounty {
   createdBy: string; // User ID
   assignee?: string; // User ID
   bountyAmount: number; // ZEC amount
+  rewardUsd?: number | null; // USD value snapshotted when the reward was set
+  rewardUsdRate?: number | null; // ZEC/USD rate used for that snapshot
+  rewardUsdQuotedAt?: string | Date | null;
   dateCreated: Date;
   timeToComplete: Date;
   status: BountyStatus;

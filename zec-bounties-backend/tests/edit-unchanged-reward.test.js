@@ -36,6 +36,7 @@ function fixture(overrides = {}) {
     bountyActivity: { create: async () => ({ id: "act1" }) },
     team: { findUnique: async () => null },
     teamMember: { findUnique: async () => null },
+    payoutProposal: { findFirst: async () => null },
     $transaction: async (fn) => fn(db),
   };
   return { ...loadRoutes(db), bounty, writes };

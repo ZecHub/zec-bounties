@@ -12,6 +12,21 @@ for (const mod of ["../utils/sendMail", "../utils/notifyUser"]) {
     exports: async () => {},
   };
 }
+const quoteFile = require.resolve("../utils/zecUsdQuote");
+require.cache[quoteFile] = {
+  id: quoteFile,
+  filename: quoteFile,
+  loaded: true,
+  exports: {
+    getZecUsdQuote: async () => ({
+      rate: 100,
+      source: "test",
+      quotedAt: new Date(0).toISOString(),
+      stale: false,
+    }),
+    usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+  },
+};
 // No Redis in tests: make cache calls no-ops instead of logging errors.
 const { redisClient } = require("../config/redis");
 for (const method of ["get", "setEx", "del", "incr"]) {

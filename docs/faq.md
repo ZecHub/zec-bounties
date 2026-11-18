@@ -55,7 +55,7 @@ Yes. Live payouts use mainnet ZEC. Treat amounts and addresses as real value.
 
 ## Why did the ZEC amount on a bounty change?
 
-The form only stores ZEC. Creators pick that number from an implicit USD interval (`usd_target / zec_usd_spot`). If the spot moves ≥ 20%, a week has passed, or payout is about to run, they should edit the ZEC field so the implied dollar value stays in the same band. See [Bounty amounts](bounty-amounts.md).
+The reward is entered in ZEC and snapshotted to USD when the bounty is created. When the payout round opens, ZEC is recalculated from that USD value using the current rate and locked into the signed round. See [Bounty amounts](bounty-amounts.md).
 
 ## Are the old tip amounts (0.05 ZEC, 0.08 ZEC, …) still used?
 

@@ -6,7 +6,6 @@ import {
   Coins,
   DollarSign,
   ListChecks,
-  RefreshCw,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -177,46 +176,31 @@ export default function BountyAmountsPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold">The form only stores ZEC</h2>
+        <h2 className="text-xl font-semibold">ZEC is re-quoted at payout</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          zec-bounties does not price in dollars and does not refresh the
-          reward by itself. Whatever you enter in Reward (ZEC) is what the
-          board shows and what a payout sends.
+          You enter Reward (ZEC). The platform snapshots that reward&apos;s USD
+          value when the bounty is created. The board shows ZEC, and the ZEC
+          amount is recalculated from the stored USD value when the payout
+          round opens.
         </p>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          If the dollar rate has moved a lot between listing and pay, edit the
-          ZEC field before authorizing payment so the implicit USD value is
-          still in the same band.
+          Approvers sign the recalculated amount. Once the round is opened, the
+          ZEC amount is locked; it is not changed again during the send.
         </p>
-        <div className="rounded-xl border border-orange-300/80 bg-orange-50 p-4 dark:border-orange-500/40 dark:bg-orange-950/30">
-          <p className="flex items-center gap-2 font-semibold text-orange-900 dark:text-orange-200">
-            <RefreshCw className="h-4 w-4" />
-            Recompute the ZEC you entered when any of these is true
-          </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-orange-950/80 dark:text-orange-100/80">
-            <li>
-              Spot has moved <strong>≥ 20%</strong> from the rate you used
-            </li>
-            <li>
-              More than <strong>7 days</strong> since you set the amount
-            </li>
-            <li>Payment is about to run</li>
-          </ul>
-        </div>
         <div className="rounded-xl border border-sky-300/70 bg-sky-50 p-4 text-sm dark:border-sky-500/40 dark:bg-sky-950/30">
           <p className="font-semibold text-sky-900 dark:text-sky-200">
             Worked example
           </p>
           <p className="mt-2 text-sky-950/80 dark:text-sky-100/80">
-            Suggested $40 (S) at $500 / ZEC → listed 0.0800 ZEC. Payout week
-            spot $800 / ZEC → change the reward to 0.0500 ZEC. Same implied
-            dollar value; different ZEC quantity.
+            Suggested $40 (S) at $500 / ZEC → created as 0.0800 ZEC. At payout
+            the spot is $800 / ZEC → the round pays 0.0500 ZEC. Same USD value;
+            different ZEC quantity.
           </p>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          If ZEC falls, the ZEC number should go up. Fund the paying wallet for
-          that case. Do not change the implied USD band after assignment unless
-          scope changed.
+          If ZEC falls, the payout requires more ZEC. The payout panel shows
+          the quote and warns when the rate has moved significantly, so the
+          paying wallet can be funded before the round is opened.
         </p>
       </section>
 

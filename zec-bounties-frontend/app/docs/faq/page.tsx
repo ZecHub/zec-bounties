@@ -188,11 +188,10 @@ const FAQS = [
     q: "Why did the ZEC amount on a bounty change?",
     a: (
       <>
-        The form only stores ZEC. Creators pick that number from an implicit
-        USD interval (<code>usd_target / zec_usd_spot</code>). If the spot
-        moves ≥ 20%, a week has passed, or payout is about to run, they should
-        edit the ZEC field so the implied dollar value stays in the same band.
-        See{" "}
+        The reward is entered in ZEC and snapshotted to USD when the bounty is
+        created. When the payout round opens, ZEC is recalculated from that USD
+        value using the current rate. The recalculated amount is locked into
+        the signed payout round. See{" "}
         <Link
           href="/docs/bounty-amounts"
           className="text-primary hover:underline"

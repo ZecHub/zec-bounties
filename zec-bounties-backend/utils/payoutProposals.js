@@ -169,6 +169,10 @@ async function loadDecidedProposals(db, bounties, userId) {
       reject(p, `Payout unlocks at ${p.executableAt.toISOString()}`);
       continue;
     }
+    if (p.expiresAt && new Date(p.expiresAt).getTime() < Date.now()) {
+      reject(p, "Payout round expired; open a new round for a fresh quote");
+      continue;
+    }
 
     const items = itemsOf(p);
     if (items.some((i) => !byId.has(i.bountyId))) {

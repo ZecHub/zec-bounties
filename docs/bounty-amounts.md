@@ -38,27 +38,19 @@ These are what you should propose. Admins can still adjust before the bounty goe
 
 Stay inside the band. Do not treat the top as the default.
 
-## The form only stores ZEC
+## ZEC is re-quoted at payout
 
-zec-bounties does not price in dollars and does not refresh the reward by itself. Whatever you enter in Reward (ZEC) is what the board shows and what a payout sends.
+You enter Reward (ZEC). The platform snapshots that reward's USD value when the bounty is created. The board shows ZEC, and the ZEC amount is recalculated from the stored USD value when the payout round opens.
 
-If the dollar rate has moved a lot between listing and pay, edit the ZEC field before authorizing payment so the implicit USD value is still in the same band.
-
-Recompute when **any** of these is true:
-
-- Spot has moved **≥ 20%** from the rate you used
-- More than **7 days** since you set the amount
-- Payment is about to run
+Approvers sign the recalculated amount. Once the round is opened, the ZEC amount is locked; it is not changed again during the send.
 
 Worked example:
 
-- Suggested: `$20` (S) at `$500` / ZEC → listed `0.0400` ZEC
-- Payout week: spot `$800` / ZEC → change the reward to `0.0250` ZEC
-- Same implied dollar value; different ZEC quantity
+- Suggested: `$20` (S) at `$500` / ZEC → created as `0.0400` ZEC
+- Payout week: spot `$800` / ZEC → the round pays `0.0250` ZEC
+- Same USD value; different ZEC quantity
 
-If ZEC falls, the ZEC number should go up. Fund the paying wallet for that case.
-
-Do not change the implied USD band after assignment unless scope changed.
+If ZEC falls, the payout requires more ZEC. The payout panel shows the quote and warns when the rate has moved significantly, so the paying wallet can be funded before the round is opened.
 
 ## Rounding
 

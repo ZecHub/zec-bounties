@@ -116,6 +116,10 @@ function loadRoutes(file, db) {
     "../prisma/client": db,
     crypto: require("node:crypto"),
     "../utils/exportableBounty": require("../utils/exportableBounty"),
+    "../utils/zecUsdQuote": {
+      getZecUsdQuote: async () => ({ rate: 100, source: "test", quotedAt: new Date(0).toISOString(), stale: false }),
+      usdValueForZec: (zec, rate) => Math.round(zec * rate * 100) / 100,
+    },
     "../utils/zingo/zingoLibQuickSend": async (list) => {
       effects.sent.push(...list);
       return { txids: [TXID], error: null, timedOut: false, raw: "{}" };

@@ -47,9 +47,9 @@ export default function CreatorsPage() {
         <Step n={5} title="Payout">
           After approval, payment can be triggered (one-click or batched by
           admins). Funds are sent as a shielded transaction to the assignee’s
-          registered UA. A transaction ID is stored for transparency. Recheck
-          the ZEC reward if the spot has moved ≥ 20% or more than 7 days
-          have passed so the implied USD band still holds —{" "}
+          registered UA. A transaction ID is stored for transparency. The ZEC
+          reward is snapshotted to USD at creation and re-quoted automatically
+          when the payout round opens —{" "}
           <Link
             href="/docs/bounty-amounts"
             className="text-primary hover:underline"

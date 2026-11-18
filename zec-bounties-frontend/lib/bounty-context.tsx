@@ -98,6 +98,13 @@ export interface PayoutRound {
     amountZat: string;
   }[];
   totalZat: number;
+  quote?: {
+    rate: number;
+    source: string;
+    quotedAt: string;
+    stale: boolean;
+    usd: { bountyId: string; rewardUsd: number; zec: number }[];
+  } | null;
   status: "OPEN" | "DECIDED" | "EXECUTED" | "CANCELLED" | "EXPIRED";
   threshold: number;
   executorId: string | null;
