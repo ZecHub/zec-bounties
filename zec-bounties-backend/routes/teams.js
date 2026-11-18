@@ -68,6 +68,22 @@ const {
   consumeProposals,
   itemFor,
 } = require("../utils/payoutProposals");
+const sendMail = require("../utils/sendMail");
+const executeZingoCliRecoveryInfo = require("../utils/zingo/zingoLibRecoveryInfo");
+const { OtpStore } = require("../helpers/recoveryOtp");
+const {
+  requiredSignatures,
+  getEligibleApproverIds,
+  expireStaleRecoveryApprovals,
+  hasPasskey,
+  issueRecoveryChallenge,
+  recordRecoverySignature,
+  countValidSignatures,
+  serializeRecoveryApproval,
+  APPROVED_TTL_MS,
+  OPEN_TTL_MS,
+} = require("../utils/recoveryApprovals");
+const { appendAudit } = require("../utils/payoutAudit");
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -502,6 +518,106 @@ async function requireSelfPayout(req, res, next) {
     res.status(500).json({ error: "Failed to verify payout settings" });
   }
 }
+
+// ─── Team wallet recovery (OTP-gated, OWNER / global ADMIN only) ─────────────
+
+// Separate store from auth.js so a personal-wallet code can never unlock a
+// team wallet. Keyed by team + user, so each team has its own code, cooldown
+// and lockout counter.
+const teamOtpStore = new OtpStore();
+const teamOtpKey = (teamId, userId) => `team:${teamId}:${userId}`;
+
+const maskEmail = (email) => {
+  const [user, domain] = email.split("@");
+  return `${user.slice(0, 2)}***@${domain}`;
+};
+
+const escapeHtml = (s) =>
+  String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+
+async function sendTeamRecoveryOtpEmail(email, name, walletName, otp) {
+  await sendMail({
+    to: email,
+    subject: "Team Wallet Recovery Verification Code",
+    text: `Your OTP is ${otp}`,
+    html: `
+      <div style="font-family: Arial, sans-serif;">
+        <h2>Team Wallet Recovery Verification</h2>
+        <p>Hello ${escapeHtml(name || "User")},</p>
+        <p>You requested access to the recovery information for the team wallet
+        <strong>${escapeHtml(walletName)}</strong>.</p>
+        <p>Your verification code is:</p>
+        <h1 style="letter-spacing: 4px;">${otp}</h1>
+        <p>This code expires in 5 minutes.</p>
+        <p>If you did not make this request, please ignore this email.</p>
+      </div>
+    `,
+  });
+}
+
+// Same rule as deleting the wallet: team OWNER or global ADMIN.
+async function requireRecoveryAccess(req, res, next) {
+  try {
+    if (await canDeleteTeamWallet(req.params.teamId, req)) return next();
+    return res
+      .status(403)
+      .json({ error: "Only the team owner can access recovery information" });
+  } catch (err) {
+    console.error("Recovery access check failed:", err);
+    res.status(500).json({ error: "Failed to verify access" });
+  }
+}
+
+// The OTP step only runs against an approved, unexpired round that belongs
+// to the caller.
+async function requireApprovedRecovery(req, res, next) {
+  try {
+    const { approvalId } = req.body;
+    if (!approvalId) {
+      return res.status(403).json({ error: "Passkey approval required" });
+    }
+    const approval = await prisma.recoveryApproval.findFirst({
+      where: { id: approvalId, teamId: req.params.teamId },
+    });
+    if (
+      !approval ||
+      approval.status !== "APPROVED" ||
+      approval.requesterId !== req.user.id ||
+      approval.expiresAt < new Date()
+    ) {
+      return res
+        .status(403)
+        .json({ error: "Recovery approval is missing, expired or not yours" });
+    }
+    // Re-verify every signature; the status column alone is not trusted.
+    if ((await countValidSignatures(prisma, approval)) < approval.threshold) {
+      return res.status(403).json({
+        error:
+          "Approval signatures are no longer valid (a signer lost access or a key was revoked)",
+      });
+    }
+    req.recoveryApproval = approval;
+    next();
+  } catch (err) {
+    console.error("Recovery approval check failed:", err);
+    res.status(500).json({ error: "Failed to verify approval" });
+  }
+}
+
+const auditRecovery = (event, approval, actorId, extra = {}) =>
+  prisma.$transaction((tx) =>
+    appendAudit(tx, event, {
+      actorId,
+      proposalId: approval.id,
+      data: { teamId: approval.teamId, ...extra },
+    }),
+  );
 
 // ─── Team CRUD ───────────────────────────────────────────────────────────────
 
@@ -3164,6 +3280,505 @@ router.delete("/:teamId/wallet", authenticate, async (req, res) => {
     });
   }
 });
+
+// Current open/approved round (approvers + requester see the same thing)
+router.get(
+  "/:teamId/wallet/recovery/requests/current",
+  authenticate,
+  async (req, res) => {
+    try {
+      const { teamId } = req.params;
+      if (!(await requireTeamAdmin(teamId, req, res))) return;
+      await expireStaleRecoveryApprovals(prisma, teamId);
+      const approval = await prisma.recoveryApproval.findFirst({
+        where: { teamId, status: { in: ["OPEN", "APPROVED"] } },
+      });
+      res.set("Cache-Control", "no-store");
+      res.json({
+        approval: approval
+          ? await serializeRecoveryApproval(prisma, approval, req.user.id)
+          : null,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch recovery approval" });
+    }
+  },
+);
+
+router.post(
+  "/:teamId/wallet/recovery/requests",
+  authenticate,
+  requireRecoveryAccess,
+  async (req, res) => {
+    try {
+      const { teamId } = req.params;
+      const wallet = await prisma.teamWallet.findUnique({ where: { teamId } });
+      if (!wallet)
+        return res.status(404).json({ error: "No wallet found for this team" });
+
+      await expireStaleRecoveryApprovals(prisma, teamId);
+      const existing = await prisma.recoveryApproval.findFirst({
+        where: { teamId, status: { in: ["OPEN", "APPROVED"] } },
+      });
+      if (existing) {
+        return res.status(409).json({
+          error: "A recovery approval is already in progress",
+          approval: await serializeRecoveryApproval(
+            prisma,
+            existing,
+            req.user.id,
+          ),
+        });
+      }
+
+      const approverIds = await getEligibleApproverIds(prisma, teamId);
+      const threshold = requiredSignatures(approverIds.length);
+
+      // Fail now rather than let a round sit unreachable for 30 minutes.
+      const keyed = [];
+      for (const id of approverIds)
+        if (await hasPasskey(prisma, id)) keyed.push(id);
+      if (keyed.length < threshold) {
+        return res.status(409).json({
+          error: `${threshold} approvers need an active payout passkey (enrolled and past the activation delay); only ${keyed.length} have one.`,
+        });
+      }
+
+      const approval = await prisma.recoveryApproval.create({
+        data: {
+          teamId,
+          requesterId: req.user.id,
+          threshold,
+          approverIds,
+          expiresAt: new Date(Date.now() + OPEN_TTL_MS),
+        },
+      });
+
+      await auditRecovery("recovery.requested", approval, req.user.id, {
+        threshold,
+        approvers: approverIds,
+      }).catch((e) => console.error("audit failed:", e));
+
+      const payload = await serializeRecoveryApproval(
+        prisma,
+        approval,
+        req.user.id,
+      );
+      await broadcastTeamEvent(
+        "recovery_approval_updated",
+        payload,
+        teamId,
+        req.user.id,
+        { membersOnly: true },
+      );
+      res.status(201).json({ approval: payload });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to open recovery approval" });
+    }
+  },
+);
+
+async function loadSignableApproval(req, res) {
+  const { teamId, approvalId } = req.params;
+  const approval = await prisma.recoveryApproval.findFirst({
+    where: { id: approvalId, teamId },
+  });
+  if (
+    !approval ||
+    approval.status !== "OPEN" ||
+    approval.expiresAt < new Date()
+  ) {
+    res.status(409).json({ error: "This approval round is no longer open" });
+    return null;
+  }
+  // Snapshot says who may sign, but they must still hold the role.
+  const eligibleNow = await getEligibleApproverIds(prisma, teamId);
+  if (
+    !approval.approverIds.includes(req.user.id) ||
+    !eligibleNow.includes(req.user.id)
+  ) {
+    res.status(403).json({ error: "You are not an approver for this wallet" });
+    return null;
+  }
+  return approval;
+}
+
+router.post(
+  "/:teamId/wallet/recovery/requests/:approvalId/challenge",
+  authenticate,
+  async (req, res) => {
+    try {
+      const approval = await loadSignableApproval(req, res);
+      if (!approval) return;
+      res.json(await issueRecoveryChallenge(prisma, req.user.id, approval));
+    } catch (err) {
+      if (err.status)
+        return res.status(err.status).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: "Failed to issue challenge" });
+    }
+  },
+);
+
+router.post(
+  "/:teamId/wallet/recovery/requests/:approvalId/approve",
+  authenticate,
+  async (req, res) => {
+    try {
+      const { teamId } = req.params;
+      const approval = await loadSignableApproval(req, res);
+      if (!approval) return;
+
+      const { challengeId, assertion } = req.body;
+      try {
+        await recordRecoverySignature(
+          prisma,
+          approval,
+          req.user.id,
+          challengeId,
+          assertion,
+        );
+      } catch (err) {
+        if (err.code === "P2002")
+          return res.status(409).json({ error: "You already signed" });
+        if (err.status)
+          return res.status(err.status).json({ error: err.message });
+        throw err;
+      }
+
+      const valid = await countValidSignatures(prisma, approval);
+      if (valid >= approval.threshold) {
+        const flipped = await prisma.recoveryApproval.updateMany({
+          where: { id: approval.id, status: "OPEN" },
+          data: {
+            status: "APPROVED",
+            expiresAt: new Date(Date.now() + APPROVED_TTL_MS),
+          },
+        });
+        if (flipped.count === 1) {
+          await auditRecovery("recovery.approved", approval, req.user.id, {
+            revealerId: approval.requesterId,
+          }).catch((e) => console.error("audit failed:", e));
+        }
+      }
+
+      const fresh = await prisma.recoveryApproval.findUnique({
+        where: { id: approval.id },
+      });
+      const payload = await serializeRecoveryApproval(prisma, fresh);
+      await broadcastTeamEvent(
+        "recovery_approval_updated",
+        payload,
+        teamId,
+        req.user.id,
+        { membersOnly: true },
+      );
+      res.json({ approval: payload });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to record approval" });
+    }
+  },
+);
+
+router.post(
+  "/:teamId/wallet/recovery/requests/:approvalId/cancel",
+  authenticate,
+  async (req, res) => {
+    try {
+      const { teamId, approvalId } = req.params;
+      const approval = await prisma.recoveryApproval.findFirst({
+        where: { id: approvalId, teamId, status: { in: ["OPEN", "APPROVED"] } },
+      });
+      if (!approval) return res.status(404).json({ error: "No active round" });
+      if (approval.requesterId !== req.user.id && req.user.role !== "ADMIN") {
+        return res.status(403).json({ error: "Only the requester can cancel" });
+      }
+      await prisma.recoveryApproval.update({
+        where: { id: approval.id },
+        data: { status: "CANCELLED" },
+      });
+
+      await auditRecovery("recovery.cancelled", approval, req.user.id, {
+        wasStatus: approval.status,
+      }).catch((e) => console.error("audit failed:", e));
+
+      const fresh = await prisma.recoveryApproval.findUnique({
+        where: { id: approval.id },
+      });
+      await broadcastTeamEvent(
+        "recovery_approval_updated",
+        await serializeRecoveryApproval(prisma, fresh, req.user.id),
+        teamId,
+        req.user.id,
+        { membersOnly: true },
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to cancel" });
+    }
+  },
+);
+
+router.post(
+  "/:teamId/wallet/recovery/request-otp",
+  authenticate,
+  requireRecoveryAccess,
+  requireApprovedRecovery,
+  async (req, res) => {
+    try {
+      const { teamId } = req.params;
+
+      const wallet = await prisma.teamWallet.findUnique({ where: { teamId } });
+      if (!wallet) {
+        return res.status(404).json({ error: "No wallet found for this team" });
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { email: true, name: true },
+      });
+      if (!user?.email) {
+        return res
+          .status(400)
+          .json({ error: "No email associated with account" });
+      }
+
+      const issued = teamOtpStore.issue(teamOtpKey(teamId, req.user.id));
+
+      if (issued.error === "locked") {
+        return res.status(429).json({
+          error: "Too many incorrect attempts. Please try again later.",
+          retryAfterMs: issued.retryAfterMs,
+        });
+      }
+      if (issued.error === "cooldown") {
+        return res.status(429).json({
+          error:
+            "An OTP was sent recently. Please wait before requesting another.",
+          retryAfterMs: issued.retryAfterMs,
+        });
+      }
+
+      await sendTeamRecoveryOtpEmail(
+        user.email,
+        user.name,
+        wallet.accountName,
+        issued.otp,
+      );
+
+      await auditRecovery(
+        "recovery.otp_sent",
+        req.recoveryApproval,
+        req.user.id,
+      ).catch((e) => console.error("audit failed:", e));
+
+      res.json({ message: "OTP sent", email: maskEmail(user.email) });
+    } catch (err) {
+      console.error("Team recovery request-otp failed:", err);
+      res.status(500).json({ error: "Failed to send OTP" });
+    }
+  },
+);
+
+router.post(
+  "/:teamId/wallet/recovery/verify-otp",
+  authenticate,
+  requireRecoveryAccess,
+  requireApprovedRecovery,
+  async (req, res) => {
+    const { teamId } = req.params;
+    const { otp } = req.body;
+
+    if (!otp) return res.status(400).json({ error: "OTP required" });
+
+    const result = teamOtpStore.verify(teamOtpKey(teamId, req.user.id), otp);
+
+    if (result.status === "none") {
+      return res
+        .status(401)
+        .json({ error: "No OTP requested. Request a new one." });
+    }
+    if (result.status === "expired") {
+      return res.status(401).json({ error: "OTP expired. Request a new one." });
+    }
+    if (result.status === "locked") {
+      return res.status(429).json({
+        error: "Too many incorrect attempts. Please try again later.",
+        retryAfterMs: result.retryAfterMs,
+      });
+    }
+    if (result.status === "incorrect") {
+      return res.status(401).json({ error: "Incorrect OTP" });
+    }
+
+    // Single use: whoever flips APPROVED -> CONSUMED gets to reveal.
+    const consumed = await prisma.recoveryApproval.updateMany({
+      where: { id: req.recoveryApproval.id, status: "APPROVED" },
+      data: { status: "CONSUMED", consumedAt: new Date() },
+    });
+    if (consumed.count !== 1) {
+      return res.status(409).json({ error: "This approval was already used" });
+    }
+
+    try {
+      const wallet = await prisma.teamWallet.findUnique({ where: { teamId } });
+      if (!wallet) {
+        return res.status(404).json({ error: "No wallet found for this team" });
+      }
+
+      // walletId from the team's ZcashParams row is the only source of the
+      // wallet directory (see buildTeamParams).
+      const params = await buildTeamParams(teamId, wallet);
+      const recoveryInfo = await executeZingoCliRecoveryInfo(
+        "recovery_info",
+        params,
+      );
+
+      // Audit trail. Never log recoveryInfo.
+      console.warn(
+        `🔑 Team wallet recovery revealed: team=${teamId} by user=${req.user.id}`,
+      );
+      await auditRecovery(
+        "recovery.revealed",
+        req.recoveryApproval,
+        req.user.id,
+      );
+
+      res.set("Cache-Control", "no-store");
+      res.json({ data: recoveryInfo });
+    } catch (err) {
+      console.error("Team recovery fetch failed:", err);
+      await prisma.recoveryApproval
+        .updateMany({
+          where: { id: req.recoveryApproval.id, status: "CONSUMED" },
+          data: { status: "APPROVED", consumedAt: null },
+        })
+        .catch(() => {});
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+router.post(
+  "/:teamId/wallet/recovery/requests/:approvalId/challenge",
+  authenticate,
+  async (req, res) => {
+    try {
+      const approval = await loadSignableApproval(req, res);
+      if (!approval) return;
+      res.json(await issueRecoveryChallenge(prisma, req.user.id, approval));
+    } catch (err) {
+      if (err.status)
+        return res.status(err.status).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: "Failed to issue challenge" });
+    }
+  },
+);
+
+// Only fields safe to show; never keys, assertions, nonces or payee addresses.
+const AUDIT_SAFE = [
+  "candidateId",
+  "executorId",
+  "revealerId",
+  "keyId",
+  "chain",
+  "executableAt",
+  "wasStatus",
+  "threshold",
+];
+function publicAuditData(d) {
+  const o = {};
+  for (const k of AUDIT_SAFE) if (d?.[k] !== undefined) o[k] = d[k];
+  if (d?.totalZat !== undefined) o.totalZat = Number(d.totalZat);
+  if (Array.isArray(d?.items)) o.itemCount = d.items.length;
+  else if (Array.isArray(d?.bountyIds)) o.itemCount = d.bountyIds.length;
+  return o;
+}
+
+router.get(
+  "/:teamId/passkey-activity",
+  authenticate,
+  requireTeamManager,
+  async (req, res) => {
+    try {
+      const { teamId } = req.params;
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 50), 100);
+      const cursor = parseInt(req.query.cursor) || null;
+
+      const [proposals, eligible] = await Promise.all([
+        prisma.payoutProposal.findMany({
+          where: { teamId },
+          select: { id: true },
+        }),
+        getEligibleApproverIds(prisma, teamId),
+      ]);
+
+      const kind = req.query.kind; // "payout" | "recovery"
+      const payoutOr = [
+        { proposalId: { in: proposals.map((p) => p.id) } },
+        { event: { startsWith: "key." }, actorId: { in: eligible } },
+      ];
+      const recoveryOr = [
+        {
+          event: { startsWith: "recovery." },
+          data: { path: ["teamId"], equals: teamId },
+        },
+      ];
+      const OR =
+        kind === "recovery"
+          ? recoveryOr
+          : kind === "payout"
+            ? payoutOr
+            : [...payoutOr, ...recoveryOr];
+
+      const rows = await prisma.payoutAudit.findMany({
+        where: {
+          ...(cursor && { id: { lt: cursor } }),
+          OR,
+        },
+        orderBy: { id: "desc" },
+        take: limit + 1,
+      });
+
+      const hasMore = rows.length > limit;
+      const page = hasMore ? rows.slice(0, limit) : rows;
+      const events = page.map((r) => ({
+        id: r.id,
+        at: r.at,
+        event: r.event,
+        actorId: r.actorId,
+        proposalId: r.proposalId,
+        data: publicAuditData(r.data),
+      }));
+
+      const ids = new Set();
+      for (const e of events) {
+        [e.actorId, e.data.candidateId, e.data.executorId, e.data.revealerId]
+          .filter(Boolean)
+          .forEach((id) => ids.add(id));
+      }
+      const users = await prisma.user.findMany({
+        where: { id: { in: [...ids] } },
+        select: { id: true, name: true, nickname: true, avatar: true },
+      });
+
+      res.set("Cache-Control", "no-store");
+      res.json({
+        events,
+        users: Object.fromEntries(users.map((u) => [u.id, u])),
+        nextCursor: hasMore ? page[page.length - 1].id : null,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch passkey activity" });
+    }
+  },
+);
 
 // ─── Team Activity ───────────────────────────────────────────────────────────
 
