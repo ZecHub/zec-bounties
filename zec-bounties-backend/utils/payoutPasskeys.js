@@ -149,8 +149,33 @@ async function verifyVoteAssertion({
   return { ok: v.verified, newCounter: v.authenticationInfo?.newCounter ?? 0 };
 }
 
+// Verify an assertion against an arbitrary expected challenge (used by recovery approvals).
+async function verifyAssertionForChallenge({
+  challenge,
+  assertion,
+  key,
+  counter = 0,
+}) {
+  assertConfigured();
+  const v = await verifyAuthenticationResponse({
+    response: assertion,
+    expectedChallenge: challenge,
+    expectedOrigin: ORIGINS,
+    expectedRPID: RP_ID,
+    credential: {
+      id: key.credentialId,
+      publicKey: Uint8Array.from(Buffer.from(key.publicKey, "base64url")),
+      counter,
+      transports: key.transports,
+    },
+    requireUserVerification: true,
+  });
+  return { ok: v.verified, newCounter: v.authenticationInfo?.newCounter ?? 0 };
+}
+
 module.exports = {
   RP_ID,
+  ORIGINS,
   KEY_DELAY_MS,
   b64u,
   itemsOf,
@@ -160,4 +185,5 @@ module.exports = {
   registrationOptions,
   verifyRegistration,
   verifyVoteAssertion,
+  verifyAssertionForChallenge,
 };

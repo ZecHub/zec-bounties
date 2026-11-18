@@ -112,6 +112,8 @@ import {
 import { toast } from "sonner";
 import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
 import { ProfileLink } from "@/components/profile-link";
+import { RecoveryPanel } from "@/components/recovery/recovery-panel";
+import { api } from "@/lib/payout-passkeys";
 
 type Tab =
   | "Overview"
@@ -119,6 +121,7 @@ type Tab =
   | "Community"
   | "Members"
   | "Treasury"
+  | "Activity"
   | "Settings";
 const TABS: Tab[] = [
   "Overview",
@@ -126,6 +129,7 @@ const TABS: Tab[] = [
   "Community",
   "Members",
   "Treasury",
+  "Activity",
   "Settings",
 ];
 
@@ -401,7 +405,7 @@ export default function TeamConsolePage() {
             msOverflowStyle: "none",
           }}
         >
-          {TABS.map((tab) => (
+          {TABS.filter((t) => t !== "Activity" || canManage).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -442,7 +446,11 @@ export default function TeamConsolePage() {
             team={team}
             teamBounties={teamBounties}
             canManage={canManage}
+            isOwner={role === "OWNER"}
           />
+        )}
+        {activeTab === "Activity" && canManage && (
+          <PasskeyActivityTab team={team} />
         )}
         {activeTab === "Settings" && (
           <SettingsTab
@@ -2089,6 +2097,348 @@ function TeamActivityFeed({
   );
 }
 
+function TeamRecoveryGate({ team, isOwner }: { team: Team; isOwner: boolean }) {
+  const {
+    currentUser,
+    recoveryApprovals,
+    fetchRecoveryApproval,
+    requestRecoveryApproval,
+    approveRecoveryApproval,
+    cancelRecoveryApproval,
+    requestTeamRecoveryOtp,
+    verifyTeamRecoveryOtp,
+  } = useBounty();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const approval = recoveryApprovals[team.id] ?? null;
+
+  useEffect(() => {
+    fetchRecoveryApproval(team.id);
+  }, [team.id]);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e: any) {
+      setError(e?.message ?? "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const wrap = (children: React.ReactNode) => (
+    <div className="space-y-3 rounded-xl border bg-card p-5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+        Recovery information
+      </h3>
+      {children}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+
+  if (!approval) {
+    if (!isOwner) {
+      return wrap(
+        <p className="text-xs text-muted-foreground">
+          The owner can request access to the seed phrase. You'll be asked to
+          approve with your passkey.
+        </p>,
+      );
+    }
+    const eligible = team.members.filter(
+      (m) => m.role === "OWNER" || m.role === "ADMIN",
+    ).length;
+    const needed = Math.min(3, eligible);
+    return wrap(
+      <>
+        <p className="text-xs text-muted-foreground">
+          Viewing the seed phrase needs passkey approval from {needed} of{" "}
+          {eligible} owners/admins
+          {eligible < 3
+            ? " (all of them, since the team has fewer than 3)"
+            : ""}
+          .
+        </p>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => run(() => requestRecoveryApproval(team.id))}
+        >
+          {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+          Request approval
+        </Button>
+      </>,
+    );
+  }
+
+  const isRequester = approval.requesterId === currentUser?.id;
+  const iSigned = !!currentUser && approval.signedIds.includes(currentUser.id);
+  const canSign =
+    !!currentUser && approval.approvers.some((a) => a.id === currentUser.id);
+
+  if (approval.status === "APPROVED" && isRequester) {
+    return wrap(
+      <>
+        <p className="text-xs text-muted-foreground">
+          Approved. Verify by email to reveal. This expires shortly and works
+          once.
+        </p>
+        <RecoveryPanel
+          key={approval.id}
+          requestOtp={() => requestTeamRecoveryOtp(team.id, approval.id)}
+          verifyOtp={(otp) => verifyTeamRecoveryOtp(team.id, otp, approval.id)}
+        />
+      </>,
+    );
+  }
+
+  return wrap(
+    <>
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">
+          {approval.status === "APPROVED"
+            ? "Approved, waiting for the requester"
+            : `${approval.signedIds.length} / ${approval.threshold} signed`}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          Expires {format(new Date(approval.expiresAt), "HH:mm")}
+        </span>
+      </div>
+      <div className="divide-y rounded-lg border">
+        {approval.approvers.map((a) => (
+          <div
+            key={a.id}
+            className="flex items-center justify-between px-3 py-2"
+          >
+            <span className="text-sm">{displayName(a as any)}</span>
+            {approval.signedIds.includes(a.id) ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : (
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {approval.status === "OPEN" && canSign && !iSigned && (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => run(() => approveRecoveryApproval(team.id))}
+          >
+            {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+            Approve with passkey
+          </Button>
+        )}
+        {(isRequester || currentUser?.role === "ADMIN") && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              run(() => cancelRecoveryApproval(team.id, approval.id))
+            }
+          >
+            Cancel request
+          </Button>
+        )}
+      </div>
+    </>,
+  );
+}
+
+type ActivityEvent = {
+  id: number;
+  at: string;
+  event: string;
+  actorId: string | null;
+  data: {
+    candidateId?: string;
+    executorId?: string;
+    revealerId?: string;
+    totalZat?: number;
+    itemCount?: number;
+    wasStatus?: string;
+  };
+};
+
+function PasskeyActivityTab({ team }: { team: Team }) {
+  const [view, setView] = useState<"payout" | "recovery">("payout");
+
+  const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [users, setUsers] = useState<Record<string, any>>({});
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (next?: number | null, kind = view) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const q = `?kind=${kind}${next ? `&cursor=${next}` : ""}`;
+      const json = await api(`/teams/${team.id}/passkey-activity${q}`);
+      setEvents((prev) => (next ? [...prev, ...json.events] : json.events));
+      setUsers((prev) => ({ ...prev, ...json.users }));
+      setCursor(json.nextCursor);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load activity");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setEvents([]);
+    setCursor(null);
+    load();
+  }, [team.id, view]);
+
+  const name = (id?: string | null) =>
+    id && users[id] ? displayName(users[id]) : "Someone";
+
+  const kind = (e: string) =>
+    e.startsWith("recovery.")
+      ? "Recovery"
+      : e.startsWith("key.")
+        ? "Passkey"
+        : "Payout";
+
+  const describeEvent = (e: ActivityEvent) => {
+    const d = e.data;
+    const zec =
+      d.totalZat !== undefined ? ` · ${(d.totalZat / 1e8).toFixed(4)} ZEC` : "";
+    switch (e.event) {
+      case "round.opened":
+        return `opened a payout round (${d.itemCount ?? "?"} bounties${zec})`;
+      case "vote.cast":
+        return `voted for ${name(d.candidateId)} to process a payout`;
+      case "round.decided":
+        return `cast the deciding vote: ${name(d.executorId)} will process the payout`;
+      case "round.cancelled":
+        return `cancelled a payout round${d.wasStatus ? ` (was ${d.wasStatus})` : ""}`;
+      case "round.executed":
+        return `executed a payout (${d.itemCount ?? "?"} bounties)`;
+      case "recovery.requested":
+        return "opened a seed phrase access request";
+      case "recovery.vote":
+        return `approved ${name(d.revealerId)} viewing the seed phrase`;
+      case "recovery.approved":
+        return `gave the final approval: ${name(d.revealerId)} may view the seed phrase`;
+      case "recovery.cancelled":
+        return "cancelled a seed phrase access request";
+      case "recovery.otp_sent":
+        return "requested the email code to view the seed phrase";
+      case "recovery.revealed":
+        return "viewed the seed phrase";
+      case "key.enrolled":
+        return "enrolled a payout passkey";
+      case "key.revoked":
+        return "revoked a payout passkey";
+      default:
+        return e.event.replace(/[._]/g, " ");
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold">Passkey activity</h2>
+          <p className="text-xs text-muted-foreground">
+            Payout votes and seed phrase access, from the tamper-evident audit
+            log.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={loading}
+          onClick={() => load()}
+        >
+          {loading ? (
+            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-1.5 h-4 w-4" />
+          )}
+          Refresh
+        </Button>
+      </div>
+
+      <div className="mb-4 flex w-fit items-center gap-1 rounded-lg border bg-muted/40 p-1">
+        {(
+          [
+            ["payout", "Payout activity"],
+            ["recovery", "Recovery activity"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setView(key)}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium ${
+              view === key
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="mb-3 text-xs text-destructive">{error}</p>}
+
+      {events.length === 0 && !loading ? (
+        <p className="rounded-xl border border-dashed bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
+          No {view} activity yet.
+        </p>
+      ) : (
+        <div className="divide-y rounded-xl border bg-card">
+          {events.map((e) => (
+            <div key={e.id} className="flex items-start gap-3 px-4 py-3">
+              <Avatar className="h-8 w-8 shrink-0 border">
+                <AvatarImage
+                  src={(e.actorId && users[e.actorId]?.avatar) || undefined}
+                />
+                <AvatarFallback className="text-[10px]">
+                  {initials(name(e.actorId))}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm">
+                  <span className="font-medium">{name(e.actorId)}</span>{" "}
+                  {describeEvent(e)}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {format(new Date(e.at), "MMM d, yyyy 'at' HH:mm")}
+                </p>
+              </div>
+              <Badge variant="outline" className="shrink-0 text-[10px]">
+                {kind(e.event)}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {cursor && (
+        <div className="mt-3 flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => load(cursor)}
+          >
+            Load more
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
   const { addTeamMembers, removeTeamMember, users, fetchUsers } = useBounty();
   const [showInvite, setShowInvite] = useState(false);
@@ -2587,10 +2937,12 @@ function TreasuryTab({
   team,
   teamBounties,
   canManage,
+  isOwner,
 }: {
   team: Team;
   teamBounties: Bounty[];
   canManage: boolean;
+  isOwner: boolean;
 }) {
   const {
     deleteTeamWallet,
@@ -2608,6 +2960,8 @@ function TreasuryTab({
     teamSyncStatusLoading,
     teamSyncStatusError,
     fetchTeamSyncStatus,
+    requestTeamRecoveryOtp,
+    verifyTeamRecoveryOtp,
   } = useBounty();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -2806,6 +3160,7 @@ function TreasuryTab({
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Wallet details
             </h3>
+            {canManage && <TeamRecoveryGate team={team} isOwner={isOwner} />}
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-muted-foreground">Account name</dt>
