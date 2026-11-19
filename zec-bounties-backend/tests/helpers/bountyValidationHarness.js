@@ -96,8 +96,11 @@ function loadRoutes(prisma) {
     "../utils/zingo/getZingo": { invalidateZingo: noOp },
     "../helpers/zcash/zcashHelper.js": { getWalletDataDir: noOp },
     "../utils/ipfs/pinata": { uploadToPinata: noOp, pinataUrl: noOp },
+    "../helpers/recoveryOtp": require("../../helpers/recoveryOtp"),
+    "../utils/recoveryApprovals": {},
+    "../utils/payoutAudit": { appendAudit: noOp },
   };
-  for (const name of ["Seed", "Balance", "Addresses", "QuickSend", "Transactions", "Rescan", "Sync"]) {
+  for (const name of ["Seed", "Balance", "Addresses", "QuickSend", "Transactions", "Rescan", "Sync", "RecoveryInfo"]) {
     dependencies[`../utils/zingo/zingoLib${name}`] = noOp;
   }
   const handlers = {};
