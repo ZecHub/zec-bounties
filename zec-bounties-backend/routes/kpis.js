@@ -434,6 +434,8 @@ router.get(
 
       completedBounties.forEach((bounty) => {
         if (!bounty.completedAt) return;
+        // Nobody earned (or was paid) work that was closed with no assignee.
+        if (bounty.assignee == null) return;
 
         const date = new Date(bounty.completedAt);
         const monthKey = date.toISOString().slice(0, 7);
