@@ -245,10 +245,10 @@ const SPECIALTY_BADGE_KEYS = new Set([
 
 function hasSpecialtyBadge(badges) {
   if (!Array.isArray(badges)) return false;
-  return badges.some((b) => typeof b === "string" && SPECIALTY_BADGE_KEYS.has(b));
+  return badges.some(
+    (b) => typeof b === "string" && SPECIALTY_BADGE_KEYS.has(b),
+  );
 }
-
-
 
 async function isGoldStarOrAbove(userId) {
   const user = await prisma.user.findUnique({
@@ -1536,8 +1536,20 @@ router.post("/:id/submit", authenticate, async (req, res) => {
     if (!requireOnboarded(req, res)) return;
 
     const { id: bountyId } = req.params;
-    const { description, deliverableUrl } = req.body;
-    const userId = req.user.id;
+    const { description, deliverableUrl, onBehalfOf } = req.body;
+
+    // Only global admins may file work for someone else. The target must still
+    // pass the isAssigned check inside the transaction below.
+    if (onBehalfOf != null && typeof onBehalfOf !== "string") {
+      return res.status(400).json({ error: "onBehalfOf must be a user id" });
+    }
+    if (onBehalfOf && onBehalfOf !== req.user.id && req.user.role !== "ADMIN") {
+      return res
+        .status(403)
+        .json({ error: "Only admins can submit work on behalf of others" });
+    }
+    const isProxy = !!onBehalfOf && onBehalfOf !== req.user.id;
+    const userId = isProxy ? onBehalfOf : req.user.id; // the submitter of record
 
     if (typeof description !== "string" || !description.trim()) {
       return res.status(400).json({ error: "Work description is required" });
@@ -1609,6 +1621,7 @@ router.post("/:id/submit", authenticate, async (req, res) => {
               data: {
                 bountyId,
                 submittedBy: userId,
+                filedBy: isProxy ? req.user.id : null,
                 description: description.trim(),
                 deliverableUrl: deliverableUrl?.trim() || null,
                 status: "pending",
@@ -1640,7 +1653,13 @@ router.post("/:id/submit", authenticate, async (req, res) => {
               },
             });
             const activityRow = await tx.bountyActivity.create({
-              data: { bountyId, actorId: userId, type: "WORK_SUBMITTED" },
+              data: {
+                bountyId,
+                actorId: req.user.id,
+                type: "WORK_SUBMITTED",
+                ...(isProxy && { meta: { submittedFor: userId } }),
+              },
+
               include: { actor: { select: USER_SELECT_BASIC } },
             });
             return { workSubmission, updatedBounty, activityRow };
@@ -1665,14 +1684,14 @@ router.post("/:id/submit", authenticate, async (req, res) => {
       "work_submitted",
       workSubmission,
       bountyId,
-      userId,
+      req.user.id,
       await getSubmissionRecipients(bountyId, userId),
     );
     await broadcastBountyEvent(
       "bounty_updated",
       withoutSubmissionBodies(updatedBounty),
       bountyId,
-      userId,
+      req.user.id,
     );
 
     res.json({
@@ -2021,6 +2040,7 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       select: {
         id: true,
         submittedBy: true,
+        filedBy: true,
         submittedAt: true,
         reviewedAt: true,
         bountyId: true,
@@ -2030,10 +2050,11 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
     if (!submission)
       return res.status(404).json({ error: "Submission not found" });
 
-    if (submission.submittedBy !== userId) {
+    const isFiler = req.user.role === "ADMIN" && submission.filedBy === userId;
+    if (submission.submittedBy !== userId && !isFiler) {
       return res
         .status(403)
-        .json({ error: "You can only edit your own submission" });
+        .json({ error: "You can only edit submissions you filed" });
     }
 
     if (submission.status === "pending") {
@@ -2056,7 +2077,7 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       const edited = await tx.workSubmission.updateMany({
         where: {
           id: submissionId,
-          submittedBy: userId,
+          submittedBy: submission.submittedBy,
           status: submission.status,
           submittedAt: submission.submittedAt,
           reviewedAt: submission.reviewedAt,
@@ -2064,6 +2085,7 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
         data: {
           description: description.trim(),
           deliverableUrl: deliverableUrl?.trim() || null,
+          editedAt: new Date(),
           ...(wasRevision && {
             status: "pending",
             submittedAt: new Date(),
@@ -2105,14 +2127,17 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       return [updSub, updBounty];
     });
 
-    await invalidateSubmissions(submission.bountyId, userId);
+    await invalidateSubmissions(submission.bountyId, submission.submittedBy);
     if (wasRevision) await invalidateBounty(submission.bountyId);
     await broadcastBountyEvent(
       "submission_edited",
       updated,
       submission.bountyId,
       userId,
-      await getSubmissionRecipients(submission.bountyId, userId),
+      await getSubmissionRecipients(
+        submission.bountyId,
+        submission.submittedBy,
+      ),
     );
     if (updatedBounty)
       await broadcastBountyEvent(
@@ -3166,7 +3191,7 @@ router.get("/:id/activity", authenticate, async (req, res) => {
       where: { bountyId: bounty.id },
       orderBy: { createdAt: "desc" },
       take: 200,
-      include: { actor: { select: USER_SELECT_BASIC } },
+      include: { actor: { select: USER_SELECT } },
     });
     res.json(activity);
   } catch (err) {

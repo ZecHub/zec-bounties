@@ -185,6 +185,8 @@ model WorkSubmission {
   id             String    @id @default(cuid())
   bountyId       String
   submittedBy    String
+  filedBy     String?   
+  editedAt    DateTime? 
   description    String
   deliverableUrl String?
   submittedAt    DateTime  @default(now())
@@ -243,6 +245,7 @@ model Team {
   communityMembers CommunityMember[] @relation("TeamCommunity")
   verifications TeamVerification[] @relation("TeamVerifications")
   payoutBy PayoutBy @default(ADMIN)
+  recoveryApprovals RecoveryApproval[]
 
   payoutProposals     PayoutProposal[]
 
@@ -539,4 +542,42 @@ model ZecUsdMonthly {
   fetchedAt   DateTime @default(now()) @map("fetched_at")
 
   @@map("zec_usd_monthly")
+}
+
+enum RecoveryApprovalStatus {
+  OPEN
+  APPROVED
+  CONSUMED
+  CANCELLED
+  EXPIRED
+}
+
+model RecoveryApproval {
+  id          String                  @id @default(uuid())
+  teamId      String
+  team        Team                    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  requesterId String
+  threshold   Int
+  approverIds String[]
+  status      RecoveryApprovalStatus  @default(OPEN)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime                @default(now())
+  signatures  RecoveryApprovalSignature[]
+
+  @@index([teamId, status])
+}
+
+model RecoveryApprovalSignature {
+  id          String           @id @default(uuid())
+  approvalId  String
+  approval    RecoveryApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  userId      String
+  keyId       String
+  voteNonce   String
+  assertion   Json
+
+  createdAt   DateTime         @default(now())
+
+  @@unique([approvalId, userId])
 }

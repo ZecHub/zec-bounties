@@ -25,10 +25,30 @@ const matches = (row, where = {}) =>
 
 stub("utils/payoutProposals", {
   loadDecidedProposals: async () => ({
-    usable: new Map([["b1", { bountyIds: ["b1"], recipient: "u1fixture" }]]),
+    // Mirrors the real shape: a round carries per-bounty `items`, and the
+    // recipient lives on the item (not on the round). authorize-payment reads
+    // it via `itemFor(round, bountyId).recipient`, exactly like the team path.
+    usable: new Map([
+      [
+        "b1",
+        {
+          bountyIds: ["b1"],
+          items: [
+            {
+              bountyId: "b1",
+              payeeId: "u1",
+              recipient: "u1fixture",
+              amountZat: "100000000",
+            },
+          ],
+        },
+      ],
+    ]),
     rejected: new Map(),
   }),
   consumeProposals: async () => {},
+  itemFor: (round, bountyId) =>
+    (round.items || []).find((i) => i.bountyId === bountyId),
 });
 
 const prisma = {

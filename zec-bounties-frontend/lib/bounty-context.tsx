@@ -33,6 +33,7 @@ import { backendUrl, backendWebSpocketUrl } from "./configENV";
 import { displayName } from "./displayName";
 import { bountyUpdatedAt, mergeBounty } from "./bounty-merge";
 import { signPayoutVote } from "./payout-passkeys";
+import { signRecoveryApproval } from "./recovery-passkeys";
 
 interface BountyCategory {
   id: number;
@@ -116,6 +117,22 @@ export interface PayoutRound {
   myVote: string | null;
 }
 
+export interface RecoveryApproval {
+  id: string;
+  teamId: string;
+  requesterId: string;
+  status: "OPEN" | "APPROVED" | "CONSUMED" | "CANCELLED" | "EXPIRED";
+  threshold: number;
+  expiresAt: string;
+  approvers: {
+    id: string;
+    name?: string;
+    nickname?: string;
+    avatar?: string;
+  }[];
+  signedIds: string[];
+}
+
 // Moves the caller's vote locally so the UI updates before the server answers.
 function withMyVote(round: PayoutRound, candidateId: string): PayoutRound {
   const counts = new Map(round.tally.map((t) => [t.candidateId, t.votes]));
@@ -144,6 +161,20 @@ interface BountyContextType {
     otp: string,
     accountName: string,
   ) => Promise<RecoveryData>;
+  requestTeamRecoveryOtp: (
+    teamId: string,
+    approvalId: string,
+  ) => Promise<{ message: string; email: string }>;
+  verifyTeamRecoveryOtp: (
+    teamId: string,
+    otp: string,
+    approvalId: string,
+  ) => Promise<RecoveryData>;
+  recoveryApprovals: Record<string, RecoveryApproval | null>;
+  fetchRecoveryApproval: (teamId: string) => Promise<void>;
+  requestRecoveryApproval: (teamId: string) => Promise<void>;
+  approveRecoveryApproval: (teamId: string) => Promise<void>;
+  cancelRecoveryApproval: (teamId: string, approvalId: string) => Promise<void>;
   nicknameUpdate: (nickname: string) => Promise<boolean | undefined>;
   selectRole: (role: "HUNTER" | "TEAM") => Promise<boolean>;
   disconnectDiscord: () => Promise<boolean>;
@@ -344,6 +375,7 @@ interface BountyContextType {
     submissionData: {
       description: string;
       deliverableUrl?: string;
+      onBehalfOf?: string;
     },
   ) => Promise<void>;
 
@@ -615,6 +647,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
+  const [recoveryApprovals, setRecoveryApprovals] = useState<
+    Record<string, RecoveryApproval | null>
+  >({});
 
   const fetchBountiesReqId = useRef(0);
   const fetchMyBountiesReqId = useRef(0);
@@ -2170,6 +2205,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     submissionData: {
       description: string;
       deliverableUrl?: string;
+      onBehalfOf?: string;
     },
   ) => {
     if (!currentUser) throw new Error("User not authenticated");
@@ -2188,6 +2224,19 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
       const result = await res.json();
       applyBountyUpdate(result.bounty);
+
+      if (currentUser.role === "ADMIN") {
+        const created: WorkSubmission = result.workSubmission;
+        setAllSubmissions((prev) =>
+          prev.some((s) => s.id === created.id) ? prev : [created, ...prev],
+        );
+        setBountySubmissions((prev) => ({
+          ...prev,
+          [bountyId]: (prev[bountyId] || []).some((s) => s.id === created.id)
+            ? prev[bountyId]
+            : [created, ...(prev[bountyId] || [])],
+        }));
+      }
     } catch (error) {
       console.error("Failed to submit work:", error);
       throw error;
@@ -3194,6 +3243,17 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
               },
             }));
             setTeamActivityVersion((v) => v + 1);
+            break;
+
+          case "recovery_approval_updated":
+            setRecoveryApprovals((prev) => ({
+              ...prev,
+              [msg.payload.teamId]: ["OPEN", "APPROVED"].includes(
+                msg.payload.status,
+              )
+                ? msg.payload
+                : null,
+            }));
             break;
         }
       };
@@ -4257,6 +4317,126 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     return data;
   };
 
+  const requestTeamRecoveryOtp = async (
+    teamId: string,
+    approvalId: string,
+  ): Promise<{ message: string; email: string }> => {
+    const res = await fetch(
+      `${backendUrl}/api/teams/${teamId}/wallet/recovery/request-otp`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ approvalId }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Failed to send OTP");
+    }
+    return res.json();
+  };
+
+  const verifyTeamRecoveryOtp = async (
+    teamId: string,
+    otp: string,
+    approvalId: string,
+  ): Promise<RecoveryData> => {
+    const res = await fetch(
+      `${backendUrl}/api/teams/${teamId}/wallet/recovery/verify-otp`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ otp, approvalId }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Verification failed");
+    }
+    const { data } = await res.json();
+    return data;
+  };
+
+  const fetchRecoveryApproval = async (teamId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/recovery/requests/current`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch recovery approval");
+      const data = await res.json();
+      setRecoveryApprovals((p) => ({ ...p, [teamId]: data.approval ?? null }));
+    } catch (error) {
+      console.error("Failed to fetch recovery approval:", error);
+    }
+  };
+
+  const requestRecoveryApproval = async (teamId: string) => {
+    if (!currentUser) throw new Error("Unauthorized");
+    const res = await fetch(
+      `${backendUrl}/api/teams/${teamId}/wallet/recovery/requests`,
+      { method: "POST", headers: getAuthHeaders() },
+    );
+    const json = await res.json().catch(() => ({}));
+    if (json.approval) {
+      setRecoveryApprovals((p) => ({ ...p, [teamId]: json.approval }));
+    }
+    if (!res.ok && !json.approval) {
+      throw new Error(json.error || "Failed to request approval");
+    }
+  };
+
+  const approveRecoveryApproval = async (teamId: string) => {
+    const prev = recoveryApprovals[teamId];
+    if (!currentUser || !prev) throw new Error("No open approval round");
+    if (prev.signedIds.includes(currentUser.id)) return;
+
+    const { challengeId, assertion } = await signRecoveryApproval(
+      teamId,
+      prev.id,
+      (m) =>
+        window.confirm(
+          `Approve ${displayName(
+            (users.find((u) => u.id === m.requester) ?? {}) as any,
+          )} to view this team wallet's seed phrase?\n\n` +
+            `This needs ${m.threshold} passkey approval${m.threshold === 1 ? "" : "s"}. ` +
+            `Only approve if you expected this request.`,
+        ),
+    );
+
+    setRecoveryApprovals((p) => ({
+      ...p,
+      [teamId]: { ...prev, signedIds: [...prev.signedIds, currentUser.id] },
+    }));
+    try {
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/wallet/recovery/requests/${prev.id}/approve`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ challengeId, assertion }),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to approve");
+      setRecoveryApprovals((p) => ({ ...p, [teamId]: json.approval }));
+    } catch (error) {
+      setRecoveryApprovals((p) => ({ ...p, [teamId]: prev })); // rollback
+      throw error;
+    }
+  };
+
+  const cancelRecoveryApproval = async (teamId: string, approvalId: string) => {
+    const res = await fetch(
+      `${backendUrl}/api/teams/${teamId}/wallet/recovery/requests/${approvalId}/cancel`,
+      { method: "POST", headers: getAuthHeaders() },
+    );
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Failed to cancel");
+    setRecoveryApprovals((p) => ({ ...p, [teamId]: null }));
+  };
+
   const uploadTeamBanner = async (
     teamId: string,
     file: File,
@@ -4512,6 +4692,13 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         isSwitchingRole,
         requestRecoveryOtp,
         verifyRecoveryOtp,
+        requestTeamRecoveryOtp,
+        verifyTeamRecoveryOtp,
+        approveRecoveryApproval,
+        cancelRecoveryApproval,
+        fetchRecoveryApproval,
+        recoveryApprovals,
+        requestRecoveryApproval,
         nicknameUpdate,
         selectRole,
         disconnectDiscord,
