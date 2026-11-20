@@ -99,7 +99,7 @@ export default function ApiDocsPage() {
         <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-4 font-mono text-xs leading-relaxed">
 {`curl -sS "https://zechub.zone/api/leaderboard?limit=25"
 curl -sS "https://zechub.zone/api/users/<id-or-nickname>/public"
-curl -sS "https://zechub.zone/api/bounties"
+curl -sS "https://zechub.zone/api/bounties?page=1&limit=50"
 
 curl -sS -X POST "https://zechub.zone/api/bounties/apply" \\
   -H "Authorization: Bearer $TOKEN" \\
@@ -172,6 +172,14 @@ curl -sS -X POST "https://zechub.zone/api/bounties/apply" \\
             </div>
           ))}
         </div>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          <code>GET /api/bounties</code> returns <code>data</code>, <code>total</code>,{" "}
+          <code>page</code>, and <code>limit</code>. Pages start at 1. The page size defaults
+          to 10 and is capped at 50. To find tasks marked To Do, select rows with{" "}
+          <code>{'status === "TO_DO"'}</code> from each page. The endpoint ignores the{" "}
+          <code>status</code> query parameter. Keep requesting the next page while{" "}
+          <code>{"page * limit < total"}</code>, even if the current page has no matches.
+        </p>
       </section>
 
       <section className="space-y-3">
