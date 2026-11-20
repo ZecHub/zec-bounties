@@ -94,10 +94,13 @@ function loadRoutes(prisma) {
     "crypto": require("node:crypto"),
     "../zcash/init": { initZcashOnce: noOp, initZcashOnceForTeams: noOp },
     "../utils/zingo/getZingo": { invalidateZingo: noOp },
+    "../helpers/recoveryOtp": { OtpStore: class {} },
+    "../utils/recoveryApprovals": {},
+    "../utils/payoutAudit": { appendAudit: noOp },
     "../helpers/zcash/zcashHelper.js": { getWalletDataDir: noOp },
     "../utils/ipfs/pinata": { uploadToPinata: noOp, pinataUrl: noOp },
   };
-  for (const name of ["Seed", "Balance", "Addresses", "QuickSend", "Transactions", "Rescan", "Sync"]) {
+  for (const name of ["Seed", "Balance", "Addresses", "QuickSend", "Transactions", "Rescan", "Sync", "RecoveryInfo"]) {
     dependencies[`../utils/zingo/zingoLib${name}`] = noOp;
   }
   const handlers = {};
