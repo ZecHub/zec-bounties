@@ -3,6 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const router = express.Router();
 const { authenticate, isAdmin } = require("../middleware/auth");
 const { delCache } = require("../utils/cache");
+const { mergeVisibility } = require("../utils/privacy");
 const prisma = new PrismaClient();
 
 // Helper function to generate completedAt filter based on timeRange
@@ -63,6 +64,18 @@ function redactContributorsForClient(rows, isAdminUser) {
     const { UA_address, z_address, ...rest } = base;
     // Public clients only receive the ZEC total when the user opted in.
     if (!showEarnings) rest.totalEarned = null;
+    // Same flags as the public profile and /api/leaderboard.
+    const vis = mergeVisibility(u.profileVisibility);
+    if (!vis.showDisplayName) {
+      rest.name = "Anonymous contributor";
+      rest.nickname = null;
+    }
+    if (!vis.showAvatar) rest.avatar = null;
+    if (!vis.showCompleted) {
+      rest.completed = null;
+      rest.submitted = null;
+      rest.cancelled = null;
+    }
     return rest;
   });
 }
