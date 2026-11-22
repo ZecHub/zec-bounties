@@ -159,6 +159,8 @@ function HomeContent() {
     teamBountiesHasMore,
     fetchTeamBounties,
     loadMoreTeamBounties,
+    activeTeamId: shellTeamId,
+    setActiveTeamId,
   } = useBounty();
 
   const router = useRouter();
@@ -171,7 +173,7 @@ function HomeContent() {
   const [filterLoadError, setFilterLoadError] = useState(false);
   const [filterLoadRetry, setFilterLoadRetry] = useState(0);
   const filterLoadStarted = useRef(false);
-  const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
+  const [viewMode, setViewMode] = useState<"list" | "defrag">("list");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -208,10 +210,39 @@ function HomeContent() {
     );
   };
 
+  const prevShellTeam = useRef(shellTeamId);
+  const teamSyncMounted = useRef(false);
+
   const searchParamString = searchParams.toString();
   useEffect(() => {
     setFilters(readBountyBoardFilters(new URLSearchParams(searchParamString)));
   }, [searchParamString]);
+
+  useEffect(() => {
+    if (prevShellTeam.current === shellTeamId) return;
+    prevShellTeam.current = shellTeamId;
+    if ((shellTeamId ?? "") !== filters.teamId) {
+      updateFilter("teamId", shellTeamId ?? "");
+    }
+  }, [shellTeamId]);
+
+  useEffect(() => {
+    if (!teamSyncMounted.current) {
+      teamSyncMounted.current = true;
+      // First render: the URL wins; otherwise adopt the shell's selection
+      // (covers the sheet pushing the user here from another page)
+      if (!filters.teamId && shellTeamId) updateFilter("teamId", shellTeamId);
+      else if (filters.teamId && filters.teamId !== (shellTeamId ?? "")) {
+        prevShellTeam.current = filters.teamId;
+        setActiveTeamId(filters.teamId);
+      }
+      return;
+    }
+    if ((shellTeamId ?? "") !== filters.teamId) {
+      prevShellTeam.current = filters.teamId || null; // don't echo back
+      setActiveTeamId(filters.teamId || null);
+    }
+  }, [filters.teamId]);
 
   // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
   const displayCategories = ["All", ...categories.map((c) => c.name)];
@@ -291,7 +322,7 @@ function HomeContent() {
   );
 
   const defragBounties = useMemo(() => {
-    return [...filteredBounties].sort((a, b) => {
+    return [...shownBounties].sort((a, b) => {
       const ai = STATUS_ORDER.indexOf(a.status);
       const bi = STATUS_ORDER.indexOf(b.status);
       if (ai !== bi) return ai - bi;
@@ -299,7 +330,7 @@ function HomeContent() {
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
       );
     });
-  }, [filteredBounties]);
+  }, [shownBounties]);
 
   const missingUA = !currentUser?.UA_address;
 
@@ -364,7 +395,8 @@ function HomeContent() {
     filters.maxReward != null ||
     filters.deadline !== "" ||
     filters.status !== "" ||
-    filters.sort !== "newest";
+    filters.sort !== "newest" ||
+    statusView !== "open";
 
   const activeFilterCount = [
     filters.category !== "All",
