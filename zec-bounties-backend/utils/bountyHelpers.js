@@ -57,6 +57,14 @@ async function getBroadcastRecipients(bounty) {
 
   const recipients = new Set([bounty.createdBy]);
 
+  // Assignees are part of a private bounty's audience even when they are not
+  // team members. Present only when called with a real bounty row (not the
+  // synthetic team-event call), hence the guards.
+  if (bounty.assignee) recipients.add(bounty.assignee);
+  if (Array.isArray(bounty.assignees)) {
+    bounty.assignees.forEach((a) => recipients.add(a.userId));
+  }
+
   const admins = await prisma.user.findMany({
     where: { role: "ADMIN" },
     select: { id: true },
@@ -182,7 +190,13 @@ async function broadcastBountyEvent(
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: bountyId },
-      select: { isPrivate: true, createdBy: true, teamId: true },
+      select: {
+        isPrivate: true,
+        createdBy: true,
+        teamId: true,
+        assignee: true,
+        assignees: { select: { userId: true } },
+      },
     });
     if (!bounty) return;
     const recipients =
