@@ -64,9 +64,10 @@ interface ExportRow {
   id: string;
   title: string;
   bountyAmount: number;
-  paidAt: string;
+  paidAt?: string | null;
   chain: "MAIN" | "TEST";
   paymentTxId?: string | null;
+  [key: string]: any;
   assigneeUser?: {
     id: string;
     name?: string;
@@ -228,9 +229,7 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
                       <div className="text-sm">
                         <p
                           className={`font-medium leading-none ${
-                            isWinner
-                              ? "text-amber-700 dark:text-amber-300"
-                              : ""
+                            isWinner ? "text-amber-700 dark:text-amber-300" : ""
                           }`}
                         >
                           {user?.name ?? "—"}
@@ -321,11 +320,66 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
   );
 }
 
+const iso = (v?: string | null) => (v ? new Date(v).toISOString() : "");
+const names = (b: any, key: "name" | "email") =>
+  (b.assignees ?? []).map((a: any) => a.user?.[key] ?? "").join("; ");
+
+const FULL_EXPORT_COLUMNS: [string, (b: any) => unknown][] = [
+  ["id", (b) => b.id],
+  ["title", (b) => b.title],
+  ["description", (b) => b.description],
+  ["bountyAmount", (b) => b.bountyAmount],
+  ["dateCreated", (b) => iso(b.dateCreated)],
+  ["timeToComplete", (b) => iso(b.timeToComplete)],
+  ["status", (b) => b.status],
+  ["isApproved", (b) => b.isApproved],
+  ["isPaid", (b) => b.isPaid],
+  ["paymentAuthorized", (b) => b.paymentAuthorized],
+  ["paymentScheduled", (b) => b.paymentScheduled],
+  ["paymentBatchId", (b) => b.paymentBatchId],
+  ["paymentInFlight", (b) => b.paymentInFlight],
+  ["paidAt", (b) => iso(b.paidAt)],
+  ["completedAt", (b) => iso(b.completedAt)],
+  ["updatedAt", (b) => iso(b.updatedAt)],
+  ["exportedAt", (b) => iso(b.exportedAt)],
+  ["exportedBy", (b) => b.exportedBy],
+  ["chain", (b) => b.chain],
+  ["difficulty", (b) => b.difficulty],
+  ["isPrivate", (b) => b.isPrivate],
+  ["categoryId", (b) => b.categoryId],
+  ["teamId", (b) => b.teamId],
+  ["teamName", (b) => b.team?.name],
+  ["createdBy", (b) => b.createdBy],
+  ["createdByName", (b) => b.createdByUser?.name],
+  ["createdByEmail", (b) => b.createdByUser?.email],
+  ["assignee", (b) => b.assignee],
+  ["assigneeName", (b) => b.assigneeUser?.name],
+  ["assigneeEmail", (b) => b.assigneeUser?.email],
+  ["assigneeOfacVerified", (b) => b.assigneeUser?.ofacVerified],
+  ["payoutAddress", (b) => getPayoutAddress(b.chain, b.assigneeUser)],
+  ["assigneesNames", (b) => names(b, "name")],
+  ["assigneesEmails", (b) => names(b, "email")],
+  ["discordThreadId", (b) => b.discordThreadId],
+  ["suggestionReviewStatus", (b) => b.suggestionReviewStatus],
+  ["suggestionReviewReason", (b) => b.suggestionReviewReason],
+  ["targetRepo", (b) => b.targetRepo],
+  ["dueSoonReminderSentAt", (b) => iso(b.dueSoonReminderSentAt)],
+  ["overdueReminderSentAt", (b) => iso(b.overdueReminderSentAt)],
+  ["applicationsCount", (b) => b._count?.applications],
+  ["submissionsCount", (b) => b._count?.workSubmissions],
+  ["transactionsCount", (b) => b._count?.transactions],
+];
+
 // ─── Main export page ──────────────────────────────────────────────────────────
 export default function ExportPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { fetchExportPayments, updateUserOfac, fetchBountyById } = useBounty();
+  const {
+    fetchExportPayments,
+    fetchExportAllBounties,
+    updateUserOfac,
+    fetchBountyById,
+  } = useBounty();
 
   // ── Table state ──────────────────────────────────────────────────────────────
   const [rows, setRows] = useState<ExportRow[]>([]);
@@ -333,13 +387,38 @@ export default function ExportPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [baseUrl, setBaseUrl] = useState(BOUNTY_BASE_URL);
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [filters, setFilters] = useState<Record<string, string>>({
+    status: "",
+    chain: "",
+    difficulty: "",
+    isPaid: "",
+    isApproved: "",
+    exported: "",
+    dateField: "dateCreated",
+    from: "",
+    to: "",
+  });
+  const setFilter = (k: string, v: string) =>
+    setFilters((f) => ({ ...f, [k]: v }));
 
   // ── Modal state — driven entirely by ?bounty= in the URL ────────────────────
   const activeBountyId = searchParams.get("bounty");
   const [modalBounty, setModalBounty] = useState<Bounty | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
+
+  // ── Full export state ──
+  const [fullFilters, setFullFilters] = useState<Record<string, string>>({
+    status: "",
+    chain: "",
+    isPaid: "",
+    isApproved: "",
+    exported: "",
+    difficulty: "",
+    dateField: "dateCreated",
+    from: "",
+    to: "",
+  });
+  const [fullExporting, setFullExporting] = useState(false);
 
   // When the URL gains a ?bounty= param, fetch and show the modal
   useEffect(() => {
@@ -402,10 +481,7 @@ export default function ExportPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await fetchExportPayments(
-        fromDate || undefined,
-        toDate || undefined,
-      );
+      const data = await fetchExportAllBounties(filters);
       setRows(data);
       setLoaded(true);
     } finally {
@@ -453,41 +529,56 @@ export default function ExportPage() {
   };
 
   const handleExport = () => {
-    const headers = [
-      "Approval Date",
-      "OFAC Check Status",
-      "Recipient",
-      "Recipient Contact Info",
-      "Reason for Payment",
-      "Bounty URL",
-      "ZEC Amount",
-      "Shielded Address",
-      "Transaction ID",
+    const safe = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      // guard against CSV formula injection (titles/descriptions are user input)
+      return escapeCsv(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s);
+    };
+    const columns: [string, (b: any) => unknown][] = [
+      ...FULL_EXPORT_COLUMNS,
+      ["bountyUrl", (b) => `${baseUrl}/${b.id}`],
     ];
-    const csvRows = rows.map((row) => {
-      const recipient = getPrimaryRecipient(row);
-      return [
-        row.paidAt ? new Date(row.paidAt).toLocaleDateString("en-US") : "",
-        recipient?.ofacVerified ? "Completed" : "Pending",
-        recipient?.name ?? "",
-        recipient?.email ?? "",
-        row.title,
-        `${baseUrl}/${row.id}`,
-        row.bountyAmount.toString(),
-        getPayoutAddress(row.chain, recipient) ?? "",
-        row.paymentTxId ?? "",
-      ]
-        .map(escapeCsv)
-        .join(",");
-    });
-    const csv = [headers.join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+    const csv = [
+      columns.map(([h]) => h).join(","),
+      ...rows.map((row) => columns.map(([, get]) => safe(get(row))).join(",")),
+    ].join("\n");
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+    );
     const a = document.createElement("a");
     a.href = url;
-    a.download = `payments-export-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `bounties-export-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleFullExport = async () => {
+    setFullExporting(true);
+    try {
+      const data = await fetchExportAllBounties(fullFilters);
+      const safe = (v: unknown) => {
+        const s = v == null ? "" : String(v);
+        return escapeCsv(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s);
+      };
+      const csv = [
+        FULL_EXPORT_COLUMNS.map(([h]) => h).join(","),
+        ...data.map((b) =>
+          FULL_EXPORT_COLUMNS.map(([, get]) => safe(get(b))).join(","),
+        ),
+      ].join("\n");
+      const url = URL.createObjectURL(
+        new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bounties-export-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setFullExporting(false);
+    }
   };
 
   const ofacCount = rows.filter(
@@ -510,8 +601,8 @@ export default function ExportPage() {
               Payment Export
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Export paid bounties as CSV. Toggle OFAC status per recipient
-              before exporting.
+              Filter and load bounties, toggle OFAC status per recipient, then
+              export all fields as CSV.
             </p>
           </div>
           {loaded && (
@@ -524,6 +615,48 @@ export default function ExportPage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-4 p-4 border rounded-lg bg-muted/30">
+          {(
+            [
+              [
+                "status",
+                "Status",
+                ["TO_DO", "IN_PROGRESS", "IN_REVIEW", "DONE", "CANCELLED"],
+              ],
+              ["chain", "Chain", ["MAIN", "TEST"]],
+              ["difficulty", "Difficulty", ["EASY", "MEDIUM", "HARD"]], // match your enum
+              ["isPaid", "Paid", ["true", "false"]],
+              ["isApproved", "Approved", ["true", "false"]],
+              ["exported", "Exported", ["true", "false"]],
+              [
+                "dateField",
+                "Date field",
+                [
+                  "dateCreated",
+                  "paidAt",
+                  "completedAt",
+                  "timeToComplete",
+                  "updatedAt",
+                  "exportedAt",
+                ],
+              ],
+            ] as const
+          ).map(([key, label, opts]) => (
+            <div key={key} className="space-y-1">
+              <Label className="text-xs">{label}</Label>
+              <select
+                value={filters[key]}
+                onChange={(e) => setFilter(key, e.target.value)}
+                className="h-9 w-36 rounded-md border bg-background px-2 text-sm"
+              >
+                {key !== "dateField" && <option value="">Any</option>}
+                {opts.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
           <div className="space-y-1">
             <Label htmlFor="from-date" className="text-xs">
               From date
@@ -531,9 +664,9 @@ export default function ExportPage() {
             <Input
               id="from-date"
               type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
               className="w-40"
+              value={filters.from}
+              onChange={(e) => setFilter("from", e.target.value)}
             />
           </div>
           <div className="space-y-1">
@@ -543,9 +676,9 @@ export default function ExportPage() {
             <Input
               id="to-date"
               type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
               className="w-40"
+              value={filters.to}
+              onChange={(e) => setFilter("to", e.target.value)}
             />
           </div>
           <div className="space-y-1 flex-1 min-w-[220px]">
@@ -570,14 +703,14 @@ export default function ExportPage() {
             ) : (
               <RefreshCw className="w-4 h-4" />
             )}
-            {loaded ? "Refresh" : "Load Records"}
+            {loaded ? "Refresh" : "Load Bounties"}
           </Button>
         </div>
 
         {/* Stats bar */}
         {loaded && (
           <div className="grid grid-cols-2 imd:flex items-center gap-6 text-sm text-muted-foreground">
-            <span>{rows.length} paid bounties</span>
+            <span>{rows.length} bounties</span>
             <span className="flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-green-500" />
               {ofacCount} OFAC verified
@@ -611,7 +744,7 @@ export default function ExportPage() {
                       colSpan={7}
                       className="text-center text-muted-foreground py-10"
                     >
-                      No paid bounties found for the selected range.
+                      No bounties found for the selected filters.
                     </TableCell>
                   </TableRow>
                 )}
@@ -660,9 +793,7 @@ export default function ExportPage() {
                         {row.bountyAmount} ZEC
                       </TableCell>
                       <TableCell className="text-sm font-mono text-muted-foreground">
-                        {payoutAddress
-                          ? `${payoutAddress.slice(0, 14)}…`
-                          : "—"}
+                        {payoutAddress ? `${payoutAddress.slice(0, 14)}…` : "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

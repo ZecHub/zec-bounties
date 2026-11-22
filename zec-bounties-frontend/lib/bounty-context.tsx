@@ -394,6 +394,7 @@ interface BountyContextType {
   setDefaultWallet: (accountName: string, teamId?: string) => Promise<void>;
 
   fetchExportPayments: (from?: string, to?: string) => Promise<any[]>;
+  fetchExportAllBounties: (filters: Record<string, string>) => Promise<any[]>;
   fetchExportCompleted: () => Promise<any[]>;
   markBountiesExported: (
     bountyIds: string[],
@@ -4090,6 +4091,22 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const fetchExportAllBounties = async (
+    filters: Record<string, string>,
+  ): Promise<any[]> => {
+    if (!currentUser || currentUser.role !== "ADMIN") return [];
+    const params = new URLSearchParams(
+      Object.entries(filters).filter(([, v]) => v !== ""),
+    );
+    const res = await fetch(
+      `${backendUrl}/api/bounties/export-all?${params.toString()}`,
+      { headers: getAuthHeaders() },
+    );
+    if (!res.ok) throw new Error("Failed to export bounties");
+    const data = await res.json();
+    return data.data || [];
+  };
+
   const fetchExportCompleted = async (): Promise<any[]> => {
     if (!currentUser || currentUser.role !== "ADMIN") return [];
     try {
@@ -4798,6 +4815,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         importWallet,
         setDefaultWallet,
         fetchExportPayments,
+        fetchExportAllBounties,
         fetchExportCompleted,
         markBountiesExported,
         fetchTeamExportCompleted,
