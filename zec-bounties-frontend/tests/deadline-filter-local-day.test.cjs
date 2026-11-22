@@ -22,15 +22,8 @@ function loadTs(relative, requireFixture) {
 const repos = loadTs("lib/repos.ts", (id) => {
   throw new Error(`Unexpected repos dependency: ${id}`);
 });
-const utils = loadTs("lib/utils.ts", (id) => {
-  if (id === "clsx") return { clsx: () => "" };
-  if (id === "tailwind-merge") return { twMerge: () => "" };
-  if (id === "./types") return {};
-  throw new Error(`Unexpected utils dependency: ${id}`);
-});
 const filters = loadTs("lib/bounty-filters.ts", (id) => {
   if (id === "@/lib/repos") return repos;
-  if (id === "@/lib/utils") return utils;
   if (id === "@/lib/types") return {};
   throw new Error(`Unexpected filters dependency: ${id}`);
 });

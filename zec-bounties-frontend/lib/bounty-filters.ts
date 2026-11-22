@@ -1,6 +1,5 @@
 import { bountyRepo, isRepoId, REPOS, type RepoId } from "@/lib/repos";
 import type { Bounty } from "@/lib/types";
-import { parseDateInputValue } from "@/lib/utils";
 
 export type BountyBoardStatus = "" | "open" | "assigned" | "in_review";
 export type BountyBoardSort = "newest" | "highest_reward" | "soonest_deadline";
@@ -164,7 +163,7 @@ export function filterAndSortBounties(
   const terms = normalizeSearch(filters.query);
   // The end of the chosen day in the viewer's own time zone, like the presets.
   const maxDeadline = filters.deadline
-    ? parseDateInputValue(filters.deadline).setHours(23, 59, 59, 999)
+    ? Date.parse(`${filters.deadline}T23:59:59.999`)
     : null;
 
   const results = bounties.filter((bounty) => {
