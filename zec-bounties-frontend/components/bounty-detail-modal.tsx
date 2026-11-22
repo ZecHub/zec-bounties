@@ -53,6 +53,7 @@ import {
 } from "@/lib/displayName";
 import { ProfileLink } from "@/components/profile-link";
 import { ZecToUsd } from "./ZecToUsd";
+import { ZecIcon } from "@/components/zec-icon";
 import { BountyChat } from "@/components/bounty-chat";
 import { LinkListInput } from "@/components/link-list-input";
 import {
@@ -700,9 +701,7 @@ export function BountyDetailModal({
         <ProfileLink user={a.user}>
           <p
             className={`truncate text-xs font-semibold ${
-              isWinner
-                ? "text-amber-700 dark:text-amber-300"
-                : "text-primary"
+              isWinner ? "text-amber-700 dark:text-amber-300" : "text-primary"
             }`}
           >
             {a.user?.nickname || a.user?.name || "Unknown"}
@@ -878,9 +877,10 @@ export function BountyDetailModal({
         {/* ── Reward + issuer ── */}
         <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 rounded-lg border bg-muted/30 p-3">
           <div>
-            <div className="flex items-baseline gap-1.5 text-xl sam:text-2xl font-bold tabular-nums">
+            <div className="flex items-center gap-2 text-xl sam:text-2xl font-bold tabular-nums">
               {isEditingBounty ? (
                 <>
+                  <ZecIcon className="h-6 w-6 sam:h-7 sam:w-7" />
                   <input
                     type="number"
                     min="0"
@@ -890,10 +890,12 @@ export function BountyDetailModal({
                     className={`w-24 ${inlineEditCls}`}
                     aria-label="Reward in ZEC"
                   />
-                  <span>ZEC</span>
                 </>
               ) : (
-                <span>{bounty.bountyAmount} ZEC</span>
+                <>
+                  <ZecIcon className="h-6 w-6 sam:h-7 sam:w-7" />
+                  <span>{bounty.bountyAmount}</span>
+                </>
               )}
             </div>
             <p className="text-xs text-muted-foreground">
