@@ -3710,25 +3710,25 @@ router.get(
       const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 50), 100);
       const cursor = parseInt(req.query.cursor) || null;
 
-      const [proposals, eligible] = await Promise.all([
+      const [proposals, approvals] = await Promise.all([
         prisma.payoutProposal.findMany({
           where: { teamId },
           select: { id: true },
         }),
-        getEligibleApproverIds(prisma, teamId),
+        prisma.recoveryApproval.findMany({
+          where: { teamId },
+          select: { id: true },
+        }),
       ]);
+      const payoutIds = proposals.map((p) => p.id);
+      const recoveryIds = approvals.map((a) => a.id);
 
-      const kind = req.query.kind; // "payout" | "recovery"
-      const payoutOr = [
-        { proposalId: { in: proposals.map((p) => p.id) } },
-        { event: { startsWith: "key." }, actorId: { in: eligible } },
-      ];
+      const kind = req.query.kind;
+      const payoutOr = [{ proposalId: { in: payoutIds } }];
       const recoveryOr = [
-        {
-          event: { startsWith: "recovery." },
-          data: { path: ["teamId"], equals: teamId },
-        },
+        { proposalId: { in: recoveryIds }, event: { startsWith: "recovery." } },
       ];
+
       const OR =
         kind === "recovery"
           ? recoveryOr
