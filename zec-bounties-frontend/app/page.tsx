@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
-import { BountyCard } from "@/components/bounty-card";
+import { RevisedBountyCard } from "@/components/revised-bounty-card";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutGrid,
   List,
+  Grid3X3,
   Filter,
   ArrowRight,
   Loader2,
@@ -17,41 +16,58 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { BountyDetailModal } from "@/components/bounty-detail-modal";
 import { RepoFilter } from "@/components/repo-filter";
+import { FilterChip } from "@/components/filter-panel";
 import { bountyRepo, type RepoId } from "@/lib/repos";
 import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
+import { formatStatus } from "@/lib/utils";
 
-const KANBAN_COLUMNS: {
-  status: BountyStatus;
+type StatusView =
+  | "open"
+  | "assigned"
+  | "in_review"
+  | "done"
+  | "cancelled"
+  | "all";
+
+const STATUS_VIEWS: {
+  value: StatusView;
   label: string;
-  color: string;
-  dotColor: string;
+  status: BountyStatus | null; // null = every status
 }[] = [
-  {
-    status: "TO_DO",
-    label: "Todo",
-    color: "border-t-slate-400",
-    dotColor: "bg-slate-400",
-  },
-  {
-    status: "IN_PROGRESS",
-    label: "In Progress",
-    color: "border-t-blue-500",
-    dotColor: "bg-blue-500",
-  },
-  {
-    status: "IN_REVIEW",
-    label: "In Review",
-    color: "border-t-yellow-500",
-    dotColor: "bg-yellow-500",
-  },
-  {
-    status: "DONE",
-    label: "Done",
-    color: "border-t-green-500",
-    dotColor: "bg-green-500",
-  },
+  { value: "open", label: "Open", status: "TO_DO" },
+  { value: "assigned", label: "In progress", status: "IN_PROGRESS" },
+  { value: "in_review", label: "In review", status: "IN_REVIEW" },
+  { value: "done", label: "Done", status: "DONE" },
+  { value: "cancelled", label: "Cancelled", status: "CANCELLED" },
+  { value: "all", label: "All", status: null },
+];
+
+// Windows 98-style defrag map colors
+const DEFRAG_STATUS_COLORS: Record<BountyStatus, string> = {
+  TO_DO: "bg-cyan-400",
+  IN_PROGRESS: "bg-blue-800",
+  IN_REVIEW: "bg-red-500",
+  DONE: "bg-blue-500",
+  CANCELLED: "bg-zinc-700",
+};
+
+const DEFRAG_LEGEND: { status: BountyStatus; label: string; color: string }[] =
+  [
+    { status: "TO_DO", label: "Todo", color: "bg-cyan-400" },
+    { status: "IN_PROGRESS", label: "In Progress", color: "bg-blue-800" },
+    { status: "IN_REVIEW", label: "In Review", color: "bg-red-500" },
+    { status: "DONE", label: "Done", color: "bg-blue-500" },
+    { status: "CANCELLED", label: "Cancelled", color: "bg-zinc-700" },
+  ];
+
+const STATUS_ORDER: BountyStatus[] = [
+  "TO_DO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "DONE",
+  "CANCELLED",
 ];
 
 export default function RootPage() {
@@ -62,6 +78,7 @@ export default function RootPage() {
     bountiesLoading,
     isLoading,
     loadMoreBounties,
+    loadAllBounties,
     hasMoreBounties,
     fetchBountyById,
   } = useBounty();
@@ -71,12 +88,19 @@ export default function RootPage() {
   const searchParams = useSearchParams();
 
   const [activeCategory, setActiveCategory] = useState("All");
-  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [activeRepo, setActiveRepo] = useState<RepoId | "all" | "untagged">(
+    "all",
+  );
+  const [statusView, setStatusView] = useState<StatusView>("open"); // default: open
+  const [viewMode, setViewMode] = useState<"list" | "defrag">("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const loadAllStarted = useRef(false);
+
+  const activeStatus = STATUS_VIEWS.find((v) => v.value === statusView)!;
+  const statusLabel = statusView === "all" ? "All" : activeStatus.label;
 
   // Redirect logged-in users to the page for their role
   useEffect(() => {
@@ -125,10 +149,31 @@ export default function RootPage() {
     });
   }, [searchParams, bounties, fetchBountyById]);
 
+  // Statuses other than "open" can sit on later pages, so load everything
+  useEffect(() => {
+    if (statusView === "open") {
+      loadAllStarted.current = false;
+      return;
+    }
+    if (!hasMoreBounties || bountiesLoading || loadAllStarted.current) return;
+    loadAllStarted.current = true;
+    void loadAllBounties();
+  }, [statusView, hasMoreBounties, bountiesLoading, loadAllBounties]);
+
   const displayCategories = ["All", ...categories.map((c) => c.name)];
 
+  // 1. Status first (default: open)
+  const statusBounties = useMemo(
+    () =>
+      activeStatus.status === null
+        ? bounties
+        : bounties.filter((b) => b.status === activeStatus.status),
+    [bounties, activeStatus],
+  );
+
+  // 2. Category + search
   const categoryFilteredBounties = useMemo(() => {
-    let filtered = bounties;
+    let filtered = statusBounties;
     if (activeCategory !== "All")
       filtered = filtered.filter((b) => b.categoryId === activeCategory);
     if (searchQuery.trim()) {
@@ -141,7 +186,7 @@ export default function RootPage() {
       );
     }
     return filtered;
-  }, [bounties, searchQuery, activeCategory]);
+  }, [statusBounties, searchQuery, activeCategory]);
 
   const repoCounts = useMemo(() => {
     const counts = {
@@ -159,6 +204,7 @@ export default function RootPage() {
     return counts;
   }, [categoryFilteredBounties]);
 
+  // 3. Repo + newest first
   const filteredBounties = useMemo(() => {
     const filtered =
       activeRepo === "all"
@@ -168,18 +214,23 @@ export default function RootPage() {
               ? bountyRepo(bounty) == null
               : bountyRepo(bounty) === activeRepo,
           );
-    return filtered.sort(
+    return [...filtered].sort(
       (a, b) =>
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
     );
   }, [categoryFilteredBounties, activeRepo]);
 
-  const kanbanGroups = useMemo(
+  // Same-status blocks grouped into contiguous runs, newest first within a status
+  const defragBounties = useMemo(
     () =>
-      KANBAN_COLUMNS.map((col) => ({
-        ...col,
-        bounties: filteredBounties.filter((b) => b.status === col.status),
-      })),
+      [...filteredBounties].sort((a, b) => {
+        const ai = STATUS_ORDER.indexOf(a.status);
+        const bi = STATUS_ORDER.indexOf(b.status);
+        if (ai !== bi) return ai - bi;
+        return (
+          new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
+        );
+      }),
     [filteredBounties],
   );
 
@@ -197,8 +248,8 @@ export default function RootPage() {
 
   const getCategoryCount = (name: string) =>
     name === "All"
-      ? bounties.length
-      : bounties.filter((b) => b.categoryId === name).length;
+      ? statusBounties.length
+      : statusBounties.filter((b) => b.categoryId === name).length;
 
   const handleLoadMore = async () => {
     setIsLoadingMore(true);
@@ -280,24 +331,18 @@ export default function RootPage() {
           </aside>
 
           <div className="lg:col-span-3 space-y-6 min-w-0 flex-1">
-            <RepoFilter value={activeRepo} onChange={setActiveRepo} counts={repoCounts} />
+            <RepoFilter
+              value={activeRepo}
+              onChange={setActiveRepo}
+              counts={repoCounts}
+            />
             <div className="flex items-center justify-between pb-4 border-b">
               <h2 className="text-xl font-bold">
                 {activeCategory === "All"
-                  ? "All Bounties"
-                  : `${activeCategory} Bounties`}
+                  ? `${statusLabel} Bounties`
+                  : `${statusLabel} ${activeCategory} Bounties`}
               </h2>
               <div className="flex items-center gap-2">
-                <Button
-                  variant={viewMode === "grid" ? "secondary" : "ghost"}
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setViewMode("grid")}
-                  aria-label="Show bounties in grid view"
-                  aria-pressed={viewMode === "grid"}
-                >
-                   <LayoutGrid className="h-4 w-4" aria-hidden="true" />
-                </Button>
                 <Button
                   variant={viewMode === "list" ? "secondary" : "ghost"}
                   size="icon"
@@ -305,15 +350,28 @@ export default function RootPage() {
                   onClick={() => setViewMode("list")}
                   aria-label="Show bounties in list view"
                   aria-pressed={viewMode === "list"}
+                  title="List view"
                 >
-                 <List className="h-4 w-4" aria-hidden="true" />
+                  <List className="h-4 w-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  variant={viewMode === "defrag" ? "secondary" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setViewMode("defrag")}
+                  aria-label="Show bounties in defrag map view"
+                  aria-pressed={viewMode === "defrag"}
+                  title="Defrag map view"
+                >
+                  <Grid3X3 className="h-4 w-4" aria-hidden="true" />
                 </Button>
                 {hasMoreBounties &&
+                  statusView === "open" &&
                   !searchQuery &&
                   activeCategory === "All" && (
                     <div className="relative group">
                       <Button
-                       variant="ghost"
+                        variant="ghost"
                         size="icon"
                         className="h-8 w-8"
                         onClick={handleLoadMore}
@@ -344,103 +402,91 @@ export default function RootPage() {
               </div>
             </div>
 
-            {viewMode === "grid" ? (
-              filteredBounties.length === 0 ? (
-                <div className="text-center py-20 border rounded-xl bg-muted/20">
-                  <p className="text-muted-foreground">
-                    No bounties found
-                    {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
-                    {searchQuery ? " matching your search" : ""}.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto pb-4 -mx-1 px-1">
-                  <div className="flex gap-4 items-start min-w-max">
-                    {kanbanGroups.map((col) => (
-                      <div
-                        key={col.status}
-                        className="flex flex-col gap-3 w-72 flex-shrink-0"
-                      >
-                        <div
-                          className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                            />
-                            <span className="text-sm font-semibold">
-                              {col.label}
-                            </span>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] h-5 px-1.5"
-                          >
-                            {col.bounties.length}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-col gap-3">
-                          {col.bounties.length === 0 ? (
-                            <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
-                              <p className="text-xs text-muted-foreground">
-                                No bounties
-                              </p>
-                            </div>
-                          ) : (
-                            col.bounties.map((bounty) => (
-                              <BountyCard
-                                key={bounty.id}
-                                bounty={bounty}
-                                viewMode="kanban"
-                                onClick={() => openBounty(bounty)}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            ) : filteredBounties.length > 0 ? (
-              <div className="space-y-8">
-                {kanbanGroups
-                  .filter((col) => col.bounties.length > 0)
-                  .map((col) => (
-                    <div key={col.status} className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                        />
-                        <h3 className="text-sm font-semibold">{col.label}</h3>
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] h-5 px-1.5"
-                        >
-                          {col.bounties.length}
-                        </Badge>
-                        <div className="flex-1 border-t border-border/50 ml-1" />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {col.bounties.map((bounty) => (
-                          <BountyCard
-                            key={bounty.id}
-                            bounty={bounty}
-                            viewMode="list"
-                            onClick={() => openBounty(bounty)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : (
+            {/* Status filter — defaults to Open */}
+            <div
+              role="group"
+              aria-label="Bounty status"
+              className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {STATUS_VIEWS.map((v) => (
+                <FilterChip
+                  key={v.value}
+                  active={statusView === v.value}
+                  onClick={() => setStatusView(v.value)}
+                >
+                  {v.label}
+                </FilterChip>
+              ))}
+            </div>
+
+            {filteredBounties.length === 0 ? (
               <div className="text-center py-20 border rounded-xl bg-muted/20">
                 <p className="text-muted-foreground">
-                  No bounties found
+                  No {statusLabel.toLowerCase()} bounties found
                   {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
                   {searchQuery ? " matching your search" : ""}.
                 </p>
+              </div>
+            ) : viewMode === "defrag" ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                  {DEFRAG_LEGEND.map((item) => (
+                    <div
+                      key={item.status}
+                      className="flex items-center gap-1.5"
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 border border-black/80 ${item.color}`}
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                  <span className="w-full sm:w-auto sm:ml-auto text-[11px] opacity-70">
+                    {filteredBounties.length} bounties · click a block to open
+                  </span>
+                </div>
+                <div
+                  className="rounded border border-border bg-black p-1.5 overflow-hidden"
+                  style={{ imageRendering: "pixelated" }}
+                >
+                  <div className="grid gap-px [grid-template-columns:repeat(auto-fill,10px)] sm:[grid-template-columns:repeat(auto-fill,14px)] justify-start">
+                    {defragBounties.map((bounty) => {
+                      const color =
+                        DEFRAG_STATUS_COLORS[bounty.status] ?? "bg-zinc-600";
+                      return (
+                        <button
+                          key={bounty.id}
+                          type="button"
+                          title={`${bounty.title} — ${formatStatus(bounty.status)}`}
+                          onClick={() => openBounty(bounty)}
+                          className={`
+                            relative h-[10px] w-[10px] sm:h-[14px] sm:w-[14px]
+                            border border-black/90 ${color}
+                            hover:z-10 hover:scale-[1.8] hover:border-white
+                            focus:outline-none focus:ring-1 focus:ring-white
+                            transition-transform duration-75
+                            cursor-pointer
+                          `}
+                        >
+                          {(bounty.status === "DONE" ||
+                            bounty.status === "IN_PROGRESS") && (
+                            <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {filteredBounties.map((bounty) => (
+                  <RevisedBountyCard
+                    key={bounty.id}
+                    bounty={bounty}
+                    onClick={() => openBounty(bounty)}
+                  />
+                ))}
               </div>
             )}
           </div>
