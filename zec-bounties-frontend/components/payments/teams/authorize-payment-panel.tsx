@@ -392,6 +392,41 @@ export function TeamAuthorizePaymentPanel({
   const nInFlight = inFlightBounties.length;
   const nBlocked = blockedBounties.length;
 
+  // Keep a freshly opened round in focus: scroll to it and ring it briefly.
+  const roundEls = useRef<Map<string, HTMLDivElement>>(new Map());
+  const seenRoundIds = useRef<Set<string> | null>(null);
+  const [focusRoundId, setFocusRoundId] = useState<string | null>(null);
+  // null = pick a default: Select if there's anything to choose, else Rounds.
+  const [awaitingView, setAwaitingView] = useState<"rounds" | "select" | null>(
+    null,
+  );
+  const view =
+    waitingRounds.length === 0
+      ? "select"
+      : (awaitingView ?? (uncovered.length > 0 ? "select" : "rounds"));
+  const waitingKey = waitingRounds
+    .map((r) => r.id)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (roundsLoading) return;
+    const ids = new Set(waitingKey ? waitingKey.split(",") : []);
+    const prev = seenRoundIds.current;
+    seenRoundIds.current = ids;
+    if (prev === null) return; // first load: don't animate existing rounds
+    const fresh = [...ids].find((id) => !prev.has(id));
+    if (!fresh) return;
+    setAwaitingView("rounds");
+    setFocusRoundId(fresh);
+    // Wait a tick so the Rounds list has mounted before scrolling.
+    setTimeout(() => {
+      roundEls.current
+        .get(fresh)
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+    setTimeout(() => setFocusRoundId(null), 2500);
+  }, [roundsLoading, waitingKey]);
+
   // --- Awaiting / Ready slot -------------------------------------------------
   // hasReady === "I am the selected executor and the lock delay has passed".
   // Awaiting shows immediately from local data (no waiting on the network), with
@@ -458,10 +493,28 @@ export function TeamAuthorizePaymentPanel({
             Syncing
           </span>
         ) : (
-          awaitingCount > 0 && (
-            <span className="shrink-0 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-blue-700 dark:text-blue-400">
-              {awaitingCount}
-            </span>
+          waitingRounds.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border bg-muted/40 p-1">
+              {(
+                [
+                  ["rounds", "Rounds", waitingRounds.length],
+                  ["select", "Select", uncovered.length],
+                ] as const
+              ).map(([key, label, n]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setAwaitingView(key)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums ${
+                    view === key
+                      ? "bg-background shadow-sm text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {label} ({n})
+                </button>
+              ))}
+            </div>
           )
         )}
       </header>
@@ -479,10 +532,34 @@ export function TeamAuthorizePaymentPanel({
           </div>
         ) : (
           <div className="space-y-2 p-3">
-            {uncovered.length > 0 && <PayoutOpenCard bounties={uncovered} />}
-            {waitingRounds.map((r) => (
-              <PayoutRoundCard key={r.id} round={r} bounties={bountiesOf(r)} />
-            ))}
+            {view === "select" ? (
+              uncovered.length > 0 ? (
+                <PayoutOpenCard bounties={uncovered} />
+              ) : (
+                <p className="py-8 text-center text-xs text-muted-foreground">
+                  Every due bounty is already in a round.
+                </p>
+              )
+            ) : waitingRounds.length > 0 ? (
+              waitingRounds.map((r) => (
+                <div
+                  key={r.id}
+                  ref={(el) => {
+                    if (el) roundEls.current.set(r.id, el);
+                    else roundEls.current.delete(r.id);
+                  }}
+                  className={`rounded-lg transition-shadow duration-500 ${
+                    focusRoundId === r.id ? "ring-2 ring-primary/60" : ""
+                  }`}
+                >
+                  <PayoutRoundCard round={r} bounties={bountiesOf(r)} />
+                </div>
+              ))
+            ) : (
+              <p className="py-8 text-center text-xs text-muted-foreground">
+                No open rounds yet. Pick bounties in Select to start one.
+              </p>
+            )}
           </div>
         )}
       </div>
