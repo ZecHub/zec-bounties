@@ -91,6 +91,7 @@ export function AuthorizePaymentPanel() {
 
   const blockedBounties = bounties.filter(
     (b) =>
+      !b.teamId &&
       b.status === "DONE" &&
       b.isApproved &&
       !b.isPaid &&
@@ -102,7 +103,7 @@ export function AuthorizePaymentPanel() {
   // Sends whose outcome the backend couldn't confirm — locked server-side
   // until someone resolves them from the Transactions tab.
   const inFlightBounties = bounties.filter(
-    (b) => b.status === "DONE" && !b.isPaid && b.paymentInFlight,
+    (b) => !b.teamId && b.status === "DONE" && !b.isPaid && b.paymentInFlight,
   );
 
   // unpaidDoneCount is only tracked server-side for MAIN chain today, so we can
