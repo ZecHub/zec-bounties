@@ -32,7 +32,7 @@ export interface VoteMessage {
   expiresAt: string;
 }
 
-async function api(path: string, init?: RequestInit) {
+export async function api(path: string, init?: RequestInit) {
   const token = localStorage.getItem("authToken");
   const res = await fetch(`${backendUrl}/api${path}`, {
     ...init,
@@ -46,7 +46,7 @@ async function api(path: string, init?: RequestInit) {
   return json;
 }
 
-const b64url = (bytes: ArrayBuffer) =>
+export const b64url = (bytes: ArrayBuffer) =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")

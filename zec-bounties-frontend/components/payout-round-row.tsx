@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useBounty, type PayoutRound } from "@/lib/bounty-context";
@@ -25,16 +26,46 @@ function BountyList({ bounties }: { bounties: Bounty[] }) {
   );
 }
 
-// Bounties that are due but not yet in any round: one click opens ONE round for all of them.
+// true / false when we can tell whether the assignee can be paid on the bounty's chain,
+// undefined when the address isn't visible to this viewer (the server then decides).
+export function addressKnown(b: Bounty): boolean | undefined {
+  const u: any = b.assigneeUser;
+  if (!u) return false; // no assignee, nobody to pay
+  const field = b.chain === "MAIN" ? "UA_address" : "z_address";
+  if (field in u) return Boolean(u[field]);
+  return undefined;
+}
+
+// Bounties that are due but not yet in any round. Choose which ones to include (all are
+// ticked by default), then one click opens ONE round for exactly those.
 export function PayoutOpenCard({ bounties }: { bounties: Bounty[] }) {
   const { openPayoutRound } = useBounty();
   const [busy, setBusy] = useState(false);
-  const total = bounties.reduce((s, b) => s + b.bountyAmount, 0);
+  // Track what's UNticked, so bounties that become due later default to included.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+
+  const eligible = bounties.filter((b) => addressKnown(b) !== false);
+  const unpayable = bounties.filter((b) => addressKnown(b) === false);
+  const selected = eligible.filter((b) => !excluded.has(b.id));
+  const total = selected.reduce((s, b) => s + b.bountyAmount, 0);
+
+  const toggle = (id: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setExcluded(
+      selected.length === eligible.length
+        ? new Set(eligible.map((b) => b.id))
+        : new Set(),
+    );
 
   const open = async () => {
     setBusy(true);
     try {
-      const { skipped } = await openPayoutRound(bounties.map((b) => b.id));
+      const { skipped } = await openPayoutRound(selected.map((b) => b.id));
       if (skipped.length > 0)
         toast.message(`${skipped.length} left out of the round`, {
           description: skipped
@@ -57,20 +88,85 @@ export function PayoutOpenCard({ bounties }: { bounties: Bounty[] }) {
   };
 
   return (
-    <div className="rounded-lg border p-3 space-y-2">
+    <div className="rounded-lg border p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium">
-          {bounties.length} bount{bounties.length === 1 ? "y" : "ies"} ready for
-          a payout round
+          Choose bounties for a payout round
         </p>
-        <span className="text-sm font-mono shrink-0">{zec(total)} ZEC</span>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="open-select-all"
+            checked={eligible.length > 0 && selected.length === eligible.length}
+            onCheckedChange={toggleAll}
+            disabled={eligible.length === 0}
+          />
+          <label htmlFor="open-select-all" className="text-xs cursor-pointer">
+            Select all ({eligible.length})
+          </label>
+        </div>
       </div>
-      <BountyList bounties={bounties} />
-      <Button size="sm" className="w-full" disabled={busy} onClick={open}>
+
+      <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+        {eligible.map((b) => {
+          const on = !excluded.has(b.id);
+          return (
+            <div
+              key={b.id}
+              onClick={() => toggle(b.id)}
+              className={`flex items-center gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors ${
+                on ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+              }`}
+            >
+              <Checkbox
+                checked={on}
+                onCheckedChange={() => toggle(b.id)}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{b.title}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {b.assigneeUser?.name ?? "Unknown assignee"}
+                </p>
+              </div>
+              <span className="font-mono text-xs shrink-0">
+                {zec(b.bountyAmount)} ZEC
+              </span>
+            </div>
+          );
+        })}
+        {unpayable.map((b) => (
+          <div
+            key={b.id}
+            className="flex items-center gap-3 rounded-md border border-dashed px-3 py-2 opacity-70"
+          >
+            <Checkbox checked={false} disabled />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium truncate">{b.title}</p>
+              <p className="text-xs text-destructive">
+                {b.assigneeUser
+                  ? "Assignee has no payout address"
+                  : "No assignee"}
+              </p>
+            </div>
+            <span className="font-mono text-xs shrink-0">
+              {zec(b.bountyAmount)} ZEC
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <Button
+        size="sm"
+        className="w-full"
+        disabled={busy || selected.length === 0}
+        onClick={open}
+      >
         {busy ? (
           <Loader2 className="w-3 h-3 animate-spin" />
+        ) : selected.length === 0 ? (
+          "Select bounties to include"
         ) : (
-          "Open one payout round for all"
+          `Open payout round for ${selected.length} (${zec(total)} ZEC)`
         )}
       </Button>
     </div>

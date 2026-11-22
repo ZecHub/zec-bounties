@@ -45,6 +45,8 @@ import { FavoriteTeamsSidebar } from "@/components/favorite-teams-sidebar";
 import { HeroCarousel } from "@/components/hero-carousel";
 import { MobileNavShell } from "@/components/layout/mobile-nav-shell";
 import { useTaskCreationBlocked } from "@/hooks/use-task-creation-blocked";
+import { RevisedBountyCard } from "@/components/revised-bounty-card";
+import { ZecIcon } from "@/components/zec-icon";
 // import { useRoleGuard } from "@/hooks/use-role-guard";
 
 const KANBAN_COLUMNS: {
@@ -118,6 +120,27 @@ const DEADLINE_PRESETS = [
   { label: "This month", days: 30 },
 ];
 
+type StatusView =
+  | "open"
+  | "assigned"
+  | "in_review"
+  | "done"
+  | "cancelled"
+  | "all";
+
+const STATUS_VIEWS: {
+  value: StatusView;
+  label: string;
+  status: BountyStatus | null; // null = every status
+}[] = [
+  { value: "open", label: "Open", status: "TO_DO" },
+  { value: "assigned", label: "In progress", status: "IN_PROGRESS" },
+  { value: "in_review", label: "In review", status: "IN_REVIEW" },
+  { value: "done", label: "Done", status: "DONE" },
+  { value: "cancelled", label: "Cancelled", status: "CANCELLED" },
+  { value: "all", label: "All", status: null },
+];
+
 function HomeContent() {
   const taskCreationBlocked = useTaskCreationBlocked();
   const { bountyQuota } = useBounty();
@@ -136,6 +159,8 @@ function HomeContent() {
     teamBountiesHasMore,
     fetchTeamBounties,
     loadMoreTeamBounties,
+    activeTeamId: shellTeamId,
+    setActiveTeamId,
   } = useBounty();
 
   const router = useRouter();
@@ -148,11 +173,16 @@ function HomeContent() {
   const [filterLoadError, setFilterLoadError] = useState(false);
   const [filterLoadRetry, setFilterLoadRetry] = useState(0);
   const filterLoadStarted = useRef(false);
-  const [viewMode, setViewMode] = useState<"grid" | "list" | "defrag">("grid");
+  const [viewMode, setViewMode] = useState<"list" | "defrag">("list");
   const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const [statusView, setStatusView] = useState<StatusView>("open"); // default: open
+  const activeStatus = STATUS_VIEWS.find((v) => v.value === statusView)!;
+  const statusLabel = statusView === "all" ? "All" : activeStatus.label;
+
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -180,10 +210,39 @@ function HomeContent() {
     );
   };
 
+  const prevShellTeam = useRef(shellTeamId);
+  const teamSyncMounted = useRef(false);
+
   const searchParamString = searchParams.toString();
   useEffect(() => {
     setFilters(readBountyBoardFilters(new URLSearchParams(searchParamString)));
   }, [searchParamString]);
+
+  useEffect(() => {
+    if (prevShellTeam.current === shellTeamId) return;
+    prevShellTeam.current = shellTeamId;
+    if ((shellTeamId ?? "") !== filters.teamId) {
+      updateFilter("teamId", shellTeamId ?? "");
+    }
+  }, [shellTeamId]);
+
+  useEffect(() => {
+    if (!teamSyncMounted.current) {
+      teamSyncMounted.current = true;
+      // First render: the URL wins; otherwise adopt the shell's selection
+      // (covers the sheet pushing the user here from another page)
+      if (!filters.teamId && shellTeamId) updateFilter("teamId", shellTeamId);
+      else if (filters.teamId && filters.teamId !== (shellTeamId ?? "")) {
+        prevShellTeam.current = filters.teamId;
+        setActiveTeamId(filters.teamId);
+      }
+      return;
+    }
+    if ((shellTeamId ?? "") !== filters.teamId) {
+      prevShellTeam.current = filters.teamId || null; // don't echo back
+      setActiveTeamId(filters.teamId || null);
+    }
+  }, [filters.teamId]);
 
   // currentUser is guaranteed non-null here — ProtectedRoute handles the gate
   const displayCategories = ["All", ...categories.map((c) => c.name)];
@@ -245,6 +304,14 @@ function HomeContent() {
     [sourceBounties, filters],
   );
 
+  const shownBounties = useMemo(
+    () =>
+      filterAndSortBounties(sourceBounties, { ...filters, status: "" }).filter(
+        (b) => activeStatus.status === null || b.status === activeStatus.status,
+      ),
+    [sourceBounties, filters, activeStatus],
+  );
+
   const kanbanGroups = useMemo(
     () =>
       KANBAN_COLUMNS.map((col) => ({
@@ -255,7 +322,7 @@ function HomeContent() {
   );
 
   const defragBounties = useMemo(() => {
-    return [...filteredBounties].sort((a, b) => {
+    return [...shownBounties].sort((a, b) => {
       const ai = STATUS_ORDER.indexOf(a.status);
       const bi = STATUS_ORDER.indexOf(b.status);
       if (ai !== bi) return ai - bi;
@@ -263,7 +330,7 @@ function HomeContent() {
         new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
       );
     });
-  }, [filteredBounties]);
+  }, [shownBounties]);
 
   const missingUA = !currentUser?.UA_address;
 
@@ -328,7 +395,8 @@ function HomeContent() {
     filters.maxReward != null ||
     filters.deadline !== "" ||
     filters.status !== "" ||
-    filters.sort !== "newest";
+    filters.sort !== "newest" ||
+    statusView !== "open";
 
   const activeFilterCount = [
     filters.category !== "All",
@@ -524,15 +592,15 @@ function HomeContent() {
                   {activeTeamId
                     ? `${communities.find((c) => c.id === activeTeamId)?.name ?? "Team"} Bounties`
                     : activeCategory === "All"
-                      ? "All Bounties"
-                      : `${activeCategory} Bounties`}
+                      ? `${statusLabel} Bounties`
+                      : `${statusLabel} ${activeCategory} Bounties`}
                 </h2>
 
                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                   <FilterPanel
                     activeCount={activeFilterCount}
                     onClear={clearFilters}
-                    applyLabel={`Show ${filteredBounties.length} bounties`}
+                    applyLabel={`Show ${shownBounties.length} bounties`}
                     loading={
                       bountiesLoading &&
                       hasMoreBounties &&
@@ -584,8 +652,8 @@ function HomeContent() {
                             }
                             className={`${filterFieldClass} pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                           />
-                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-                            ZEC
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                            <ZecIcon className="h-4 w-4" />
                           </span>
                         </div>
                       </label>
@@ -610,8 +678,8 @@ function HomeContent() {
                             }
                             className={`${filterFieldClass} pr-12 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                           />
-                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
-                            ZEC
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                            <ZecIcon className="h-4 w-4" />
                           </span>
                         </div>
                       </label>
@@ -669,22 +737,6 @@ function HomeContent() {
                       </div>
 
                       <FilterSelect
-                        label="Status"
-                        value={filters.status}
-                        options={[
-                          { value: "", label: "All statuses" },
-                          { value: "open", label: "Open" },
-                          { value: "assigned", label: "Assigned" },
-                          { value: "in_review", label: "In review" },
-                        ]}
-                        onChange={(v) =>
-                          updateFilter(
-                            "status",
-                            v as BountyBoardFilters["status"],
-                          )
-                        }
-                      />
-                      <FilterSelect
                         label="Sort by"
                         value={filters.sort}
                         options={[
@@ -700,7 +752,6 @@ function HomeContent() {
                         }
                       />
                       <FilterSelect
-                        className="sam:col-span-2"
                         label="Team"
                         value={filters.teamId}
                         options={[
@@ -716,20 +767,12 @@ function HomeContent() {
                   </FilterPanel>
                   <div className="mx-1 hidden h-5 w-px bg-border sam:block" />
                   <Button
-                    variant={viewMode === "grid" ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setViewMode("grid")}
-                    title="Grid view"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </Button>
-                  <Button
                     variant={viewMode === "list" ? "secondary" : "ghost"}
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => setViewMode("list")}
                     title="List view"
+                    aria-pressed={viewMode === "list"}
                   >
                     <List className="h-4 w-4" />
                   </Button>
@@ -739,30 +782,27 @@ function HomeContent() {
                     className="h-8 w-8"
                     onClick={() => setViewMode("defrag")}
                     title="Defrag map view"
+                    aria-pressed={viewMode === "defrag"}
                   >
                     <Grid3X3 className="h-4 w-4" />
                   </Button>
-                  {canLoadMore && (
-                    <div className="relative group">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={handleLoadMore}
-                        disabled={isLoadingMore || bountiesLoading}
-                      >
-                        {isLoadingMore || bountiesLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ChevronsDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <span className="pointer-events-none absolute right-0 top-full mt-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-10">
-                        Load more
-                      </span>
-                    </div>
-                  )}
                 </div>
+              </div>
+
+              <div
+                role="tablist"
+                aria-label="Bounty status"
+                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {STATUS_VIEWS.map((v) => (
+                  <FilterChip
+                    key={v.value}
+                    active={statusView === v.value}
+                    onClick={() => setStatusView(v.value)}
+                  >
+                    {v.label}
+                  </FilterChip>
+                ))}
               </div>
 
               {requiresCompleteResults && (
@@ -772,7 +812,7 @@ function HomeContent() {
                       ? "Loading all bounties for complete filter results…"
                       : filterLoadError
                         ? "Could not load all bounties. Showing the results currently available."
-                        : `${filteredBounties.length} matching bounties`}
+                        : `${shownBounties.length} matching bounties`}
                   </span>
                   {filterLoadError && (
                     <Button
@@ -796,96 +836,15 @@ function HomeContent() {
                   <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
                   <p className="text-muted-foreground">Loading bounties...</p>
                 </div>
-              ) : filteredBounties.length === 0 ? (
+              ) : shownBounties.length === 0 ? (
                 <div className="text-center py-12 sm:py-20 px-4 border rounded-xl bg-muted/20">
                   <p className="text-muted-foreground">
-                    No bounties found
+                    No {statusLabel.toLowerCase()} bounties found
                     {activeCategory !== "All" ? ` in ${activeCategory}` : ""}
                     {searchQuery ? " matching your search" : ""}.
                   </p>
                 </div>
-              ) : viewMode === "grid" ? (
-                <div className="overflow-x-auto pb-4 -mx-1 px-1">
-                  <div className="flex gap-3 sm:gap-4 items-start min-w-max snap-x snap-mandatory">
-                    {kanbanGroups.map((col) => (
-                      <div
-                        key={col.status}
-                        className="snap-start flex flex-col gap-3 w-[80vw] max-w-72 sm:w-72 flex-shrink-0"
-                      >
-                        <div
-                          className={`rounded-lg border border-t-2 bg-muted/30 px-3 py-2 flex items-center justify-between ${col.color}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                            />
-                            <span className="text-sm font-semibold">
-                              {col.label}
-                            </span>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] h-5 px-1.5"
-                          >
-                            {col.bounties.length}
-                          </Badge>
-                        </div>
-                        <div className="flex flex-col gap-3">
-                          {col.bounties.length === 0 ? (
-                            <div className="rounded-lg border border-dashed bg-muted/10 py-8 flex items-center justify-center">
-                              <p className="text-xs text-muted-foreground">
-                                No bounties
-                              </p>
-                            </div>
-                          ) : (
-                            col.bounties.map((bounty) => (
-                              <BountyCard
-                                key={bounty.id}
-                                bounty={bounty}
-                                viewMode="kanban"
-                                onClick={() => openBounty(bounty)}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : viewMode === "list" ? (
-                <div className="space-y-8">
-                  {kanbanGroups
-                    .filter((col) => col.bounties.length > 0)
-                    .map((col) => (
-                      <div key={col.status} className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`h-2 w-2 rounded-full ${col.dotColor}`}
-                          />
-                          <h3 className="text-sm font-semibold">{col.label}</h3>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] h-5 px-1.5"
-                          >
-                            {col.bounties.length}
-                          </Badge>
-                          <div className="flex-1 border-t border-border/50 ml-1" />
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          {col.bounties.map((bounty) => (
-                            <BountyCard
-                              key={bounty.id}
-                              bounty={bounty}
-                              viewMode="list"
-                              onClick={() => openBounty(bounty)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                // defrag view
+              ) : viewMode === "defrag" ? (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
                     {DEFRAG_LEGEND.map((item) => (
@@ -900,15 +859,12 @@ function HomeContent() {
                       </div>
                     ))}
                     <span className="w-full sm:w-auto sm:ml-auto text-[11px] opacity-70">
-                      {filteredBounties.length} bounties · click a block to open
+                      {shownBounties.length} bounties · click a block to open
                     </span>
                   </div>
                   <div
                     className="rounded border border-border bg-black p-1.5 overflow-hidden"
-                    style={{
-                      // Classic dense map look
-                      imageRendering: "pixelated",
-                    }}
+                    style={{ imageRendering: "pixelated" }}
                   >
                     <div className="grid gap-px [grid-template-columns:repeat(auto-fill,10px)] sm:[grid-template-columns:repeat(auto-fill,14px)] justify-start">
                       {defragBounties.map((bounty) => {
@@ -929,7 +885,6 @@ function HomeContent() {
                               cursor-pointer
                             `}
                           >
-                            {/* center "data" pixel for Done / In Progress (classic map look) */}
                             {(bounty.status === "DONE" ||
                               bounty.status === "IN_PROGRESS") && (
                               <span className="absolute inset-0 m-auto h-1 w-1 rounded-full bg-white/80 pointer-events-none" />
@@ -939,6 +894,16 @@ function HomeContent() {
                       })}
                     </div>
                   </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  {shownBounties.map((bounty) => (
+                    <RevisedBountyCard
+                      key={bounty.id}
+                      bounty={bounty}
+                      onClick={() => openBounty(bounty)}
+                    />
+                  ))}
                 </div>
               )}
 
