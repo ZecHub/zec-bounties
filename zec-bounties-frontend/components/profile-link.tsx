@@ -13,10 +13,12 @@ type ProfileUser = {
 export function ProfileLink({
   user,
   className,
+  newTab = false,
   children,
 }: {
   user?: ProfileUser | null;
   className?: string;
+  newTab?: boolean;
   children: ReactNode;
 }) {
   if (!user?.id) {
@@ -33,6 +35,7 @@ export function ProfileLink({
       title="View profile"
       className={className ?? "hover:underline hover:text-primary"}
       onClick={(e) => e.stopPropagation()}
+      {...(newTab && { target: "_blank", rel: "noopener noreferrer" })}
     >
       {children}
     </Link>

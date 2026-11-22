@@ -9,6 +9,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -26,9 +36,11 @@ import {
   Pencil,
   Send,
   Share2,
+  Trophy,
   X,
 } from "lucide-react";
 import { RxDiscordLogo } from "react-icons/rx";
+import { discordInviteUrl } from "@/lib/configENV";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
@@ -132,6 +144,7 @@ export function BountyDetailModal({
     currentUser,
     updateBounty,
     applyToBounty,
+    withdrawApplication,
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
@@ -143,6 +156,8 @@ export function BountyDetailModal({
   const [applicationMessage, setApplicationMessage] = useState("");
   const [applicationError, setApplicationError] = useState("");
   const [isApplying, setIsApplying] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrls, setDeliverableUrls] = useState<string[]>([""]);
   const [submissionErrors, setSubmissionErrors] = useState<{
@@ -241,6 +256,15 @@ export function BountyDetailModal({
       bounty.assignee === currentUser.id);
 
   const isSuggestedTask = bounty.createdByUser?.role === "HUNTER";
+
+  const isTeamMember =
+    !!currentUser &&
+    bounty.teamId != null &&
+    teams.some(
+      (t) =>
+        t.id === bounty.teamId &&
+        t.members.some((m) => m.userId === currentUser.id),
+    );
 
   // Matches both "Design and Videos" and a slug like "design-and-videos"
   const isDesignCategory =
@@ -430,7 +454,8 @@ export function BountyDetailModal({
     !userApplication &&
     !isAssignedToCurrentUser &&
     !isMissingUAForMainnet &&
-    !isSuggestedTask;
+    !isSuggestedTask &&
+    !isTeamMember;
 
   const hasApplied = !!userApplication;
 
@@ -459,6 +484,14 @@ export function BountyDetailModal({
           type: "info",
           title: "Your bounty",
           message: "You cannot apply to your own bounty.",
+        };
+      }
+      if (isTeamMember) {
+        return {
+          type: "info",
+          title: "Team bounty",
+          message:
+            "You're a member of this team, so you can't apply to its bounties.",
         };
       }
       if (!canViewPrivate) {
@@ -516,6 +549,22 @@ export function BountyDetailModal({
       toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!userApplication) return;
+
+    setIsWithdrawOpen(false);
+    setIsWithdrawing(true);
+    try {
+      await withdrawApplication(userApplication.id);
+      toast.success("Application withdrawn");
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      toast.error(getErrorMessage(error, "Failed to withdraw application"));
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -606,38 +655,75 @@ export function BountyDetailModal({
       ? DESC_COLLAPSED_PX
       : descFullHeight || undefined;
 
-  const assignees = [...(bounty.assignees ?? [])].sort(
-    (x, y) =>
+  // Once a bounty is completed, surface the paid winner first so they are
+  // always visible (not hidden behind the "+N" collapse); otherwise keep the
+  // current user first.
+  const winnerId = bounty.status === "DONE" ? bounty.assignee : null;
+  const assignees = [...(bounty.assignees ?? [])].sort((x, y) => {
+    const winnerRank =
+      Number(y.userId === winnerId) - Number(x.userId === winnerId);
+    if (winnerRank !== 0) return winnerRank;
+    return (
       Number(y.userId === currentUser?.id) -
-      Number(x.userId === currentUser?.id),
-  );
+      Number(x.userId === currentUser?.id)
+    );
+  });
   const [firstAssignee, ...restAssignees] = assignees;
 
   const renderAssignee = (a: (typeof assignees)[number]) => {
     const submitted = workSubmissions.some((s) => s.submittedBy === a.userId);
+    // When a bounty with multiple assignees is completed, the admin picks one
+    // winning submission; bounty.assignee holds that user. Flag them clearly so
+    // everyone can see whose submission was selected.
+    const isWinner = bounty.status === "DONE" && bounty.assignee === a.userId;
     return (
       <div
         key={a.userId}
-        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/5 p-2"
+        className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border p-2 ${
+          isWinner
+            ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
+            : "border-primary/20 bg-primary/5"
+        }`}
       >
-        <Avatar className="h-6 w-6 border border-primary/20">
+        <Avatar
+          className={`h-6 w-6 border ${
+            isWinner
+              ? "border-amber-300 dark:border-amber-500/40"
+              : "border-primary/20"
+          }`}
+        >
           <AvatarImage src={a.user?.avatar || "/placeholder-user.jpg"} />
           <AvatarFallback className="text-[10px]">
             {a.user?.name?.[0] || "?"}
           </AvatarFallback>
         </Avatar>
         <ProfileLink user={a.user}>
-          <p className="truncate text-xs font-semibold text-primary">
+          <p
+            className={`truncate text-xs font-semibold ${
+              isWinner
+                ? "text-amber-700 dark:text-amber-300"
+                : "text-primary"
+            }`}
+          >
             {a.user?.nickname || a.user?.name || "Unknown"}
           </p>
         </ProfileLink>
         {a.userId === currentUser?.id && (
           <span className="text-[10px] text-muted-foreground">You</span>
         )}
-        {submitted && (
-          <span className="ml-auto flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
-            <CheckCircle2 className="h-2.5 w-2.5" /> Submitted
+        {isWinner ? (
+          <span
+            className="ml-auto flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+            title="This contributor's submission was selected"
+          >
+            <Trophy className="h-2.5 w-2.5" /> Selected
           </span>
+        ) : (
+          submitted && (
+            <span className="ml-auto flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+              <CheckCircle2 className="h-2.5 w-2.5" /> Submitted
+            </span>
+          )
         )}
       </div>
     );
@@ -908,6 +994,15 @@ export function BountyDetailModal({
         {firstAssignee && (
           <div className="mt-4 space-y-1.5">
             <p className="text-xs text-muted-foreground">Assigned to</p>
+            {assignees.length > 1 && bounty.status !== "DONE" && (
+              <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                <Trophy className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                <span>
+                  More than one contributor is assigned. Only the best
+                  submission is selected.
+                </span>
+              </p>
+            )}
             <div className="flex items-center gap-1.5">
               {renderAssignee(firstAssignee)}
               {restAssignees.length > 0 && (
@@ -1207,7 +1302,16 @@ export function BountyDetailModal({
                   >
                     profile
                   </Link>{" "}
-                  to get notified if you're assigned.
+                  to get notified if you're assigned, and{" "}
+                  <a
+                    href={discordInviteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    join the server
+                  </a>
+                  .
                 </span>
               </p>
             )}
@@ -1328,6 +1432,17 @@ export function BountyDetailModal({
                     ? `Under review · applied ${format(new Date(userApplication.appliedAt), "MMM d")}`
                     : "Under review"}
             </p>
+            {userApplication?.status === "pending" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full mt-1"
+                onClick={() => setIsWithdrawOpen(true)}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? "Withdrawing…" : "Withdraw application"}
+              </Button>
+            )}
           </section>
         )}
 
@@ -1340,6 +1455,30 @@ export function BountyDetailModal({
               closed={bounty.status === "DONE"}
             />
           )}
+
+        {/* Withdraw confirmation */}
+        <AlertDialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw application</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to withdraw this application? You can
+                apply again after withdrawing.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isWithdrawing}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleWithdraw}
+                disabled={isWithdrawing}
+              >
+                {isWithdrawing ? "Withdrawing…" : "Withdraw"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

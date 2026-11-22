@@ -8,6 +8,7 @@ import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { IS_DEV } from "@/lib/configENV";
 
 interface CreateBountyFormProps {
   onSuccess?: () => void;
@@ -42,6 +43,7 @@ export function TeamsNewBountyModal({
     bountyAmount: 0,
     timeToComplete: new Date(),
     category: "",
+    chain: "MAIN",
     teamId: defaultTeamId,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,6 +69,7 @@ export function TeamsNewBountyModal({
       bountyAmount: 0,
       timeToComplete: new Date(),
       category: "",
+      chain: "MAIN",
       teamId: defaultTeamId,
     });
   };
@@ -101,7 +104,10 @@ export function TeamsNewBountyModal({
 
     setIsSubmitting(true);
     try {
-      await createBounty(formData);
+      await createBounty({
+        ...formData,
+        chain: IS_DEV ? formData.chain : "MAIN",
+      });
       toast.success("Bounty created", {
         description: `"${formData.title}" is now live.`,
       });
@@ -252,6 +258,28 @@ export function TeamsNewBountyModal({
                 className={fieldInput}
               />
             </div>
+
+            {IS_DEV && (
+              <div>
+                <label className={fieldLabel} htmlFor="chain">
+                  Network (dev only)
+                </label>
+                <select
+                  id="chain"
+                  value={formData.chain ?? "MAIN"}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      chain: e.target.value as "MAIN" | "TEST",
+                    }))
+                  }
+                  className={`${fieldInput} appearance-none`}
+                >
+                  <option value="MAIN">Mainnet</option>
+                  <option value="TEST">Testnet</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <label className={fieldLabel} htmlFor="description">

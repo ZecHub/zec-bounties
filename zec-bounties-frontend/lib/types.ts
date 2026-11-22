@@ -24,6 +24,8 @@ export interface User {
   discordUsername?: string;
   discordGlobalName?: string;
   canCreateTasks?: boolean;
+  hasUnifiedAddress?: boolean;
+  hasShieldedAddress?: boolean;
 }
 
 /** Privacy-first profile visibility. Missing keys treated as false except avatar/displayName. */
@@ -257,6 +259,8 @@ export interface WorkSubmission {
   submitterUser?: User; // Populated user data
   reviewerUser?: User; // Populated user data
   bounty?: { id: string; title: string };
+  filedBy?: string | null;
+  editedAt?: string | null;
 }
 
 export interface BountyAssignee {
@@ -314,6 +318,7 @@ export interface Team {
   logo?: string | null;
   banner?: string | null;
   isPrivate: boolean;
+  payoutBy: "ADMIN" | "TEAM";
 }
 
 export interface TeamVerificationStatus {

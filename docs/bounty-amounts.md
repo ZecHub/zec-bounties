@@ -20,7 +20,7 @@ zec_to_enter = usd_target / zec_usd_spot
 5. Type that ZEC value into **Reward (ZEC)**. Round to 4 decimal places.
 6. Optional but useful: mention the USD band and the spot you used in the description so reviewers can check the conversion.
 
-Example: short wiki page, S band, `$40` target, spot `$800` / ZEC → enter `0.05` ZEC.
+Example: short wiki page, S band, `$20` target, spot `$800` / ZEC → enter `0.0250` ZEC.
 
 If you only remember old frozen tips (`0.05 ZEC` newsletter, `0.08 ZEC` wiki), those were snapshots at an older rate. Convert from the USD interval instead.
 
@@ -30,9 +30,9 @@ These are what you should propose. Admins can still adjust before the bounty goe
 
 | Interval | Implicit USD | Suggest this kind of work |
 |----------|--------------|---------------------------|
-| XS | $15–$25 | Newsletter edition, broken-link fix, small copy edit |
-| S | $25–$50 | New short wiki page, accepted translation, small docs PR |
-| M | $50–$120 | Substantial wiki or tutorial (video), medium application change |
+| XS | $8–$15 | Newsletter edition, broken-link fix, small copy edit |
+| S | $15–$30 | New short wiki page, accepted translation, small docs PR |
+| M | $30–$80 | Substantial wiki or tutorial (video), medium application change |
 | L | $120–$250 | Multi-file feature, wallet/tooling work, longer research |
 | XL | $250–$400 | Large approved PR or multi-day engineering task |
 
@@ -52,8 +52,8 @@ Recompute when **any** of these is true:
 
 Worked example:
 
-- Suggested: `$40` (S) at `$500` / ZEC → listed `0.0800` ZEC
-- Payout week: spot `$800` / ZEC → change the reward to `0.0500` ZEC
+- Suggested: `$20` (S) at `$500` / ZEC → listed `0.0400` ZEC
+- Payout week: spot `$800` / ZEC → change the reward to `0.0250` ZEC
 - Same implied dollar value; different ZEC quantity
 
 If ZEC falls, the ZEC number should go up. Fund the paying wallet for that case.

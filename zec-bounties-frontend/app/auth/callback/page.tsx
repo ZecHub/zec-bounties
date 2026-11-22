@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,19 +15,43 @@ export default function GithubCallback() {
   const { setCurrentUser } = useBounty();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const handledRef = useRef(false);
 
   useEffect(() => {
-    const token = searchParams.get("token");
+    // Guard against React 19 / StrictMode double-invocation and against
+    // re-runs after history.replaceState scrubs the fragment.
+    if (handledRef.current) return;
+    handledRef.current = true;
+
+    // Token arrives in the URL fragment (#token=...) so it is never sent to
+    // servers or included in the Referer header. Query fallback covers any
+    // transitional deploys that still emit ?token=.
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const tokenFromHash = new URLSearchParams(hash.replace(/^#/, "")).get("token");
+    const token = tokenFromHash || searchParams.get("token");
     const expectedState = readGithubLoginState();
 
     if (!token) {
+      clearGithubLoginState();
       router.push("/login?error=missing_token");
       return;
     }
 
     if (!expectedState || searchParams.get("state") !== expectedState) {
+      clearGithubLoginState();
       router.push("/login?error=invalid_state");
       return;
+    }
+
+    // Scrub the token from the address bar / history immediately.
+    // Do this after we have already captured the token so a subsequent
+    // effect run cannot see a missing token and treat it as a failure.
+    if (typeof window !== "undefined") {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      );
     }
 
     localStorage.setItem("authToken", token);

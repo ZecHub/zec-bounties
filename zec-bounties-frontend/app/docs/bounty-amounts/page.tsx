@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 const INTERVALS = [
   {
     band: "XS",
-    usd: "$15–$25",
+    usd: "$8–$15",
     work: "Newsletter edition, broken-link fix, small copy edit",
     card: "border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-950/40",
     badge: "bg-emerald-500 text-white",
@@ -26,7 +26,7 @@ const INTERVALS = [
   },
   {
     band: "S",
-    usd: "$25–$50",
+    usd: "$15–$30",
     work: "New short wiki page, accepted translation, small docs PR",
     card: "border-sky-300/80 bg-sky-50 dark:border-sky-500/40 dark:bg-sky-950/40",
     badge: "bg-sky-500 text-white",
@@ -34,7 +34,7 @@ const INTERVALS = [
   },
   {
     band: "M",
-    usd: "$50–$120",
+    usd: "$30–$80",
     work: "Substantial wiki or tutorial (video), medium application change",
     card: "border-amber-300/80 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/40",
     badge: "bg-amber-500 text-white",
@@ -131,8 +131,8 @@ export default function BountyAmountsPage() {
             Example
           </p>
           <p className="mt-2 text-sm text-foreground">
-            Short wiki page, S band, $40 target, spot $800 / ZEC → enter{" "}
-            <strong>0.05 ZEC</strong>.
+            Short wiki page, S band, $20 target, spot $800 / ZEC → enter{" "}
+            <strong>0.0250 ZEC</strong>.
           </p>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">

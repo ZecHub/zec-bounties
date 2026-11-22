@@ -660,9 +660,27 @@ export default function ProfilePage() {
               ) : (
                 <Button
                   size="sm"
-                  onClick={() => {
-                    const token = localStorage.getItem("authToken");
-                    window.location.href = `${backendUrl}/auth/discord?token=${encodeURIComponent(token ?? "")}`;
+                  onClick={async () => {
+                    try {
+                      const token = localStorage.getItem("authToken");
+                      const res = await fetch(`${backendUrl}/auth/discord`, {
+                        headers: { Authorization: `Bearer ${token ?? ""}` },
+                      });
+                      const data = res.ok
+                        ? await res.json().catch(() => null)
+                        : null;
+                      if (data?.url) {
+                        window.location.href = data.url;
+                      } else {
+                        toast.error("Couldn't start Discord connect", {
+                          description: "Please try again.",
+                        });
+                      }
+                    } catch {
+                      toast.error("Couldn't start Discord connect", {
+                        description: "Please try again.",
+                      });
+                    }
                   }}
                 >
                   Connect Discord

@@ -1,5 +1,7 @@
 const express = require("express");
 const prisma = require("../prisma/client");
+// Discord bot state notice, sent when a payment is confirmed
+const { notifyBountyState } = require("../utils/discord/discordAssignWebhook");
 const router = express.Router();
 const { authenticate, isAdmin } = require("../middleware/auth");
 const executeZingoQuickSend = require("../utils/zingo/zingoLibQuickSend.js");
@@ -21,6 +23,11 @@ const executeZingoCliInfo = require("../utils/zingo/zingoLibInfo");
 const { randomUUID } = require("crypto");
 
 const { sendRealtimeUpdate, sendToUser } = require("../middleware/websocket");
+const {
+  loadDecidedProposals,
+  consumeProposals,
+  itemFor,
+} = require("../utils/payoutProposals");
 
 const path = require("path");
 
@@ -31,8 +38,8 @@ const serializeTxRecord = (record) => ({
   amountZat: Number(record.amountZat),
 });
 
-// Clean failure before anything reached the network: record it and put the
-// bounties back in the payable set.
+// Clean failure before anything reached the network: record it, put the
+// bounties back in the payable set, and put their approved rounds back to DECIDED.
 async function releaseClaim(batchKey, bountyIds, errorDetail, raw) {
   await prisma.$transaction([
     prisma.transaction.updateMany({
@@ -47,6 +54,10 @@ async function releaseClaim(batchKey, bountyIds, errorDetail, raw) {
     prisma.bounty.updateMany({
       where: { id: { in: bountyIds } },
       data: { paymentInFlight: false },
+    }),
+    prisma.payoutProposal.updateMany({
+      where: { bountyIds: { hasSome: bountyIds }, status: "EXECUTED" },
+      data: { status: "DECIDED", executedAt: null },
     }),
   ]);
   await Promise.all(bountyIds.map((id) => invalidateBounty(id)));
@@ -198,7 +209,8 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       adminWallet.chain === "mainnet" ? "MAIN" : "TEST";
 
     // Fetch the selected bounties with their assignees. Team bounties are
-    // paid from the team wallet (POST /api/teams/:teamId/wallet/authorize-payment).
+    // paid from the team wallet (POST /api/teams/:teamId/wallet/authorize-payment),
+    // and exported bounties outside the app (Export Completed).
     const bounties = await prisma.bounty.findMany({
       where: {
         id: { in: bountyIds },
@@ -207,6 +219,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
         isPaid: false,
         isApproved: true,
         paymentInFlight: false,
+        exportedAt: null,
       },
       include: {
         assigneeUser: {
@@ -232,7 +245,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     if (bounties.length === 0) {
       return res.status(400).json({
         error:
-          "None of the selected bounties are eligible for payment (must be DONE, approved, and unpaid)",
+          "None of the selected bounties are eligible for payment (must be DONE, approved, unpaid, and not exported)",
       });
     }
 
@@ -240,11 +253,25 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
     const paymentList = [];
     const skipped = [];
 
+    const { usable, rejected } = await loadDecidedProposals(
+      prisma,
+      bounties,
+      req.user.id,
+    );
+
     for (const bounty of bounties) {
-      const payoutAddress =
-        bounty.chain === "MAIN"
-          ? bounty.assigneeUser?.UA_address
-          : bounty.assigneeUser?.z_address;
+      const proposal = usable.get(bounty.id);
+      if (!proposal) {
+        skipped.push({
+          id: bounty.id,
+          title: bounty.title,
+          reason:
+            rejected.get(bounty.id) ||
+            "No decided payout round (needs approvals)",
+        });
+        continue;
+      }
+      const payoutAddress = itemFor(proposal, bounty.id).recipient;
 
       if (!payoutAddress) {
         skipped.push({
@@ -293,11 +320,18 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
             isApproved: true,
             isPaid: false,
             paymentInFlight: false,
+            exportedAt: null,
           },
           data: { paymentInFlight: true },
         });
 
         if (result.count !== payableIds.length) throw claimConflict;
+        await consumeProposals(
+          tx,
+          paymentList.map((p) => usable.get(p.bountyId)),
+          claimConflict,
+          req.user.id,
+        );
 
         await tx.transaction.createMany({
           data: paymentList.map((p) => ({
@@ -313,7 +347,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       if (err !== claimConflict) throw err;
       return res.status(409).json({
         error:
-          "Some of the selected bounties are already being paid by another request. Refresh and try again.",
+          "Some of the selected bounties are no longer eligible for payment (already paid, in flight or exported). Refresh and try again.",
       });
     }
 
@@ -414,6 +448,8 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
       }),
     ]);
     await Promise.all(payableIds.map((id) => invalidateBounty(id)));
+    // Fire-and-forget: let the Discord bot know these bounties are paid
+    payableIds.forEach((id) => notifyBountyState(prisma, id));
 
     sendRealtimeUpdate(
       "payment_authorized",
@@ -448,6 +484,7 @@ router.post("/authorize-payment", authenticate, isAdmin, async (req, res) => {
 router.get("/records", authenticate, isAdmin, async (req, res) => {
   try {
     const records = await prisma.transaction.findMany({
+      where: { bounty: { teamId: null } },
       orderBy: { createdAt: "desc" },
       take: 200,
       include: {
@@ -509,8 +546,9 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
 
     const record = await prisma.transaction.findUnique({
       where: { id: req.params.id },
+      include: { bounty: { select: { teamId: true } } },
     });
-    if (!record) {
+    if (!record || record.bounty?.teamId) {
       return res.status(404).json({ error: "Payment record not found" });
     }
     if (record.status !== "UNKNOWN") {
@@ -560,6 +598,11 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
                 }
               : { paymentInFlight: false },
         });
+        if (outcome === "failed")
+          await tx.payoutProposal.updateMany({
+            where: { bountyIds: { has: record.bountyId }, status: "EXECUTED" },
+            data: { status: "CANCELLED" },
+          });
       });
     } catch (err) {
       if (err !== alreadySettled) throw err;
@@ -570,6 +613,8 @@ router.post("/records/:id/resolve", authenticate, isAdmin, async (req, res) => {
 
     await invalidateBounty(record.bountyId);
     res.json({ success: true });
+    // Only a confirmed payment (broadcast) is sent to the bot; failed or unknown outcomes are not
+    if (outcome === "broadcast") notifyBountyState(prisma, record.bountyId);
   } catch (error) {
     console.error("Error resolving payment record:", error);
     res.status(500).json({ error: error.message });

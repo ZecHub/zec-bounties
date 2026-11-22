@@ -19,7 +19,7 @@ const METHOD: Record<string, string> = {
 const AUTH_ROWS = [
   ["GET", "/auth/github", "Public", "Start GitHub login"],
   ["GET", "/auth/github/callback", "Public", "OAuth callback"],
-  ["GET", "/auth/discord", "Public", "Start Discord connect"],
+  ["GET", "/auth/discord", "Signed in", "Start Discord connect (returns the OAuth URL as JSON)"],
   ["DELETE", "/auth/discord", "Signed in", "Disconnect Discord"],
   ["GET", "/auth/me", "Session", "Current user"],
   ["PATCH", "/auth/update-nickname", "Signed in", "Set nickname"],
@@ -218,6 +218,7 @@ curl -sS -X POST "https://zechub.zone/api/bounties/apply" \\
           {[
             ["POST", "/api/bounties/apply", "Apply to a bounty"],
             ["GET", "/api/bounties/my-applications", "Your applications"],
+            ["DELETE", "/api/bounties/applications/:applicationId", "Withdraw a pending application"],
             ["POST", "/api/bounties/:id/submit", "Submit work"],
             ["GET", "/api/bounties/my-submissions", "Your submissions"],
             ["POST", "/api/bounties", "Create a bounty"],

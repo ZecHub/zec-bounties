@@ -43,7 +43,7 @@ function roleBadgeClass(role: string) {
 }
 
 // Same palette/hash idea as TeamBanner — gives each card a distinct,
-// stable accent strip until real banner images exist.
+// stable accent strip when the team has no uploaded banner.
 const GRADIENT_PRESETS = [
   "from-primary/60 via-primary/20 to-transparent",
   "from-chart-2/60 via-chart-2/20 to-transparent",
@@ -68,25 +68,60 @@ export function getUserRole(
 }
 
 export default function TeamsPage() {
-  const { currentUser, teams, teamsLoading, fetchTeams, bounties } =
-    useBounty();
+  const {
+    currentUser,
+    teams,
+    teamsLoading,
+    fetchTeams,
+    bounties,
+    zcashParams,
+    setDefaultWallet,
+  } = useBounty();
+
   const router = useRouter();
   const [showCreatePanel, setShowCreatePanel] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [openingTeamId, setOpeningTeamId] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser) fetchTeams();
   }, [currentUser?.id]);
 
   const stats = useMemo(() => {
-    const totalMembers = teams.reduce((sum, t) => sum + t.members.length, 0);
+    const teamIds = new Set(teams.map((t) => t.id));
+    const memberIds = new Set<string>();
+    for (const t of teams) {
+      for (const m of t.members) memberIds.add(m.userId);
+    }
     const totalActive = bounties.filter(
       (b) =>
-        !!b.teamId && (b.status === "IN_PROGRESS" || b.status === "IN_REVIEW"),
+        !!b.teamId &&
+        teamIds.has(b.teamId) &&
+        (b.status === "IN_PROGRESS" || b.status === "IN_REVIEW"),
     ).length;
     const withWallet = teams.filter((t) => !!t.wallet).length;
-    return { totalMembers, totalActive, withWallet };
+    return { totalMembers: memberIds.size, totalActive, withWallet };
   }, [teams, bounties]);
+
+  // Make the team's wallet the active one before entering the team console,
+  // so the navbar loads the team balance instead of the personal wallet.
+  const handleOpenTeam = async (team: Team) => {
+    if (openingTeamId) return;
+    const teamWallet = zcashParams?.find(
+      (p) => p.isTeam && p.teamId === team.id,
+    );
+    if (teamWallet && !teamWallet.isDefault) {
+      setOpeningTeamId(team.id);
+      try {
+        await setDefaultWallet(teamWallet.accountName, team.id);
+      } catch {
+        // Still open the team; the navbar falls back to its own resolution.
+      } finally {
+        setOpeningTeamId(null);
+      }
+    }
+    router.push(`/teams/${team.id}`);
+  };
 
   if (!currentUser) {
     return (
@@ -213,12 +248,23 @@ export default function TeamsPage() {
                 <button
                   key={team.id}
                   type="button"
-                  onClick={() => router.push(`/teams/${team.id}`)}
+                  onClick={() => handleOpenTeam(team)}
+                  disabled={openingTeamId === team.id}
                   className="group flex flex-col overflow-hidden rounded-xl border bg-card text-left transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
                 >
-                  <div
-                    className={`h-16 shrink-0 bg-gradient-to-br ${gradientFor(team.id)}`}
-                  />
+                  <div className="h-16 shrink-0 overflow-hidden">
+                    {team.banner ? (
+                      <img
+                        src={team.banner}
+                        alt={`${team.name} banner`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div
+                        className={`h-full w-full bg-gradient-to-br ${gradientFor(team.id)}`}
+                      />
+                    )}
+                  </div>
 
                   <div className="flex flex-1 flex-col gap-4 p-6 pt-0">
                     <div className="-mt-8 flex items-end justify-between gap-3">

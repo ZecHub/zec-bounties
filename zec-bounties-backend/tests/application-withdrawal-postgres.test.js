@@ -95,12 +95,13 @@ function loadRoutes(prisma) {
     "../utils/cache": cache, "../utils/sendMail": noOp, "../utils/notifyUser": noOp,
     "../utils/suggestionSettings": { getSuggestionSettings: async () => ({ mode: "open", threshold: 0 }) },
     "../utils/discord/discordNotify": { notifyNewBounty: noOp },
-    "../utils/discord/discordAssignWebhook": { notifyAssignment: noOp },
+    "../utils/discord/discordAssignWebhook": { notifyAssignment: noOp, notifyBountyAssignees: noOp, notifyBountyState: noOp },
     "../utils/constants": {}, "../helpers/validateBounty": {},
     "../utils/userIdentity": require(path.join(backend, "utils/userIdentity")),
     "../utils/userSelects": require(path.join(backend, "utils/userSelects")),
     "../utils/privacy": require(path.join(backend, "utils/privacy")),
     "../utils/bountySuggestionReview": require(path.join(backend, "utils/bountySuggestionReview")),
+    "../utils/exportableBounty": require(path.join(backend, "utils/exportableBounty")),
     // Real activity rows. Passing a client skips the unawaited fan-out, which
     // could outlive the test schema.
     "../utils/bountyActivity": {

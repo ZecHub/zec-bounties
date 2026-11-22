@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -177,6 +178,8 @@ export default function KpisDashboard() {
   } = useBounty();
 
   const isAdmin = currentUser?.role === "ADMIN";
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [viewMode, setViewMode] = useState<"public" | "admin">(
     isAdmin ? "admin" : "public",
@@ -453,6 +456,19 @@ const [zecPrices, setZecPrices] = useState<
     };
     loadData();
   }, [isAdmin, showAllUsers, timeRange, chainFilter]);
+
+  // Open badge modal when arriving from staff view (?editBadges=<userId>)
+  useEffect(() => {
+    const userId = searchParams?.get("editBadges");
+    if (!userId || !isAdmin || loadingContributors) return;
+    const user = topContributors.find((u) => u.id === userId);
+    if (!user) return;
+    openBadgeModal(user);
+    // Clear the param so a refresh doesn't re-open
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("editBadges");
+    router.replace(`?${next.toString()}`, { scroll: false });
+  }, [searchParams, isAdmin, loadingContributors, topContributors, router]);
 
   // Fetch time series data
   useEffect(() => {

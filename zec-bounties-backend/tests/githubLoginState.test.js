@@ -42,6 +42,7 @@ function loadRoutes() {
       isOtherGithubAccount: (user, githubId) =>
         Boolean(user?.githubId) && user.githubId !== githubId,
     },
+    "../helpers/authRedirect": require("../helpers/authRedirect"),
   };
   const filename = path.join(__dirname, "../routes/auth.js");
   const module = { exports: {} };
@@ -80,7 +81,9 @@ test("the GitHub callback returns the login page's state with the token", async 
   const res = await login(loadRoutes(), { state: LOGIN_STATE });
   const url = new URL(res.location);
   assert.equal(url.pathname, "/auth/callback");
-  assert.equal(url.searchParams.get("token"), "session-token");
+  // The session token rides in the fragment (never the query), so it can't
+  // leak via server/proxy logs or the Referer header. State stays in the query.
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get("token"), "session-token");
   assert.equal(url.searchParams.get("state"), LOGIN_STATE);
   assert.equal(res.cookies.gh_login_state, null);
 });
@@ -100,7 +103,7 @@ test("GitHub login with a malformed state is refused", async () => {
 test("a login started without a state gets a token with no state", async () => {
   const res = await login(loadRoutes(), {});
   const url = new URL(res.location);
-  assert.equal(url.searchParams.get("token"), "session-token");
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get("token"), "session-token");
   assert.equal(url.searchParams.has("state"), false);
 });
 

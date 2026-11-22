@@ -12,6 +12,7 @@ import {
   Coins,
   Loader2,
   Tag,
+  Trophy,
   User,
   Copy,
   Check,
@@ -337,13 +338,30 @@ export default function BountyDetailPage() {
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                   {bounty.assignees.length === 1 ? "Assignee" : "Assignees"}
                 </p>
+                {bounty.assignees.length > 1 && bounty.status !== "DONE" && (
+                  <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                    <Trophy className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                    <span>
+                      More than one contributor is assigned. Only the best
+                      submission is selected.
+                    </span>
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {bounty.assignees.map((a) => {
                     const user = a.user;
+                    // On a completed bounty, bounty.assignee is the submission
+                    // the admin selected.
+                    const isWinner =
+                      bounty.status === "DONE" && bounty.assignee === a.userId;
                     return (
                       <div
                         key={a.userId ?? user?.id}
-                        className="flex items-center gap-2 border rounded-md px-2.5 py-1.5 bg-muted/40"
+                        className={`flex items-center gap-2 border rounded-md px-2.5 py-1.5 ${
+                          isWinner
+                            ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
+                            : "bg-muted/40"
+                        }`}
                       >
                         <Avatar className="w-5 h-5">
                           {user?.avatar && (
@@ -359,7 +377,13 @@ export default function BountyDetailPage() {
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="text-xs font-medium leading-none">
+                          <p
+                            className={`text-xs font-medium leading-none ${
+                              isWinner
+                                ? "text-amber-700 dark:text-amber-300"
+                                : ""
+                            }`}
+                          >
                             {user?.name ?? "—"}
                           </p>
                           {user?.email && (
@@ -368,6 +392,11 @@ export default function BountyDetailPage() {
                             </p>
                           )}
                         </div>
+                        {isWinner && (
+                          <span className="ml-1 flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                            <Trophy className="h-2.5 w-2.5" /> Selected
+                          </span>
+                        )}
                       </div>
                     );
                   })}

@@ -9,6 +9,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -23,6 +33,7 @@ import {
   Send,
   AlertTriangle,
   ExternalLink,
+  Trophy,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -36,20 +47,21 @@ import {
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
 
-interface BountyDetailModalProps {
+interface TeamBountyDetailModalProps {
   bounty: Bounty | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function BountyDetailModal({
+export function TeamBountyDetailModal({
   bounty,
   open,
   onOpenChange,
-}: BountyDetailModalProps) {
+}: TeamBountyDetailModalProps) {
   const {
     currentUser,
     applyToBounty,
+    withdrawApplication,
     getUserApplicationForBounty,
     fetchWorkSubmissions,
     submitWork,
@@ -57,6 +69,8 @@ export function BountyDetailModal({
 
   const [applicationMessage, setApplicationMessage] = useState("");
   const [isApplying, setIsApplying] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [submissionDescription, setSubmissionDescription] = useState("");
   const [deliverableUrl, setDeliverableUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -144,7 +158,10 @@ export function BountyDetailModal({
   const hasApplied = !!userApplication;
 
   const notice: Notice | null = (() => {
-    if (isAssignedToCurrentUser && (!bounty.isApproved || bounty.status === "TO_DO")) {
+    if (
+      isAssignedToCurrentUser &&
+      (!bounty.isApproved || bounty.status === "TO_DO")
+    ) {
       return {
         type: "warning",
         title: "Bounty not yet approved",
@@ -206,6 +223,22 @@ export function BountyDetailModal({
       toast.error(getErrorMessage(error, "Failed to submit application"));
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!userApplication) return;
+
+    setIsWithdrawOpen(false);
+    setIsWithdrawing(true);
+    try {
+      await withdrawApplication(userApplication.id);
+      toast.success("Application withdrawn");
+    } catch (error) {
+      console.error("Failed to withdraw application:", error);
+      toast.error(getErrorMessage(error, "Failed to withdraw application"));
+    } finally {
+      setIsWithdrawing(false);
     }
   };
 
@@ -596,6 +629,17 @@ export function BountyDetailModal({
                         ? "Your application was not selected for this bounty."
                         : "Your application is being reviewed by the bounty creator."}
                   </p>
+                  {userApplication?.status === "pending" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setIsWithdrawOpen(true)}
+                      disabled={isWithdrawing}
+                    >
+                      {isWithdrawing ? "Withdrawing…" : "Withdraw application"}
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
@@ -647,17 +691,41 @@ export function BountyDetailModal({
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
                   Assigned To
                 </p>
+                {bounty.assignees.length > 1 && bounty.status !== "DONE" && (
+                  <p className="flex items-start gap-1 text-[11px] text-muted-foreground mb-2">
+                    <Trophy className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                    <span>
+                      More than one contributor is assigned. Only the best
+                      submission is selected.
+                    </span>
+                  </p>
+                )}
                 <div className="space-y-1.5">
                   {bounty.assignees.map((a) => {
                     const hasSubmitted = workSubmissions.some(
                       (s) => s.submittedBy === a.userId,
                     );
+                    // On a completed bounty, bounty.assignee is the submission
+                    // the team selected.
+                    const isWinner =
+                      bounty.status === "DONE" &&
+                      bounty.assignee === a.userId;
                     return (
                       <div
                         key={a.userId}
-                        className="flex items-center gap-2.5 p-2.5 rounded-lg border border-primary/20 bg-primary/5"
+                        className={`flex items-center gap-2.5 p-2.5 rounded-lg border ${
+                          isWinner
+                            ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
+                            : "border-primary/20 bg-primary/5"
+                        }`}
                       >
-                        <Avatar className="h-7 w-7 border border-primary/20">
+                        <Avatar
+                          className={`h-7 w-7 border ${
+                            isWinner
+                              ? "border-amber-300 dark:border-amber-500/40"
+                              : "border-primary/20"
+                          }`}
+                        >
                           <AvatarImage
                             src={a.user?.avatar || "/placeholder-user.jpg"}
                           />
@@ -666,7 +734,13 @@ export function BountyDetailModal({
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-primary truncate">
+                          <p
+                            className={`text-xs font-semibold truncate ${
+                              isWinner
+                                ? "text-amber-700 dark:text-amber-300"
+                                : "text-primary"
+                            }`}
+                          >
                             {a.user?.nickname || a.user?.name || "Unknown"}
                           </p>
                           <div className="flex items-center gap-1.5">
@@ -675,11 +749,17 @@ export function BountyDetailModal({
                                 You
                               </span>
                             )}
-                            {hasSubmitted && (
-                              <span className="flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
-                                <CheckCircle2 className="h-2.5 w-2.5" />{" "}
-                                Submitted
+                            {isWinner ? (
+                              <span className="flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                                <Trophy className="h-2.5 w-2.5" /> Selected
                               </span>
+                            ) : (
+                              hasSubmitted && (
+                                <span className="flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />{" "}
+                                  Submitted
+                                </span>
+                              )
                             )}
                           </div>
                         </div>
@@ -691,6 +771,27 @@ export function BountyDetailModal({
             )}
           </div>
         </div>
+
+        {/* Withdraw confirmation */}
+        <AlertDialog open={isWithdrawOpen} onOpenChange={setIsWithdrawOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw application</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to withdraw this application? You can
+                apply again after withdrawing.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isWithdrawing}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleWithdraw} disabled={isWithdrawing}>
+                {isWithdrawing ? "Withdrawing…" : "Withdraw"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );

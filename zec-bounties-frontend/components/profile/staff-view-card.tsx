@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Ban, ChevronDown, Loader2, Unlock } from "lucide-react";
+import { Ban, ChevronDown, Loader2, Unlock, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { fmt } from "@/lib/utils";
 import { useBounty } from "@/lib/bounty-context";
 import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
 import type { Bounty } from "@/lib/types";
+import Link from "next/link";
 
 export type StaffRelation = "created" | "assigned" | "applied";
 
@@ -33,6 +34,8 @@ export type StaffBountyRow = {
 
 export type StaffBountyView = {
   userId: string;
+  name?: string | null;
+  nickname?: string | null;
   displayName: string;
   chain: "MAIN" | "TEST";
   limit: number;
@@ -96,6 +99,10 @@ function isCompleted(row: StaffBountyRow) {
   return row.status === "DONE" && isAssigned(row);
 }
 
+function isTeamBounty(row: StaffBountyRow) {
+  return !!row.teamName;
+}
+
 function Row({
   row,
   onOpen,
@@ -147,7 +154,7 @@ function Row({
         ))}
         {row.applicationStatus && (
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            App {row.applicationStatus}
+            Applied: {row.applicationStatus.toLowerCase()}
           </Badge>
         )}
         {row.isPrivate && (
@@ -352,16 +359,24 @@ export function StaffViewCard({
   if (STATUS_ORDER.every((key) => !apiCounts[key])) {
     Object.assign(counts, counted);
   }
-  const zecEarned = loaded.reduce(
+  const zecEarned = data?.zecEarned ?? loaded.reduce(
     (sum, row) => sum + (isEarned(row) ? amount(row) : 0),
     0,
   );
-  const zecCompleted = loaded.reduce(
+  const zecCompleted = data?.zecCompleted ?? loaded.reduce(
     (sum, row) => sum + (isCompleted(row) ? amount(row) : 0),
     0,
   );
   const visible = (rows: StaffBountyRow[]) =>
     status === "ALL" ? rows : rows.filter((row) => row.status === status);
+
+  const openVisible = data ? visible(data.open) : [];
+  const historyVisible = data ? visible(data.history) : [];
+
+  const openPersonal = openVisible.filter((row) => !isTeamBounty(row));
+  const openTeam = openVisible.filter((row) => isTeamBounty(row));
+  const historyPersonal = historyVisible.filter((row) => !isTeamBounty(row));
+  const historyTeam = historyVisible.filter((row) => isTeamBounty(row));
 
   return (
     <>
@@ -378,6 +393,13 @@ export function StaffViewCard({
               <Badge variant="outline" className="text-[10px] font-normal">
                 Admin
               </Badge>
+              {data?.displayName && (
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  {data.nickname && data.name && data.nickname !== data.name
+                    ? `${data.name} (@${data.nickname})`
+                    : data.displayName}
+                </span>
+              )}
               {taskAccess && taskBlocked && (
                 <Badge
                   variant="destructive"
@@ -405,6 +427,16 @@ export function StaffViewCard({
                 <span className="tabular-nums">
                   {bountyCount} · {fmt(zecEarned)} earned
                 </span>
+              )}
+              {data?.userId && (
+                <Link
+                  href={`/admin/kpis?editBadges=${encodeURIComponent(data.userId)}`}
+                  className="inline-flex items-center gap-1 rounded p-1 hover:bg-muted text-muted-foreground hover:text-foreground"
+                  title="Edit badges for this user"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Link>
               )}
               <ChevronDown
                 className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
@@ -500,26 +532,66 @@ export function StaffViewCard({
                     );
                   })}
                 </div>
-                <List
-                  title="Open"
-                  total={data.openTotal}
-                  rows={visible(data.open)}
-                  onLoadMore={
-                    data.openNextOffset == null ? undefined : onLoadMoreOpen
-                  }
-                  onOpen={openBounty}
-                />
-                <List
-                  title="History"
-                  total={data.historyTotal}
-                  rows={visible(data.history)}
-                  onLoadMore={
-                    data.historyNextOffset == null
-                      ? undefined
-                      : onLoadMoreHistory
-                  }
-                  onOpen={openBounty}
-                />
+
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      Open
+                    </p>
+                    <div className="space-y-4 pl-2 border-l border-border/50">
+                      <List
+                        title="Personal"
+                        total={openPersonal.length}
+                        rows={openPersonal}
+                        onOpen={openBounty}
+                      />
+                      <List
+                        title="Team"
+                        total={openTeam.length}
+                        rows={openTeam}
+                        onOpen={openBounty}
+                      />
+                    </div>
+                    {data.openNextOffset != null && onLoadMoreOpen && (
+                      <button
+                        type="button"
+                        onClick={onLoadMoreOpen}
+                        className="mt-2 text-xs text-primary hover:underline"
+                      >
+                        Load more open
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      History
+                    </p>
+                    <div className="space-y-4 pl-2 border-l border-border/50">
+                      <List
+                        title="Personal"
+                        total={historyPersonal.length}
+                        rows={historyPersonal}
+                        onOpen={openBounty}
+                      />
+                      <List
+                        title="Team"
+                        total={historyTeam.length}
+                        rows={historyTeam}
+                        onOpen={openBounty}
+                      />
+                    </div>
+                    {data.historyNextOffset != null && onLoadMoreHistory && (
+                      <button
+                        type="button"
+                        onClick={onLoadMoreHistory}
+                        className="mt-2 text-xs text-primary hover:underline"
+                      >
+                        Load more history
+                      </button>
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </CardContent>

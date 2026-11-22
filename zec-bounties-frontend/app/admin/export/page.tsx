@@ -30,6 +30,7 @@ import {
   Clock,
   Calendar,
   Tag,
+  Trophy,
   User,
   ArrowLeft,
 } from "lucide-react";
@@ -100,6 +101,12 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
   const primaryAssignee =
     bounty.assigneeUser ?? bounty.assignees?.[0]?.user ?? null;
   const payoutAddress = getPayoutAddress(bounty.chain, primaryAssignee);
+  // On a completed bounty, bounty.assignee is the submission the admin
+  // selected; surface that contributor first and mark them.
+  const winnerId = bounty.status === "DONE" ? bounty.assignee : null;
+  const sortedAssignees = [...(bounty.assignees ?? [])].sort(
+    (x, y) => Number(y.userId === winnerId) - Number(x.userId === winnerId),
+  );
   const deadlineDate = bounty.timeToComplete
     ? new Date(bounty.timeToComplete)
     : null;
@@ -182,13 +189,28 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {bounty.assignees.length === 1 ? "Assignee" : "Assignees"}
               </p>
+              {bounty.assignees.length > 1 && bounty.status !== "DONE" && (
+                <p className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                  <Trophy className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                  <span>
+                    More than one contributor is assigned. Only the best
+                    submission is selected.
+                  </span>
+                </p>
+              )}
               <div className="flex flex-wrap gap-3">
-                {bounty.assignees.map((a) => {
+                {sortedAssignees.map((a) => {
                   const user = a.user;
+                  const isWinner =
+                    bounty.status === "DONE" && bounty.assignee === a.userId;
                   return (
                     <div
                       key={a.userId ?? user?.id}
-                      className="flex items-center gap-2 border rounded-lg px-3 py-2 bg-muted/40"
+                      className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${
+                        isWinner
+                          ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
+                          : "bg-muted/40"
+                      }`}
                     >
                       <Avatar className="w-6 h-6">
                         {user?.avatar && (
@@ -204,7 +226,13 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
                         </AvatarFallback>
                       </Avatar>
                       <div className="text-sm">
-                        <p className="font-medium leading-none">
+                        <p
+                          className={`font-medium leading-none ${
+                            isWinner
+                              ? "text-amber-700 dark:text-amber-300"
+                              : ""
+                          }`}
+                        >
                           {user?.name ?? "—"}
                         </p>
                         {user?.email && (
@@ -213,6 +241,11 @@ function BountyDetailPanel({ bounty }: { bounty: Bounty }) {
                           </p>
                         )}
                       </div>
+                      {isWinner && (
+                        <span className="ml-1 flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                          <Trophy className="h-2.5 w-2.5" /> Selected
+                        </span>
+                      )}
                     </div>
                   );
                 })}

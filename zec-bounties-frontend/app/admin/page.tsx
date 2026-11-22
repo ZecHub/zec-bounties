@@ -76,6 +76,7 @@ import { NymSendingBanner } from "@/components/nym-sending-indicator";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
 import { SelectWinnerModal } from "@/components/admin/select-winner-modal";
+import { SubmitOnBehalfModal } from "@/components/admin/submit-on-behalf-modal";
 import { toast } from "sonner";
 import {
   Tooltip,
@@ -248,6 +249,7 @@ function BountyActionsMenu({
   onApprovalChange,
   onViewApplications,
   onViewSubmissions,
+  onSubmitOnBehalf,
   onCancel,
   triggerClassName = "h-8 w-8",
 }: {
@@ -260,6 +262,7 @@ function BountyActionsMenu({
   onApprovalChange: (approved: boolean) => void;
   onViewApplications: () => void;
   onViewSubmissions: () => void;
+  onSubmitOnBehalf: () => void;
   onCancel: () => void;
   triggerClassName?: string;
 }) {
@@ -319,6 +322,17 @@ function BountyActionsMenu({
               {pendingSubs}
             </span>
           )}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onSubmitOnBehalf}
+          disabled={
+            !bounty.isApproved ||
+            !(bounty.assignees?.length || bounty.assignee) ||
+            !["TO_DO", "IN_PROGRESS", "IN_REVIEW"].includes(bounty.status)
+          }
+        >
+          <FileText className="mr-2 h-4 w-4" />
+          Submit on Behalf
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
@@ -442,6 +456,7 @@ export default function AdminDashboard() {
   useRoleGuard("ADMIN");
   const {
     bounties,
+    currentUser,
     nonAdminUsers,
     totalBountyAmount,
     bountiesLoading,
@@ -501,6 +516,10 @@ export default function AdminDashboard() {
   const [assigneeSectionBounty, setAssigneeSectionBounty] =
     useState<Bounty | null>(null);
   const [winnerBounty, setWinnerBounty] = useState<Bounty | null>(null);
+  const [proxyBounty, setProxyBounty] = useState<Bounty | null>(null);
+  const [editingProxySub, setEditingProxySub] = useState<WorkSubmission | null>(
+    null,
+  );
   const [chainFilter, setChainFilter] = useState<"MAIN" | "TEST">("MAIN");
   const [showCancelledBounties, setShowCancelledBounties] = useState(false);
   const [suggestionOnly, setSuggestionOnly] = useState(false);
@@ -576,6 +595,16 @@ export default function AdminDashboard() {
     }, 250);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  const PROXY_EDIT_WINDOW_MS = 15 * 60 * 1000;
+
+  const canEditProxySubmission = (s: WorkSubmission) =>
+    !!currentUser &&
+    s.filedBy === currentUser.id &&
+    (s.status === "needs_revision" ||
+      (s.status === "pending" &&
+        Date.now() - new Date(s.submittedAt).getTime() <=
+          PROXY_EDIT_WINDOW_MS));
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
@@ -949,6 +978,14 @@ export default function AdminDashboard() {
       setIsUpdating(false);
     }
   };
+
+  const proxyCandidates = proxyBounty
+    ? proxyBounty.assignees?.length
+      ? proxyBounty.assignees.map((a) => ({ id: a.userId, user: a.user }))
+      : proxyBounty.assignee && proxyBounty.assigneeUser
+        ? [{ id: proxyBounty.assignee, user: proxyBounty.assigneeUser }]
+        : []
+    : [];
 
   const handleSubmissionReview = async (
     submissionId: string,
@@ -1463,6 +1500,7 @@ export default function AdminDashboard() {
                                   setSelectedBounty(bounty.id);
                                   setIsManagingSubmissions(true);
                                 }}
+                                onSubmitOnBehalf={() => setProxyBounty(bounty)}
                                 onCancel={() =>
                                   handleStatusChange(bounty.id, "CANCELLED")
                                 }
@@ -1912,6 +1950,9 @@ export default function AdminDashboard() {
                                       setSelectedBounty(bounty.id);
                                       setIsManagingSubmissions(true);
                                     }}
+                                    onSubmitOnBehalf={() =>
+                                      setProxyBounty(bounty)
+                                    }
                                     onCancel={() =>
                                       handleStatusChange(bounty.id, "CANCELLED")
                                     }
@@ -2123,6 +2164,29 @@ export default function AdminDashboard() {
           onConfirm={handleWinnerConfirm}
         />
 
+        <SubmitOnBehalfModal
+          bounty={proxyBounty}
+          open={!!proxyBounty}
+          onOpenChange={(open) => {
+            if (!open) setProxyBounty(null);
+          }}
+        />
+
+        <SubmitOnBehalfModal
+          bounty={
+            bounties.find((b) => b.id === editingProxySub?.bountyId) ?? null
+          }
+          submission={editingProxySub}
+          open={!!editingProxySub}
+          onOpenChange={(open) => {
+            if (!open) setEditingProxySub(null);
+          }}
+          onSaved={() => {
+            loadWorkSubmissions();
+            fetchAllSubmissions();
+          }}
+        />
+
         <AdminBountyModal
           open={showAdminBountyModal}
           onOpenChange={setShowAdminBountyModal}
@@ -2319,20 +2383,31 @@ export default function AdminDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
-                          submission.status === "approved"
-                            ? "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400"
-                            : submission.status === "rejected"
-                              ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
-                              : submission.status === "needs_revision"
-                                ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400"
-                                : "border-yellow-300 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400"
-                        }`}
-                      >
-                        {submission.status}
-                      </Badge>
+                      <div className="flex flex-shrink-0 items-center gap-1.5">
+                        {submission.editedAt && (
+                          <Badge
+                            variant="outline"
+                            className="rounded-full px-2 py-0.5 text-[10px] text-muted-foreground"
+                            title={`Edited ${format(new Date(submission.editedAt), "MMM d, yyyy HH:mm")}`}
+                          >
+                            Edited
+                          </Badge>
+                        )}
+                        <Badge
+                          variant="outline"
+                          className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
+                            submission.status === "approved"
+                              ? "border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400"
+                              : submission.status === "rejected"
+                                ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
+                                : submission.status === "needs_revision"
+                                  ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400"
+                                  : "border-yellow-300 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400"
+                          }`}
+                        >
+                          {submission.status}
+                        </Badge>
+                      </div>
                     </div>
 
                     <p className="ml-[14px] overflow-wrap-anywhere whitespace-pre-wrap break-words border-l-2 border-border pl-[42px] text-xs leading-relaxed text-muted-foreground">
@@ -2357,6 +2432,18 @@ export default function AdminDashboard() {
                         <span className="font-medium">Note: </span>
                         {submission.reviewNotes}
                       </div>
+                    )}
+
+                    {canEditProxySubmission(submission) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1.5 text-xs"
+                        onClick={() => setEditingProxySub(submission)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit submission
+                      </Button>
                     )}
 
                     {submission.status === "pending" && (

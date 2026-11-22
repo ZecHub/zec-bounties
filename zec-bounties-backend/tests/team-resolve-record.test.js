@@ -36,6 +36,11 @@ function makeReadBarrier(parties) {
 }
 
 const fakePrisma = {
+  payoutProposal: {
+    updateMany: async () => ({ count: 0 }),
+    findMany: async () => [],
+    findFirst: async () => null,
+  },
   transaction: {
     findUnique: async ({ where }) => {
       const r = records.find((x) => x.id === where.id);
@@ -107,6 +112,14 @@ stub("utils/cache.js", {
     exports: { setVapidDetails() {}, sendNotification: async () => {}, generateVAPIDKeys: () => ({}) },
   };
 }
+
+stub("utils/payoutProposals", {
+  loadDecidedProposals: async () => ({
+    usable: new Map(),
+    rejected: new Map(),
+  }),
+  consumeProposals: async () => {},
+});
 
 const express = require("express");
 const router = require("../routes/teams");
@@ -196,6 +209,19 @@ describe("POST /:teamId/wallet/payment-records/:id/resolve", () => {
     records[0].status = "BROADCAST";
     const { status } = await resolve({ outcome: "failed", confirm: true });
     assert.equal(status, 409);
+  });
+
+  it("refuses a PENDING record whose send may still be in flight", async () => {
+    // A PENDING send can be queued behind another on the shared wallet process
+    // for longer than any age heuristic; resolving it "failed" would re-open
+    // the bounty and double-pay a send that later goes through. Only UNKNOWN is
+    // resolvable (mirrors the admin resolver).
+    records[0].status = "PENDING";
+    const { status, body } = await resolve({ outcome: "failed", confirm: true });
+    assert.equal(status, 409);
+    assert.match(body.error, /in flight/);
+    assert.equal(records[0].status, "PENDING");
+    assert.equal(bounties[0].isPaid, false);
   });
 
   it("applies only one of two concurrent resolutions", async () => {
