@@ -16,8 +16,25 @@ const withDefaults = (stubs) =>
     get: (target, key) => (key in target ? target[key] : anything),
   });
 
+function pickSelect(row, select) {
+  if (!row || !select) return row;
+  const out = {};
+  for (const [key, include] of Object.entries(select)) {
+    if (include) out[key] = row[key];
+  }
+  return out;
+}
+
 function loadRoutes(team) {
-  const effects = { emails: [], pushes: [], realtime: [], scoped: [] };
+  const effects = {
+    emails: [],
+    pushes: [],
+    discord: [],
+    realtime: [],
+    scoped: [],
+    deletedAssignees: [],
+    updatedData: [],
+  };
   const db = {
     team: { findUnique: async () => team },
     teamMember: { findUnique: async () => ({ role: "ADMIN" }) },
@@ -32,17 +49,25 @@ function loadRoutes(team) {
   };
   db.$transaction = async (fn) =>
     fn({
-      bountyAssignee: { deleteMany: async () => ({ count: 0 }) },
+      bountyAssignee: {
+        deleteMany: async (args) => {
+          effects.deletedAssignees.push(args);
+          return { count: 1 };
+        },
+      },
       bounty: {
-        update: async ({ data }) => ({
-          id: "b1",
-          ...newBounty,
-          teamId: null,
-          createdBy: "creator",
-          createdByUser: { name: "Creator" },
-          isPrivate: false,
-          ...data,
-        }),
+        update: async ({ data }) => {
+          effects.updatedData.push(data);
+          return {
+            id: "b1",
+            ...newBounty,
+            teamId: null,
+            createdBy: "creator",
+            createdByUser: { name: "Creator" },
+            isPrivate: false,
+            ...data,
+          };
+        },
       },
     });
   const helpers = withDefaults({
@@ -112,6 +137,9 @@ function loadRoutes(team) {
     }),
     "../utils/bountyHelpers": helpers,
     "../utils/bountySuggestionReview": require("../utils/bountySuggestionReview"),
+    "../utils/discord/discordNotify": {
+      notifyNewBounty: (bounty) => effects.discord.push(bounty.id),
+    },
   };
   const routes = {};
   const filename = path.join(__dirname, "../routes/bounties.js");
@@ -220,11 +248,13 @@ test("an unapproved bounty is not emailed or pushed to anyone", async () => {
 
 test("approving a bounty announces it to everyone but its creator", async () => {
   const routes = loadRoutes(null);
-  routes.db.bounty.findUnique = async () => ({
+  const row = {
     createdBy: "creator",
     assignee: null,
     isApproved: false,
-  });
+  };
+  routes.db.bounty.findUnique = async ({ select } = {}) =>
+    pickSelect(row, select);
   const res = await routes.call("patch /:id/approve", {
     user: { id: "admin", role: "ADMIN" },
     params: { id: "b1" },
@@ -236,21 +266,65 @@ test("approving a bounty announces it to everyone but its creator", async () => 
     "outsider@example.com",
   ]);
   assert.deepEqual(routes.effects.pushes, ["teammate", "outsider"]);
+  assert.deepEqual(routes.effects.discord, ["b1"]);
 });
 
 test("approving an already approved bounty does not announce it again", async () => {
   const routes = loadRoutes(null);
-  routes.db.bounty.findUnique = async () => ({
+  const row = {
     createdBy: "creator",
     assignee: null,
     isApproved: true,
-  });
-  await routes.call("patch /:id/approve", {
+  };
+  routes.db.bounty.findUnique = async ({ select } = {}) =>
+    pickSelect(row, select);
+  const res = await routes.call("patch /:id/approve", {
     user: { id: "admin", role: "ADMIN" },
     params: { id: "b1" },
   });
+  assert.equal(res.statusCode, 200);
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(routes.effects.emails, []);
+  assert.deepEqual(routes.effects.pushes, []);
+  assert.deepEqual(routes.effects.discord, []);
+});
+
+test("approving releases creator self-assignment only on initial approval, not re-approval", async () => {
+  const first = loadRoutes(null);
+  const unapprovedRow = {
+    createdBy: "creator",
+    assignee: "creator",
+    isApproved: false,
+  };
+  first.db.bounty.findUnique = async ({ select } = {}) =>
+    pickSelect(unapprovedRow, select);
+  const firstRes = await first.call("patch /:id/approve", {
+    user: { id: "admin", role: "ADMIN" },
+    params: { id: "b1" },
+  });
+  assert.equal(firstRes.statusCode, 200);
+  assert.equal(first.effects.deletedAssignees.length, 1);
+  assert.equal(first.effects.updatedData[0].assignee, null);
+
+  const repeat = loadRoutes(null);
+  const approvedRow = {
+    createdBy: "creator",
+    assignee: "creator",
+    isApproved: true,
+  };
+  repeat.db.bounty.findUnique = async ({ select } = {}) =>
+    pickSelect(approvedRow, select);
+  const repeatRes = await repeat.call("patch /:id/approve", {
+    user: { id: "admin", role: "ADMIN" },
+    params: { id: "b1" },
+  });
+  assert.equal(repeatRes.statusCode, 200);
+  assert.equal(repeat.effects.deletedAssignees.length, 0);
+  assert.equal("assignee" in repeat.effects.updatedData[0], false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(repeat.effects.emails, []);
+  assert.deepEqual(repeat.effects.pushes, []);
+  assert.deepEqual(repeat.effects.discord, []);
 });
 
 test("the announcement email escapes the bounty's text", async () => {

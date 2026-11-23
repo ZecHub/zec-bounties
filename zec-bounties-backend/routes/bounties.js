@@ -1273,7 +1273,7 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
     const bountyId = req.params.id;
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { createdBy: true, assignee: true },
+      select: { createdBy: true, assignee: true, isApproved: true },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
 
@@ -1281,7 +1281,8 @@ router.patch("/:id/approve", authenticate, isAdmin, async (req, res) => {
     // undoes the two markers that kept it personal: its privacy, and the
     // self-assignment that would otherwise stop anyone else from applying. An
     // assignment an admin made deliberately is left alone.
-    const releaseSelfAssignment = bounty.assignee === bounty.createdBy;
+    const releaseSelfAssignment =
+      !bounty.isApproved && bounty.assignee === bounty.createdBy;
 
     const updated = await prisma.$transaction(async (tx) => {
       if (releaseSelfAssignment) {
