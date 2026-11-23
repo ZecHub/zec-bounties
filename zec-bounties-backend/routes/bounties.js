@@ -2926,7 +2926,7 @@ router.post("/apply", authenticate, async (req, res) => {
         applicantUser: { select: USER_SELECT_MINIMAL },
       },
     });
-    await invalidateApplications(applicantId);
+    await invalidateApplications(applicantId, application.bountyId);
     await invalidateBounty(application.bountyId);
 
     await broadcastBountyEvent(
