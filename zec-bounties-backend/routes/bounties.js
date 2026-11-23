@@ -1123,9 +1123,9 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
               text: `Hi ${a.user.nickname || a.user.name},\n\nCongratulations! You've been assigned to "${bounty.title}". You can start working on it now.`,
               html: `
                 <h2>🎉 Congratulations, you were assigned!</h2>
-                <p>Hi ${a.user.nickname || a.user.name},</p>
+                <p>Hi ${escapeHtml(a.user.nickname || a.user.name)},</p>
                 <p>You've been assigned to:</p>
-                <p><strong>${bounty.title}</strong></p>
+                <p><strong>${escapeHtml(bounty.title)}</strong></p>
                 <p>You can start working on it now.</p>
               `,
             }),
@@ -1140,9 +1140,9 @@ router.post("/:id/assignees", authenticate, async (req, res) => {
               text: `Hi ${a.user.nickname || a.user.name},\n\nYou've been removed from "${bounty.title}". Reach out to the bounty creator if you have questions.`,
               html: `
                 <h2>You've been removed from a bounty</h2>
-                <p>Hi ${a.user.nickname || a.user.name},</p>
+                <p>Hi ${escapeHtml(a.user.nickname || a.user.name)},</p>
                 <p>You've been removed from:</p>
-                <p><strong>${bounty.title}</strong></p>
+                <p><strong>${escapeHtml(bounty.title)}</strong></p>
                 <p>Reach out to the bounty creator if you have questions.</p>
               `,
             }),
@@ -2795,9 +2795,9 @@ Your application was accepted and you've been assigned to "${bountyTitle}". You 
 
         html: `
           <h2>You've been assigned a bounty</h2>
-          <p>Hi ${recipient.nickname || recipient.name},</p>
+          <p>Hi ${escapeHtml(recipient.nickname || recipient.name)},</p>
           <p>Your application was accepted and you've been assigned to:</p>
-          <p><strong>${bountyTitle}</strong></p>
+          <p><strong>${escapeHtml(bountyTitle)}</strong></p>
           <p>You can start working on it now.</p>
         `,
       }).catch((mailErr) => {
@@ -3593,10 +3593,10 @@ router.put("/:id", authenticate, async (req, res) => {
                 text: `Hi ${u.nickname || u.name},\n\n"${updated.title}" was updated:\n\n${changes.map((c) => `- ${c}`).join("\n")}`,
                 html: `
                   <h2>Bounty update</h2>
-                  <p>Hi ${u.nickname || u.name},</p>
-                  <p><strong>${updated.title}</strong> was updated:</p>
+                  <p>Hi ${escapeHtml(u.nickname || u.name)},</p>
+                  <p><strong>${escapeHtml(updated.title)}</strong> was updated:</p>
                   <ul>
-                    ${changes.map((c) => `<li>${c}</li>`).join("")}
+                    ${changes.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}
                   </ul>
                 `,
               }),
