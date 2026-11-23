@@ -2960,7 +2960,15 @@ const EXPORT_STATUSES = [
 ];
 const EXPORT_CHAINS = ["MAIN", "TEST"];
 const EXPORT_DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
-const validDate = (v) => !v || !Number.isNaN(new Date(v).getTime());
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const validDate = (v) =>
+  !v || (typeof v === "string" && !Number.isNaN(new Date(v).getTime()));
+const parseExportToDate = (v) => {
+  const trimmed = v.trim();
+  return DATE_ONLY_RE.test(trimmed)
+    ? new Date(`${trimmed}T23:59:59.999Z`)
+    : new Date(trimmed);
+};
 
 router.get("/export-all", authenticate, isAdmin, async (req, res) => {
   try {
@@ -2986,7 +2994,7 @@ router.get("/export-all", authenticate, isAdmin, async (req, res) => {
         ? {
             [dateField]: {
               ...(q.from && { gte: new Date(q.from) }),
-              ...(q.to && { lte: new Date(`${q.to}T23:59:59.999Z`) }),
+              ...(q.to && { lte: parseExportToDate(q.to) }),
             },
           }
         : {};
@@ -2998,7 +3006,12 @@ router.get("/export-all", authenticate, isAdmin, async (req, res) => {
       ...(q.teamId && { teamId: q.teamId === "none" ? null : q.teamId }),
       ...(q.categoryId && { categoryId: q.categoryId }),
       ...(q.createdBy && { createdBy: q.createdBy }),
-      ...(q.assignee && { assignee: q.assignee }),
+      ...(q.assignee && {
+        OR: [
+          { assignee: q.assignee },
+          { assignees: { some: { userId: q.assignee } } },
+        ],
+      }),
       ...(bool(q.isPaid) !== undefined && { isPaid: bool(q.isPaid) }),
       ...(bool(q.isApproved) !== undefined && {
         isApproved: bool(q.isApproved),
