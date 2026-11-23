@@ -897,9 +897,9 @@ router.patch(
         data: { teamId: team.id, isPrivate: team.isPrivate },
       });
 
-      // Invalidate whatever Redis keys your bounty list route reads from —
-      // same as your other routes that touch cached bounty payload fields.
-      // e.g.: await invalidateBountyListCache();
+      if (result.count > 0) {
+        await Promise.all([bumpVersion("bounties"), delCache("stats:totals")]);
+      }
 
       res.json({ movedCount: result.count });
     } catch (err) {
