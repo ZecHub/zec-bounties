@@ -990,6 +990,12 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
 
     const userId = req.user?.id;
     const isAdmin = req.user?.role === "ADMIN";
+    const member =
+      !isAdmin && userId ? await getTeamMember(teamId, userId) : null;
+    const isTeamAdmin = Boolean(
+      member && ["OWNER", "ADMIN"].includes(member.role),
+    );
+    const canSeePendingSuggestions = isAdmin || isTeamAdmin;
 
     // ------------------------------------------------------------
     // Access check, resolved once, up front. No access → empty page,
@@ -1000,7 +1006,6 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
         return res.json({ data: [], total: 0, page, limit });
       }
 
-      const member = await getTeamMember(teamId, userId);
       const community =
         !member &&
         req.user.role === "HUNTER" &&
@@ -1041,7 +1046,7 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
     const where = {
       teamId,
       ...chainFilter,
-      ...(!isAdmin && {
+      ...(!canSeePendingSuggestions && {
         OR: [
           { suggestionReviewStatus: null },
           { suggestionReviewStatus: { not: "PENDING" } },
@@ -1056,7 +1061,13 @@ router.get("/:teamId/bounties", optionalAuthenticate, async (req, res) => {
         page,
         limit,
         chain: chainParam,
-        viewer: isAdmin ? "admin" : isAuthed ? "member" : "public",
+        viewer: isAdmin
+          ? "admin"
+          : isTeamAdmin
+            ? "team-admin"
+            : isAuthed
+              ? "member"
+              : "public",
       },
     )}`;
 
