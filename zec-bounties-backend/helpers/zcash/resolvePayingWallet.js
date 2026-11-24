@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const defaultPrisma = require("../../prisma/client");
 
 /**
  * Resolves which ZcashParams record should be used to pay out a bounty,
@@ -11,11 +10,17 @@ const prisma = new PrismaClient();
  *  - Regular user       → their first/only zcashParams (fallback: "Main")
  *
  * @param {string} bountyId
+ * @param {object} [prisma] Optional Prisma client override (defaults to shared singleton)
  * @returns {Promise<object>} The resolved ZcashParams record
  */
-async function resolvePayingWallet(bountyId) {
+async function resolvePayingWallet(bountyId, prisma = defaultPrisma) {
+  if (typeof bountyId !== "string" || bountyId.trim().length === 0) {
+    throw new Error("bountyId must be a non-empty string");
+  }
+  const normalizedBountyId = bountyId.trim();
+
   const bounty = await prisma.bounty.findUnique({
-    where: { id: bountyId },
+    where: { id: normalizedBountyId },
     include: {
       createdByUser: {
         select: {
@@ -27,10 +32,10 @@ async function resolvePayingWallet(bountyId) {
     },
   });
 
-  if (!bounty) throw new Error(`Bounty ${bountyId} not found`);
+  if (!bounty) throw new Error(`Bounty ${normalizedBountyId} not found`);
 
   const creator = bounty.createdByUser;
-  if (!creator) throw new Error(`Bounty ${bountyId} has no creator`);
+  if (!creator) throw new Error(`Bounty ${normalizedBountyId} has no creator`);
 
   let params = null;
 
