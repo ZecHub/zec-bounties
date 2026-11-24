@@ -82,15 +82,17 @@ router.get(
       orderBy: { createdAt: "desc" },
     });
     const colleagues = await vetoableIds(req.user);
-    const pending = await prisma.approverKey.findMany({
-      where: {
-        userId: { in: colleagues },
-        revokedAt: null,
-        activatesAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: "desc" },
-      include: { user: { select: { id: true, name: true, nickname: true } } },
-    });
+    const pending = colleagues.length
+      ? await prisma.approverKey.findMany({
+          where: {
+            userId: { in: colleagues },
+            revokedAt: null,
+            activatesAt: { gt: new Date() },
+          },
+          orderBy: { createdAt: "desc" },
+          include: { user: { select: { id: true, name: true, nickname: true } } },
+        })
+      : [];
     res.json({ mine: mine.map(present), pending: pending.map(present) });
   }),
 );
@@ -124,13 +126,25 @@ router.post(
   authenticate,
   wrap(async (req, res) => {
     await requireApprover(req.user);
-    const { challengeId, response, label } = req.body;
-    if (typeof challengeId !== "string" || !response)
+    const body =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body)
+        ? req.body
+        : null;
+    if (!body) throw httpError(400, "challengeId and response required");
+    const { challengeId, response, label } = body;
+    const trimmedChallengeId =
+      typeof challengeId === "string" ? challengeId.trim() : "";
+    if (
+      !trimmedChallengeId ||
+      !response ||
+      typeof response !== "object" ||
+      Array.isArray(response)
+    )
       throw httpError(400, "challengeId and response required");
 
     const row = await prisma.payoutChallenge.findFirst({
       where: {
-        id: challengeId,
+        id: trimmedChallengeId,
         userId: req.user.id,
         kind: "reg",
         expiresAt: { gt: new Date() },
@@ -188,8 +202,11 @@ router.delete(
   authenticate,
   wrap(async (req, res) => {
     await requireApprover(req.user);
+    const keyId =
+      typeof req.params.id === "string" ? req.params.id.trim() : "";
+    if (!keyId) throw httpError(400, "Key id required");
     const key = await prisma.approverKey.findUnique({
-      where: { id: req.params.id },
+      where: { id: keyId },
       include: {
         user: { select: { id: true, name: true, nickname: true, role: true } },
       },
@@ -219,14 +236,13 @@ router.delete(
     });
 
     const colleagues = await getColleagueApprovers(prisma, key.user);
-    await notifyApprovers(
-      prisma,
-      colleagues.filter((id) => id !== req.user.id),
-      {
+    const recipients = colleagues.filter((id) => id !== req.user.id);
+    if (recipients.length > 0) {
+      await notifyApprovers(prisma, recipients, {
         subject: "Payout approver passkey revoked",
         text: `${who(req.user)} revoked ${own ? "their own" : `${who(key.user)}'s`} payout approval passkey.`,
-      },
-    );
+      });
+    }
 
     res.json({ success: true });
   }),
