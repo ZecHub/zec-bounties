@@ -6,16 +6,36 @@ const crypto = require("crypto");
 
 const LOCK_KEY = 7203001; // advisory lock serialising appends
 
-const canon = (v) =>
-  Array.isArray(v)
-    ? v.map(canon)
-    : v && typeof v === "object" && !(v instanceof Date)
-      ? Object.fromEntries(
-          Object.keys(v)
-            .sort()
-            .map((k) => [k, canon(v[k])]),
-        )
-      : v;
+const canon = (v, seen = new WeakSet()) => {
+  if (typeof v === "bigint") return v.toString();
+  if (v === null || typeof v !== "object") return v;
+  if (seen.has(v)) {
+    throw new TypeError("Audit data contains circular reference");
+  }
+  if (typeof v.toJSON === "function") {
+    seen.add(v);
+    try {
+      return canon(v.toJSON(), seen);
+    } finally {
+      seen.delete(v);
+    }
+  }
+  seen.add(v);
+  try {
+    if (Array.isArray(v)) {
+      return v.map((item) => (item === undefined ? null : canon(item, seen)));
+    }
+    const out = {};
+    for (const k of Object.keys(v).sort()) {
+      if (v[k] !== undefined) {
+        out[k] = canon(v[k], seen);
+      }
+    }
+    return out;
+  } finally {
+    seen.delete(v);
+  }
+};
 
 const hashOf = (prevHash, entry) =>
   crypto
@@ -24,7 +44,8 @@ const hashOf = (prevHash, entry) =>
     .digest("hex");
 
 // Call inside a transaction, as the LAST write, so the advisory lock is held briefly.
-// `data` must be JSON-safe (stringify BigInt).
+// `data` is canonicalised to JSON-safe form (including BigInt and `.toJSON()` values
+// such as Prisma.Decimal) so what is persisted matches what was hashed.
 async function appendAudit(
   tx,
   event,
@@ -34,16 +55,26 @@ async function appendAudit(
   const last = await tx.payoutAudit.findFirst({ orderBy: { id: "desc" } });
   const prevHash = last?.hash ?? "GENESIS";
   const at = new Date();
+  const safeData = canon(data ?? {});
   const hash = hashOf(prevHash, {
     at: at.toISOString(),
     event,
     actorId,
     bountyId,
     proposalId,
-    data,
+    data: safeData,
   });
   return tx.payoutAudit.create({
-    data: { at, event, actorId, bountyId, proposalId, data, prevHash, hash },
+    data: {
+      at,
+      event,
+      actorId,
+      bountyId,
+      proposalId,
+      data: safeData,
+      prevHash,
+      hash,
+    },
   });
 }
 
@@ -59,8 +90,12 @@ async function verifyAuditChain(db) {
     });
     if (rows.length === 0) break;
     for (const e of rows) {
+      const atDate = e.at instanceof Date ? e.at : new Date(e.at);
+      if (Number.isNaN(atDate.getTime())) {
+        return { ok: false, brokenAtId: e.id, count };
+      }
       const expected = hashOf(prev, {
-        at: e.at.toISOString(),
+        at: atDate.toISOString(),
         event: e.event,
         actorId: e.actorId,
         bountyId: e.bountyId,
