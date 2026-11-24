@@ -21,8 +21,24 @@ const RP_NAME = process.env.WEBAUTHN_RP_NAME || "ZEC Bounties";
 
 // A newly enrolled passkey cannot vote until this has passed. Approvers are
 // notified on enrollment and can revoke a pending key in the meantime.
-const KEY_DELAY_MS =
-  Number(process.env.PAYOUT_KEY_DELAY_HOURS ?? 72) * 3600 * 1000;
+const DEFAULT_KEY_DELAY_HOURS = 72;
+
+function parseKeyDelayMs(raw = process.env.PAYOUT_KEY_DELAY_HOURS) {
+  if (raw === undefined || raw === null) {
+    return DEFAULT_KEY_DELAY_HOURS * 3600 * 1000;
+  }
+  const trimmed = String(raw).trim();
+  if (!trimmed) {
+    return DEFAULT_KEY_DELAY_HOURS * 3600 * 1000;
+  }
+  const hours = Number(trimmed);
+  if (!Number.isFinite(hours) || hours < 0) {
+    return DEFAULT_KEY_DELAY_HOURS * 3600 * 1000;
+  }
+  return hours * 3600 * 1000;
+}
+
+const KEY_DELAY_MS = parseKeyDelayMs();
 
 function fail(status, message) {
   const e = new Error(message);
@@ -60,6 +76,10 @@ const totalZatOf = (items) =>
 // vote is re-verified at payment time, so any change to the round or its items
 // (a bounty added or removed, a recipient or amount changed) invalidates it.
 function voteMessage(round, candidateId, voteNonce) {
+  const expiresAt = new Date(round?.expiresAt);
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw fail(400, "Invalid round expiration timestamp");
+  }
   const items = itemsOf(round);
   return JSON.stringify({
     v: 2,
@@ -72,7 +92,7 @@ function voteMessage(round, candidateId, voteNonce) {
     totalZat: totalZatOf(items),
     items,
     executor: candidateId,
-    expiresAt: new Date(round.expiresAt).toISOString(),
+    expiresAt: expiresAt.toISOString(),
   });
 }
 
@@ -176,7 +196,9 @@ async function verifyAssertionForChallenge({
 module.exports = {
   RP_ID,
   ORIGINS,
+  DEFAULT_KEY_DELAY_HOURS,
   KEY_DELAY_MS,
+  parseKeyDelayMs,
   b64u,
   itemsOf,
   totalZatOf,
