@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
 import {
@@ -13,6 +13,19 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner"; // swap for your existing toast lib if different
+
+export function formatMovedBountiesMessage(movedCount: number): string {
+  return `Moved ${movedCount} ${movedCount === 1 ? "bounty" : "bounties"}`;
+}
+
+export function getSelectAllCheckboxState(
+  selectedCount: number,
+  totalCount: number,
+): boolean | "indeterminate" {
+  if (totalCount > 0 && selectedCount === totalCount) return true;
+  if (selectedCount > 0) return "indeterminate";
+  return false;
+}
 
 export default function AssignUnteamedBountiesPage() {
   const router = useRouter();
@@ -54,10 +67,11 @@ export default function AssignUnteamedBountiesPage() {
     });
   }, [unassignedBounties]);
 
-  const allSelected =
-    unassignedBounties.length > 0 &&
-    selectedIds.size === unassignedBounties.length;
-  const someSelected = selectedIds.size > 0 && !allSelected;
+  const selectAllState = getSelectAllCheckboxState(
+    selectedIds.size,
+    unassignedBounties.length,
+  );
+  const allSelected = selectAllState === true;
 
   function toggleAll() {
     setSelectedIds(
@@ -74,7 +88,7 @@ export default function AssignUnteamedBountiesPage() {
   }
 
   async function handleMove() {
-    if (!selectedTeamId || selectedIds.size === 0) return;
+    if (moving || !selectedTeamId || selectedIds.size === 0) return;
     setMoving(true);
     try {
       const { movedCount } = await assignUnassignedBountiesToTeam(
@@ -82,9 +96,7 @@ export default function AssignUnteamedBountiesPage() {
         [...selectedIds],
       );
       setSelectedIds(new Set());
-      toast.success(
-        `Moved ${movedCount} bounty${movedCount === 1 ? "" : "ies"}`,
-      );
+      toast.success(formatMovedBountiesMessage(movedCount));
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Could not move bounties",
@@ -117,11 +129,9 @@ export default function AssignUnteamedBountiesPage() {
           <div className="rounded-md border border-border">
             <div className="flex items-center gap-3 border-b border-border px-4 py-3">
               <Checkbox
-                checked={allSelected}
-                ref={(el) => {
-                  if (el) (el as any).indeterminate = someSelected;
-                }}
+                checked={selectAllState}
                 onCheckedChange={toggleAll}
+                aria-label="Select all unassigned bounties"
               />
               <span className="text-sm font-medium text-foreground">
                 {selectedIds.size > 0
@@ -152,7 +162,11 @@ export default function AssignUnteamedBountiesPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+            <Select
+              value={selectedTeamId}
+              onValueChange={setSelectedTeamId}
+              disabled={moving}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select a team" />
               </SelectTrigger>
