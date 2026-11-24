@@ -7,21 +7,42 @@ import { Badge } from "@/components/ui/badge";
 import { Star, Search, Users, Loader2 } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { backendUrl } from "@/lib/configENV";
 import { MobileNavShell } from "@/components/layout/mobile-nav-shell";
 
-function initials(name: string) {
-  return name
-    .split(" ")
+export type FavFilter = "all" | "favorites";
+
+export function getTeamInitials(name: string): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
 }
 
-type FavFilter = "all" | "favorites";
+export function getExploreEmptyMessage(
+  filter: FavFilter,
+  favoritedCount: number,
+  searchQuery: string,
+): string {
+  const trimmedQuery = searchQuery.trim();
+  if (filter === "favorites") {
+    if (favoritedCount === 0) {
+      return "You haven't favorited any teams yet.";
+    }
+    if (trimmedQuery) {
+      return `No favorite teams found matching "${trimmedQuery}".`;
+    }
+    return "You haven't favorited any teams yet.";
+  }
+  if (trimmedQuery) {
+    return `No teams found matching "${trimmedQuery}".`;
+  }
+  return "No teams have been created yet.";
+}
 
-function ExploreContent() {
+export function ExploreContent() {
   const router = useRouter();
   const {
     communities,
@@ -148,11 +169,7 @@ function ExploreContent() {
           ) : filteredTeams.length === 0 ? (
             <div className="text-center py-20 border rounded-xl bg-muted/20">
               <p className="text-muted-foreground">
-                {filter === "favorites"
-                  ? "You haven't favorited any teams yet."
-                  : searchQuery
-                    ? `No teams found matching "${searchQuery}".`
-                    : "No teams have been created yet."}
+                {getExploreEmptyMessage(filter, favoritedCount, searchQuery)}
               </p>
             </div>
           ) : (
@@ -184,7 +201,7 @@ function ExploreContent() {
                               className="h-full w-full object-cover"
                             />
                           ) : (
-                            initials(team.name)
+                            getTeamInitials(team.name)
                           )}
                         </div>
                         <div className="min-w-0">
@@ -201,9 +218,12 @@ function ExploreContent() {
 
                       <button
                         type="button"
+                        aria-pressed={isFavorited}
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleFavoriteTeam(team.id);
+                          void Promise.resolve(
+                            toggleFavoriteTeam(team.id),
+                          ).catch(() => {});
                         }}
                         aria-label={
                           isFavorited
