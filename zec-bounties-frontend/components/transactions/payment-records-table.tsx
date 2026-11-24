@@ -46,8 +46,23 @@ export function PaymentRecordsTable({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const copy = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    toast.success("Copied");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Copied");
+    } catch {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
+
+  const openResolveDialog = (record: PaymentRecord) => {
+    setResolveTxid("");
+    setResolving(record);
+  };
+
+  const closeResolveDialog = () => {
+    if (isSubmitting) return;
+    setResolving(null);
+    setResolveTxid("");
   };
 
   const submitResolve = async (outcome: "broadcast" | "failed") => {
@@ -169,7 +184,7 @@ export function PaymentRecordsTable({
                         size="sm"
                         variant="outline"
                         className="gap-1.5"
-                        onClick={() => setResolving(record)}
+                        onClick={() => openResolveDialog(record)}
                       >
                         <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
                         Resolve
@@ -185,7 +200,7 @@ export function PaymentRecordsTable({
 
       <Dialog
         open={resolving !== null}
-        onOpenChange={(open) => !open && setResolving(null)}
+        onOpenChange={(open) => !open && closeResolveDialog()}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
