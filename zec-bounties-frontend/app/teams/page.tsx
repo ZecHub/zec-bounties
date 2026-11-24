@@ -9,13 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
   ArrowRight,
   Loader2,
   Plus,
@@ -24,16 +17,26 @@ import {
   Wallet,
   Building2,
 } from "lucide-react";
-import { backendUrl } from "@/lib/configENV";
 import { CreateTeamPanel } from "@/components/teams/create-team-panel";
 
-function initials(name: string) {
-  return name
-    .split(" ")
+export function getTeamInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+export function filterTeams(teams: Team[], searchQuery: string): Team[] {
+  const query = searchQuery.trim().toLowerCase();
+  if (!query) return teams;
+  return teams.filter(
+    (team) =>
+      team.name.toLowerCase().includes(query) ||
+      (team.description ?? "").toLowerCase().includes(query),
+  );
 }
 
 function roleBadgeClass(role: string) {
@@ -102,6 +105,11 @@ export default function TeamsPage() {
     const withWallet = teams.filter((t) => !!t.wallet).length;
     return { totalMembers: memberIds.size, totalActive, withWallet };
   }, [teams, bounties]);
+
+  const filteredTeams = useMemo(
+    () => filterTeams(teams, searchQuery),
+    [teams, searchQuery],
+  );
 
   // Make the team's wallet the active one before entering the team console,
   // so the navbar loads the team balance instead of the personal wallet.
@@ -235,14 +243,24 @@ export default function TeamsPage() {
               Create your first team
             </Button>
           </div>
+        ) : filteredTeams.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-muted/20 px-8 py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              {`No teams matching "${searchQuery.trim()}".`}
+            </p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 imd:grid-cols-4">
-            {teams.map((team) => {
+            {filteredTeams.map((team) => {
               const teamBounties = bounties.filter((b) => b.teamId === team.id);
               const activeBounties = teamBounties.filter(
                 (b) => b.status === "IN_PROGRESS" || b.status === "IN_REVIEW",
               ).length;
-              const role = getUserRole(team, currentUser.id, false);
+              const role = getUserRole(
+                team,
+                currentUser.id,
+                currentUser.role === "ADMIN",
+              );
 
               return (
                 <button
@@ -276,7 +294,7 @@ export default function TeamsPage() {
                           />
                         )}
                         <AvatarFallback className="text-base font-semibold">
-                          {initials(team.name)}
+                          {getTeamInitials(team.name)}
                         </AvatarFallback>
                       </Avatar>
                       <Badge
