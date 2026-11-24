@@ -11,12 +11,47 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, Target, Zap, Lock } from "lucide-react";
+import { Trophy, Target, Lock } from "lucide-react";
 import { BadgeIcons } from "@/components/badges/badge-icons";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 
 type TimeRange = "all" | "30d" | "90d";
+
+// `zec` is the raw ZEC amount; alternates with USD when a price is available.
+export function formatEarned(zec: number | null | undefined): string {
+  if (zec == null || !Number.isFinite(zec)) {
+    return "—";
+  }
+  return `${zec.toLocaleString(undefined, { maximumFractionDigits: 4 })} ZEC`;
+}
+
+export function formatBountyCount(
+  completed: number | null | undefined,
+): string {
+  if (completed == null) return "— Bounties";
+  return `${completed} ${completed === 1 ? "Bounty" : "Bounties"}`;
+}
+
+export function getLeaderboardAvatarFallback(
+  mine: boolean,
+  displayName: string,
+): string {
+  if (!mine) return "?";
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
+    .map((p) => Array.from(p)[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+// First 4 characters (Array.from keeps emoji/surrogate pairs intact).
+export function shortName(name: string): string {
+  const chars = Array.from(name);
+  return chars.length > 4 ? `${chars.slice(0, 4).join("")}…` : name;
+}
 
 export default function AdminLeaderboardPage() {
   const { currentUser, leaderboard, leaderboardLoading, fetchLeaderboard } =
@@ -32,26 +67,14 @@ export default function AdminLeaderboardPage() {
 
   const myEntry = leaderboard.find(isMe);
 
-  // `zec` is the raw ZEC amount; alternates with USD when a price is available.
-  const formatEarned = (zec: number | null) =>
-    zec == null
-      ? "—"
-      : `${zec.toLocaleString(undefined, { maximumFractionDigits: 4 })} ZEC`;
-
   const displayNameFor = (entry: (typeof leaderboard)[number]) =>
     entry.nickname || entry.name;
-
-  // First 4 characters (Array.from keeps emoji/surrogate pairs intact).
-  const shortName = (name: string) =>
-    Array.from(name).length > 4
-      ? `${Array.from(name).slice(0, 4).join("")}…`
-      : name;
 
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background text-foreground">
         <Navbar />
-        <div className="imd:container mx-auto px-4 py-8 max-w-5xl">
+        <div className="md:container mx-auto px-4 py-8 max-w-5xl">
           <div className="mb-12 text-center">
             <Badge
               variant="outline"
@@ -70,6 +93,8 @@ export default function AdminLeaderboardPage() {
               {(["all", "30d", "90d"] as TimeRange[]).map((range) => (
                 <button
                   key={range}
+                  type="button"
+                  aria-pressed={timeRange === range}
                   onClick={() => setTimeRange(range)}
                   className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                     timeRange === range
@@ -92,7 +117,11 @@ export default function AdminLeaderboardPage() {
                 <span className="font-bold text-primary">#{myEntry.rank}</span>{" "}
                 <span className="hidden md:inline">
                   {" "}
-                  with {myEntry.points == null ? "—" : myEntry.points.toLocaleString()} pts
+                  with{" "}
+                  {myEntry.points == null
+                    ? "—"
+                    : myEntry.points.toLocaleString()}{" "}
+                  pts
                 </span>
               </p>
             ) : currentUser ? (
@@ -120,6 +149,7 @@ export default function AdminLeaderboardPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
                 {leaderboard.slice(0, 3).map((entry) => {
                   const mine = isMe(entry);
+                  const displayName = displayNameFor(entry);
                   return (
                     <Card
                       key={entry.id}
@@ -151,7 +181,9 @@ export default function AdminLeaderboardPage() {
                             <AvatarImage
                               src={entry.avatar || "/placeholder.svg"}
                             />
-                            <AvatarFallback>{"None"}</AvatarFallback>
+                            <AvatarFallback>
+                              {getLeaderboardAvatarFallback(mine, displayName)}
+                            </AvatarFallback>
                           </Avatar>
                           <div
                             className={`absolute -bottom-2 -right-2 h-8 w-8 rounded-full flex items-center justify-center font-bold text-sm ${
@@ -169,9 +201,7 @@ export default function AdminLeaderboardPage() {
                           }`}
                         >
                           {(() => {
-                            const full = mine
-                              ? displayNameFor(entry)
-                              : "Hidden Hunter";
+                            const full = mine ? displayName : "Hidden Hunter";
                             return (
                               <>
                                 <span className="md:hidden">
@@ -184,7 +214,7 @@ export default function AdminLeaderboardPage() {
                         </h3>
                         <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mb-4">
                           <Target className="h-3 w-3" />
-                          <span>{entry.completed ?? "—"} Bounties</span>
+                          <span>{formatBountyCount(entry.completed)}</span>
                         </div>
                         <div className="flex items-center justify-center gap-1.5 mb-4">
                           <BadgeIcons
@@ -222,6 +252,7 @@ export default function AdminLeaderboardPage() {
                   <div className="divide-y">
                     {leaderboard.map((entry) => {
                       const mine = isMe(entry);
+                      const displayName = displayNameFor(entry);
                       return (
                         <div
                           key={entry.id}
@@ -240,7 +271,9 @@ export default function AdminLeaderboardPage() {
                             <AvatarImage
                               src={entry.avatar || "/placeholder.svg"}
                             />
-                            <AvatarFallback>{"None"}</AvatarFallback>
+                            <AvatarFallback>
+                              {getLeaderboardAvatarFallback(mine, displayName)}
+                            </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p
@@ -250,7 +283,7 @@ export default function AdminLeaderboardPage() {
                             >
                               {(() => {
                                 const full = mine
-                                  ? displayNameFor(entry)
+                                  ? displayName
                                   : "Hidden Hunter";
                                 return (
                                   <>
@@ -281,8 +314,8 @@ export default function AdminLeaderboardPage() {
                                 />
                               </span>
                               <span className="flex items-center gap-1">
-                                <Target className="h-3 w-3" /> {entry.completed ?? "—"}{" "}
-                                Completed
+                                <Target className="h-3 w-3" />{" "}
+                                {entry.completed ?? "—"} Completed
                               </span>
                             </div>
                           </div>
