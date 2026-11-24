@@ -240,13 +240,11 @@ router.post(
         text: `${who(req.user)} opened a payout round for ${describe(out.items)}. Open the payouts panel to choose who processes it.`,
       },
     );
-    res
-      .status(201)
-      .json({
-        id: out.proposal.id,
-        status: out.proposal.status,
-        skipped: out.skipped,
-      });
+    res.status(201).json({
+      id: out.proposal.id,
+      status: out.proposal.status,
+      skipped: out.skipped,
+    });
   }),
 );
 
@@ -568,7 +566,7 @@ router.post(
       const allowed =
         Boolean((p.approverKeys || {})[req.user.id]) ||
         p.createdById === req.user.id ||
-        req.user.role === "ADMIN";
+        (p.teamId === null && req.user.role === "ADMIN");
       if (!allowed) throw httpError(403, "Not allowed");
       await tx.payoutProposal.update({
         where: { id: p.id },

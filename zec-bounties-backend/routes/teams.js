@@ -108,7 +108,7 @@ async function requireTeamAdmin(teamId, req, res) {
 
   const member = await getTeamMember(teamId, req.user.id);
 
-  if (!member || !["OWNER", "ADMIN"].includes(member.role)) {
+  if (!member) {
     res.status(403).json({ error: "Team admin access required" });
     return false;
   }
@@ -480,7 +480,8 @@ async function isCommunityMember(teamId, userId) {
   return Boolean(fav);
 }
 
-// Platform ADMIN, or OWNER/ADMIN of this team. Mirrors canAdministerBounty.
+// Platform ADMIN, or any leader of this team.
+
 async function requireTeamManager(req, res, next) {
   try {
     if (req.user.role === "ADMIN") return next();
@@ -490,12 +491,25 @@ async function requireTeamManager(req, res, next) {
       },
       select: { role: true },
     });
-    if (!member || !["OWNER", "ADMIN"].includes(member.role)) {
+    if (!member) {
       return res.status(403).json({ error: "Team admin access required" });
     }
     next();
   } catch (err) {
     console.error("Team manager check failed:", err);
+    res.status(500).json({ error: "Failed to verify team access" });
+  }
+}
+
+// This team's leaders only. No platform-admin bypass.
+async function requireTeamLeader(req, res, next) {
+  try {
+    const member = await getTeamMember(req.params.teamId, req.user.id);
+    if (!member)
+      return res.status(403).json({ error: "Team leader access required" });
+    next();
+  } catch (err) {
+    console.error("Team leader check failed:", err);
     res.status(500).json({ error: "Failed to verify team access" });
   }
 }
@@ -561,10 +575,11 @@ async function sendTeamRecoveryOtpEmail(email, name, walletName, otp) {
   });
 }
 
-// Same rule as deleting the wallet: team OWNER or global ADMIN.
+// Team OWNER only. Platform admins can't request a team's seed phrase.
 async function requireRecoveryAccess(req, res, next) {
   try {
-    if (await canDeleteTeamWallet(req.params.teamId, req)) return next();
+    const member = await getTeamMember(req.params.teamId, req.user.id);
+    if (member?.role === "OWNER") return next();
     return res
       .status(403)
       .json({ error: "Only the team owner can access recovery information" });
@@ -2073,7 +2088,7 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
 
     if (!(await requireTeamAdmin(teamId, req, res))) return;
 
-    const { userIds, role = "MEMBER" } = req.body;
+    const { userIds } = req.body;
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({
@@ -2081,30 +2096,16 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
       });
     }
 
-    if (!["ADMIN", "MEMBER"].includes(role)) {
-      return res.status(400).json({
-        error: "Role must be ADMIN or MEMBER",
-      });
-    }
-
-    if (role === "ADMIN" && !(await canGrantTeamAdmin(teamId, req))) {
-      return res
-        .status(403)
-        .json({ error: "Only the team owner can grant the ADMIN role" });
-    }
-
     const invitedUsers = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, role: true },
     });
 
-    const ineligible = invitedUsers.filter(
-      (u) => u.role !== "TEAM" && u.role !== "ADMIN",
-    );
+    const ineligible = invitedUsers.filter((u) => u.role !== "TEAM");
 
     if (ineligible.length > 0 || invitedUsers.length !== userIds.length) {
       return res.status(400).json({
-        error: "Only users with the TEAM or ADMIN role can be added to a team",
+        error: "Only team accounts can be added as leaders",
       });
     }
 
@@ -2131,14 +2132,8 @@ router.post("/:teamId/members", authenticate, async (req, res) => {
               userId,
             },
           },
-          update: {
-            role,
-          },
-          create: {
-            teamId,
-            userId,
-            role,
-          },
+          update: {},
+          create: { teamId, userId },
           include: {
             user: {
               select: {
@@ -2816,10 +2811,10 @@ router.post("/:teamId/wallet/pay", authenticate, (req, res) =>
 router.post(
   "/:teamId/wallet/authorize-payment",
   authenticate,
+  requireTeamLeader,
   async (req, res) => {
     try {
       const { teamId } = req.params;
-      if (!(await requireTeamAdmin(teamId, req, res))) return;
 
       const { bountyIds } = req.body;
 
@@ -3136,10 +3131,10 @@ router.get(
 router.post(
   "/:teamId/wallet/payment-records/:id/resolve",
   authenticate,
+  requireTeamLeader,
   async (req, res) => {
     try {
       const { teamId, id } = req.params;
-      if (!(await requireTeamAdmin(teamId, req, res))) return;
 
       const { outcome, txid, confirm } = req.body;
 
@@ -3285,10 +3280,10 @@ router.delete("/:teamId/wallet", authenticate, async (req, res) => {
 router.get(
   "/:teamId/wallet/recovery/requests/current",
   authenticate,
+  requireTeamLeader,
   async (req, res) => {
     try {
       const { teamId } = req.params;
-      if (!(await requireTeamAdmin(teamId, req, res))) return;
       await expireStaleRecoveryApprovals(prisma, teamId);
       const approval = await prisma.recoveryApproval.findFirst({
         where: { teamId, status: { in: ["OPEN", "APPROVED"] } },
@@ -3493,7 +3488,7 @@ router.post(
         where: { id: approvalId, teamId, status: { in: ["OPEN", "APPROVED"] } },
       });
       if (!approval) return res.status(404).json({ error: "No active round" });
-      if (approval.requesterId !== req.user.id && req.user.role !== "ADMIN") {
+      if (approval.requesterId !== req.user.id) {
         return res.status(403).json({ error: "Only the requester can cancel" });
       }
       await prisma.recoveryApproval.update({
@@ -3663,23 +3658,6 @@ router.post(
   },
 );
 
-router.post(
-  "/:teamId/wallet/recovery/requests/:approvalId/challenge",
-  authenticate,
-  async (req, res) => {
-    try {
-      const approval = await loadSignableApproval(req, res);
-      if (!approval) return;
-      res.json(await issueRecoveryChallenge(prisma, req.user.id, approval));
-    } catch (err) {
-      if (err.status)
-        return res.status(err.status).json({ error: err.message });
-      console.error(err);
-      res.status(500).json({ error: "Failed to issue challenge" });
-    }
-  },
-);
-
 // Only fields safe to show; never keys, assertions, nonces or payee addresses.
 const AUDIT_SAFE = [
   "candidateId",
@@ -3703,7 +3681,7 @@ function publicAuditData(d) {
 router.get(
   "/:teamId/passkey-activity",
   authenticate,
-  requireTeamManager,
+  requireTeamLeader,
   async (req, res) => {
     try {
       const { teamId } = req.params;
