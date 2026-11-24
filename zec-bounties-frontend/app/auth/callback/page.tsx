@@ -11,6 +11,26 @@ import {
   readGithubLoginState,
 } from "@/lib/githubLogin";
 
+export function getPostAuthPath(role: string | undefined): string {
+  switch (role) {
+    case "ADMIN":
+      return "/admin";
+    case "TEAM":
+      return "/teams";
+    case "CLIENT":
+      return "/onboarding";
+    default:
+      return "/home";
+  }
+}
+
+export function buildScrubbedCallbackUrl(pathname: string, search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete("token");
+  const nextQuery = params.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 export default function GithubCallback() {
   const { setCurrentUser } = useBounty();
   const router = useRouter();
@@ -19,7 +39,7 @@ export default function GithubCallback() {
 
   useEffect(() => {
     // Guard against React 19 / StrictMode double-invocation and against
-    // re-runs after history.replaceState scrubs the fragment.
+    // re-runs after history.replaceState scrubs the fragment/query token.
     if (handledRef.current) return;
     handledRef.current = true;
 
@@ -33,31 +53,35 @@ export default function GithubCallback() {
 
     if (!token) {
       clearGithubLoginState();
-      router.push("/login?error=missing_token");
+      router.replace("/login?error=missing_token");
       return;
     }
 
     if (!expectedState || searchParams.get("state") !== expectedState) {
       clearGithubLoginState();
-      router.push("/login?error=invalid_state");
+      router.replace("/login?error=invalid_state");
       return;
     }
 
-    // Scrub the token from the address bar / history immediately.
+    // Scrub the token from both fragment and query string immediately.
     // Do this after we have already captured the token so a subsequent
     // effect run cannot see a missing token and treat it as a failure.
     if (typeof window !== "undefined") {
       window.history.replaceState(
         null,
         "",
-        window.location.pathname + window.location.search,
+        buildScrubbedCallbackUrl(window.location.pathname, window.location.search),
       );
     }
 
     localStorage.setItem("authToken", token);
 
+    const controller = new AbortController();
+    let cancelled = false;
+
     fetch(`${backendUrl}/auth/verify`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
     })
       .then(async (res) => {
         const data = res.ok ? await res.json() : null;
@@ -65,18 +89,25 @@ export default function GithubCallback() {
         return data.user;
       })
       .then((user) => {
+        if (cancelled) return;
         clearGithubLoginState();
         setCurrentUser(user);
-        router.push(user.role === "ADMIN" ? "/admin" : "/home");
+        router.replace(getPostAuthPath(user.role));
       })
       .catch((error) => {
+        if (cancelled || error?.name === "AbortError") return;
         clearGithubLoginState();
         localStorage.removeItem("authToken");
         toast.error("Sign-in failed", {
           description: error?.message ?? "Please try signing in again.",
         });
-        router.push("/login?error=invalid_token");
+        router.replace("/login?error=invalid_token");
       });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [searchParams, setCurrentUser, router]);
 
   return (
