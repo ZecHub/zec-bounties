@@ -23,15 +23,32 @@ const SENT_FIELD = {
 
 function readConfig(env = process.env) {
   const days = Number(env.DEADLINE_REMINDER_DAYS);
+  const schedule =
+    typeof env.DEADLINE_REMINDER_CRON === "string"
+      ? env.DEADLINE_REMINDER_CRON.trim()
+      : "";
+  const timezone =
+    typeof env.DEADLINE_REMINDER_TZ === "string"
+      ? env.DEADLINE_REMINDER_TZ.trim()
+      : "";
   return {
     enabled: env.DEADLINE_REMINDERS_ENABLED === "true",
     windowDays:
       env.DEADLINE_REMINDER_DAYS && Number.isFinite(days) && days > 0
         ? days
         : DEFAULT_WINDOW_DAYS,
-    schedule: env.DEADLINE_REMINDER_CRON || DEFAULT_SCHEDULE,
-    timezone: env.DEADLINE_REMINDER_TZ || DEFAULT_TIMEZONE,
+    schedule: schedule || DEFAULT_SCHEDULE,
+    timezone: timezone || DEFAULT_TIMEZONE,
   };
+}
+
+function isValidTimezone(timezone) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function toDate(value) {
@@ -103,17 +120,23 @@ function escapeHtml(text) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function buildMessage(kind, bounty, now, frontendUrl) {
-  const deadline = toDate(bounty.timeToComplete);
+  const deadline = toDate(bounty?.timeToComplete);
+  if (!deadline) {
+    throw new Error("Invalid bounty deadline");
+  }
+  const current = toDate(now) || new Date();
   const due = formatDeadline(deadline);
   const path = `/bounty/${bounty.id}`;
-  const link = `${frontendUrl}${path}`;
+  const baseUrl = String(frontendUrl || "").replace(/\/+$/, "");
+  const link = `${baseUrl}${path}`;
 
   if (kind === DUE_SOON) {
-    const days = Math.max(1, Math.ceil((deadline - now) / DAY_MS));
+    const days = Math.max(1, Math.ceil((deadline - current) / DAY_MS));
     const when = days === 1 ? "in 1 day" : `in ${days} days`;
     return {
       type: "BOUNTY_DEADLINE_DUE_SOON",
@@ -138,7 +161,7 @@ function buildMessage(kind, bounty, now, frontendUrl) {
 }
 
 function buildEmail(user, message) {
-  const name = user.nickname || user.name;
+  const name = (user?.nickname || user?.name || "").trim() || "there";
   return {
     to: user.email,
     subject: message.title,
@@ -246,6 +269,7 @@ async function runDeadlineReminders({
       where: {
         id: bounty.id,
         status: "IN_PROGRESS",
+        isApproved: true,
         timeToComplete: bounty.timeToComplete,
         OR: [{ [field]: null }, { [field]: { lt: cutoff } }],
       },
@@ -294,6 +318,12 @@ function startDeadlineReminderJob({
   if (!cron.validate(config.schedule)) {
     logger.error(
       `[deadline reminders] invalid DEADLINE_REMINDER_CRON "${config.schedule}", job not started`,
+    );
+    return null;
+  }
+  if (!isValidTimezone(config.timezone)) {
+    logger.error(
+      `[deadline reminders] invalid DEADLINE_REMINDER_TZ "${config.timezone}", job not started`,
     );
     return null;
   }
