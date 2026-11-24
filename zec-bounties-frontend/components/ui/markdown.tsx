@@ -2,84 +2,107 @@ import type React from "react";
 import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 
+export const processInlineMarkdown = (text: string): React.ReactNode => {
+  const parts: React.ReactNode[] = [];
+  let key = 0;
+
+  // Bold **text**
+  const boldRegex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = boldRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(<strong key={`bold-${key++}`}>{match[1]}</strong>);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : text;
+};
+
+export type ParsedMarkdownLine =
+  | { kind: "h3"; text: string }
+  | { kind: "h2"; text: string }
+  | { kind: "h1"; text: string }
+  | { kind: "bullet"; text: string }
+  | { kind: "empty" }
+  | { kind: "paragraph"; text: string };
+
+export const parseMarkdownLine = (rawLine: string): ParsedMarkdownLine => {
+  const line = rawLine.replace(/\r$/, "");
+  const trimmed = line.trim();
+
+  if (line.startsWith("### ")) {
+    return { kind: "h3", text: line.slice(4) };
+  }
+  if (line.startsWith("## ")) {
+    return { kind: "h2", text: line.slice(3) };
+  }
+  if (line.startsWith("# ")) {
+    return { kind: "h1", text: line.slice(2) };
+  }
+  if (
+    trimmed.startsWith("- ") ||
+    trimmed.startsWith("+ ") ||
+    trimmed.startsWith("* ")
+  ) {
+    return { kind: "bullet", text: trimmed.slice(2).trim() };
+  }
+  if (trimmed === "") {
+    return { kind: "empty" };
+  }
+  return { kind: "paragraph", text: line };
+};
+
 // Markdown Renderer Component - Import this into BountyDetailModal
 export const MarkdownRenderer = ({ content }: { content: string }) => {
   const renderMarkdown = (text: string) => {
-    const lines = text.split("\n");
-    return lines.map((line, index) => {
-      // Headers
-      if (line.startsWith("### ")) {
-        return (
-          <h3 key={index} className="text-lg font-semibold mt-4 mb-2">
-            {line.slice(4)}
-          </h3>
-        );
-      }
-      if (line.startsWith("## ")) {
-        return (
-          <h2 key={index} className="text-xl font-semibold mt-4 mb-2">
-            {line.slice(3)}
-          </h2>
-        );
-      }
-      if (line.startsWith("# ")) {
-        return (
-          <h1 key={index} className="text-2xl font-bold mt-4 mb-2">
-            {line.slice(2)}
-          </h1>
-        );
-      }
+    const lines = (text ?? "").split(/\r?\n/);
+    return lines.map((rawLine, index) => {
+      const parsed = parseMarkdownLine(rawLine);
 
-      // Bullet points
-      if (
-        line.trim().startsWith("- ") ||
-        line.trim().startsWith("+ ") ||
-        line.trim().startsWith("* ")
-      ) {
-        return (
-          <div key={index} className="flex gap-2 ml-4 my-1">
-            <span className="text-primary mt-1">•</span>
-            <span>{processInlineMarkdown(line.slice(2).trim())}</span>
-          </div>
-        );
+      switch (parsed.kind) {
+        case "h3":
+          return (
+            <h3 key={index} className="text-lg font-semibold mt-4 mb-2">
+              {processInlineMarkdown(parsed.text)}
+            </h3>
+          );
+        case "h2":
+          return (
+            <h2 key={index} className="text-xl font-semibold mt-4 mb-2">
+              {processInlineMarkdown(parsed.text)}
+            </h2>
+          );
+        case "h1":
+          return (
+            <h1 key={index} className="text-2xl font-bold mt-4 mb-2">
+              {processInlineMarkdown(parsed.text)}
+            </h1>
+          );
+        case "bullet":
+          return (
+            <div key={index} className="flex gap-2 ml-4 my-1">
+              <span className="text-primary mt-1">•</span>
+              <span>{processInlineMarkdown(parsed.text)}</span>
+            </div>
+          );
+        case "empty":
+          return <div key={index} className="h-2" />;
+        case "paragraph":
+          return (
+            <p key={index} className="my-2">
+              {processInlineMarkdown(parsed.text)}
+            </p>
+          );
       }
-
-      // Empty lines
-      if (line.trim() === "") {
-        return <div key={index} className="h-2" />;
-      }
-
-      // Regular paragraphs
-      return (
-        <p key={index} className="my-2">
-          {processInlineMarkdown(line)}
-        </p>
-      );
     });
-  };
-
-  const processInlineMarkdown = (text: string) => {
-    const parts: React.ReactNode[] = [];
-    let key = 0;
-
-    // Bold **text**
-    const boldRegex = /\*\*(.+?)\*\*/g;
-    let lastIndex = 0;
-    let match;
-
-    while ((match = boldRegex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.slice(lastIndex, match.index));
-      }
-      parts.push(<strong key={`bold-${key++}`}>{match[1]}</strong>);
-      lastIndex = match.index + match[0].length;
-    }
-
-    if (lastIndex < text.length) {
-      parts.push(text.slice(lastIndex));
-    }
-
-    return parts.length > 0 ? parts : text;
   };
 
   return (
@@ -101,7 +124,8 @@ export const MarkdownTextarea = ({
   placeholder: string;
   id: string;
 }) => {
-  const lines = value.split("\n");
+  const safeValue = value ?? "";
+  const lines = safeValue.split(/\r?\n/);
   const lineCount = lines.length;
 
   return (
@@ -115,7 +139,7 @@ export const MarkdownTextarea = ({
       </div>
       <Textarea
         id={id}
-        value={value}
+        value={safeValue}
         onChange={onChange}
         placeholder={placeholder}
         className="min-h-[140px] pl-9 font-mono text-sm"
