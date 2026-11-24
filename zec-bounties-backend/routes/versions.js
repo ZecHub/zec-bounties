@@ -13,6 +13,7 @@ const backendPkg = require("../package.json");
 const CACHE_MS = 60_000;
 let cached = null;
 let cachedAt = 0;
+let inFlight = null;
 
 function row(name, version, source, status = "ok", detail) {
   return {
@@ -46,7 +47,8 @@ async function redisVersion() {
 }
 
 async function zingoVersion() {
-  const bin = process.env.ZINGO_CLI;
+  const bin =
+    typeof process.env.ZINGO_CLI === "string" ? process.env.ZINGO_CLI.trim() : "";
   if (!bin)
     return row("zingo-cli", null, "ZINGO_CLI", "missing", "not configured");
   if (!existsSync(bin))
@@ -93,7 +95,10 @@ async function zingoVersion() {
 }
 
 function nymProxy() {
-  const bin = process.env.ZINGO_NYM_PROXY;
+  const bin =
+    typeof process.env.ZINGO_NYM_PROXY === "string"
+      ? process.env.ZINGO_NYM_PROXY.trim()
+      : "";
   if (!bin)
     return row(
       "nym-proxy",
@@ -156,14 +161,29 @@ router.get("/versions", authenticate, isAdmin, async (req, res) => {
     if (cached && Date.now() - cachedAt < CACHE_MS) {
       return res.json(cached);
     }
-    const data = await collect();
-    cached = data;
-    cachedAt = Date.now();
+    if (!inFlight) {
+      inFlight = collect()
+        .then((data) => {
+          cached = data;
+          cachedAt = Date.now();
+          return data;
+        })
+        .finally(() => {
+          inFlight = null;
+        });
+    }
+    const data = await inFlight;
     res.json(data);
   } catch {
     console.error("versions: collect failed");
     res.status(500).json({ error: "Failed to collect versions" });
   }
 });
+
+router._resetCache = () => {
+  cached = null;
+  cachedAt = 0;
+  inFlight = null;
+};
 
 module.exports = router;
