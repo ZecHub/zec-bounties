@@ -8,6 +8,7 @@ const {
 } = require("../helpers/bountyChatValidation");
 
 const router = express.Router();
+const CHAT_PAGE_SIZE = 30;
 
 async function getChatBounty(bountyId, user) {
   const bounty = await prisma.bounty.findUnique({
@@ -43,16 +44,33 @@ router.get("/:bountyId/chat", authenticate, async (req, res) => {
     if (access.error)
       return res.status(access.status).json({ error: access.error });
 
-    const messages = await prisma.bountyChat.findMany({
-      where: { bountyId: access.bounty.id },
+    // ?before=<messageId> loads the page older than that message, so long chats
+    // can be read from the start. The id breaks ties between equal timestamps.
+    const where = { bountyId: access.bounty.id };
+    if (req.query?.before !== undefined) {
+      const cursor = await prisma.bountyChat.findFirst({
+        where: { id: String(req.query.before), bountyId: access.bounty.id },
+        select: { id: true, createdAt: true },
+      });
+      if (!cursor) return res.status(400).json({ error: "Unknown message" });
+      where.OR = [
+        { createdAt: { lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+      ];
+    }
+
+    const page = await prisma.bountyChat.findMany({
+      where,
       include: {
         sender: { select: { id: true, name: true, avatar: true } },
       },
-      orderBy: { createdAt: "desc" },
-      take: 30,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: CHAT_PAGE_SIZE + 1,
     });
 
-    return res.json({ messages: messages.reverse() });
+    const hasMore = page.length > CHAT_PAGE_SIZE;
+    const messages = page.slice(0, CHAT_PAGE_SIZE).reverse();
+    return res.json({ messages, hasMore });
   } catch (error) {
     console.error("Failed to load bounty chat:", error);
     return res.status(500).json({ error: "Failed to load bounty chat" });
