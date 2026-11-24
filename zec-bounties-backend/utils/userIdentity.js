@@ -4,10 +4,12 @@
  */
 
 function userIdentityWhere(q) {
-  const term = String(q || "")
+  if (typeof q !== "string") return null;
+  const term = q
+    .replace(/[%_]/g, "")
     .trim()
     .slice(0, 40)
-    .replace(/[%_]/g, "");
+    .trim();
   if (term.length < 2) return null;
   return {
     OR: [
@@ -20,7 +22,14 @@ function userIdentityWhere(q) {
 }
 
 function bountyInvolvesUserWhere(userWhere) {
-  if (!userWhere) return null;
+  if (
+    !userWhere ||
+    typeof userWhere !== "object" ||
+    Array.isArray(userWhere) ||
+    Object.keys(userWhere).length === 0
+  ) {
+    return null;
+  }
   return {
     OR: [
       { createdByUser: userWhere },
