@@ -14,7 +14,8 @@ const DEFAULT_SERVER_URLS = [
 
 // The raw value goes to zingo-cli, so it must match this exact shape. The URL
 // parser alone accepts tabs, percent-encoding and other forms it rewrites.
-const SERVER_URL_PATTERN = /^https?:\/\/[A-Za-z0-9.-]+(:[1-9][0-9]{0,4})?\/?$/;
+const SERVER_URL_PATTERN =
+  /^https?:\/\/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(:[1-9][0-9]{0,4})?\/?$/;
 
 function normalizeServerUrl(value) {
   if (typeof value !== "string" || !SERVER_URL_PATTERN.test(value)) {
@@ -29,11 +30,15 @@ function normalizeServerUrl(value) {
 
 // Operators add servers with ZCASH_ALLOWED_SERVER_URLS (comma-separated).
 function allowedServerOrigins(env = process.env) {
-  const extra = (env.ZCASH_ALLOWED_SERVER_URLS || "").split(",");
+  const safeEnv = env && typeof env === "object" ? env : {};
+  const extra =
+    typeof safeEnv.ZCASH_ALLOWED_SERVER_URLS === "string"
+      ? safeEnv.ZCASH_ALLOWED_SERVER_URLS.split(",")
+      : [];
   const urls = [
     ...DEFAULT_SERVER_URLS,
-    env.ZCASH_SERVER_URL,
-    env.ZCASH_VERIFICATION_SERVER,
+    safeEnv.ZCASH_SERVER_URL,
+    safeEnv.ZCASH_VERIFICATION_SERVER,
     ...extra,
   ];
   return new Set(
@@ -45,7 +50,11 @@ function allowedServerOrigins(env = process.env) {
 }
 
 // Checks only the fields that are present. Returns an error message or null.
-function validateWalletConnection({ chain, serverUrl }, env = process.env) {
+function validateWalletConnection(input, env = process.env) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return "wallet connection parameters must be an object";
+  }
+  const { chain, serverUrl } = input;
   if (chain !== undefined && !ALLOWED_CHAINS.includes(chain)) {
     return `chain must be one of: ${ALLOWED_CHAINS.join(", ")}`;
   }
@@ -61,5 +70,7 @@ function validateWalletConnection({ chain, serverUrl }, env = process.env) {
 module.exports = {
   ALLOWED_CHAINS,
   DEFAULT_SERVER_URLS,
+  normalizeServerUrl,
+  allowedServerOrigins,
   validateWalletConnection,
 };
