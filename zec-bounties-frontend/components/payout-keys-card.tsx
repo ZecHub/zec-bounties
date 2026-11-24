@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -104,10 +104,21 @@ export function PayoutKeysCard() {
   const [pending, setPending] = useState<PayoutKey[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const mountedRef = useRef(true);
+  const loadSeqRef = useRef(0);
 
-  const load = async () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const load = async (seq?: number) => {
+    const requestSeq = seq ?? ++loadSeqRef.current;
     try {
       const data = await listPayoutKeys();
+      if (!mountedRef.current || requestSeq !== loadSeqRef.current) return;
       setMine(data.mine);
       setPending(data.pending);
     } catch {
@@ -116,17 +127,37 @@ export function PayoutKeysCard() {
   };
 
   useEffect(() => {
-    if (isLoading || !currentUser) return;
+    if (isLoading) return;
+    if (!currentUser) {
+      loadSeqRef.current += 1;
+      setMine([]);
+      setPending([]);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const seq = ++loadSeqRef.current;
+    setMine([]);
+    setPending([]);
+    setLoading(true);
+
     (async () => {
       const started = Date.now();
-      await load(); // swallows its own errors
+      await load(seq); // swallows its own errors
+      if (cancelled || seq !== loadSeqRef.current) return;
       const remaining = MIN_LOADING_MS - (Date.now() - started);
-      if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
-      if (!cancelled) setLoading(false);
+      if (remaining > 0) {
+        await new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, remaining);
+        });
+      }
+      if (!cancelled && seq === loadSeqRef.current) setLoading(false);
     })();
     return () => {
       cancelled = true;
+      if (timer !== null) clearTimeout(timer);
     };
   }, [isLoading, currentUser?.id]);
 
@@ -136,9 +167,13 @@ export function PayoutKeysCard() {
       await fn();
       await load();
     } catch (e: any) {
-      toast.error(e?.message || "Something went wrong");
+      if (mountedRef.current) {
+        toast.error(e?.message || "Something went wrong");
+      }
     } finally {
-      setBusy(false);
+      if (mountedRef.current) {
+        setBusy(false);
+      }
     }
   };
 
