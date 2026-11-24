@@ -6,6 +6,18 @@ const MAX_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 30 * 1000;
 const LOCKOUT_MS = 15 * 60 * 1000;
 
+function positiveOrDefault(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
+}
+
+function nonNegativeOrDefault(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : fallback;
+}
+
 // Six-digit code from a CSPRNG. Leading zeros are kept so every code is 6 chars.
 function generateOtp() {
   return crypto.randomInt(0, 1000000).toString().padStart(6, "0");
@@ -29,13 +41,45 @@ function safeEqual(a, b) {
 // key cannot both succeed.
 class OtpStore {
   constructor(options = {}) {
-    this.ttlMs = options.ttlMs ?? OTP_TTL_MS;
-    this.maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
-    this.resendCooldownMs = options.resendCooldownMs ?? RESEND_COOLDOWN_MS;
-    this.lockoutMs = options.lockoutMs ?? LOCKOUT_MS;
+    const opts = options && typeof options === "object" ? options : {};
+    this.ttlMs = positiveOrDefault(opts.ttlMs, OTP_TTL_MS);
+    this.maxAttempts = Math.floor(
+      positiveOrDefault(opts.maxAttempts, MAX_ATTEMPTS),
+    );
+    if (this.maxAttempts < 1) this.maxAttempts = MAX_ATTEMPTS;
+    this.resendCooldownMs = nonNegativeOrDefault(
+      opts.resendCooldownMs,
+      RESEND_COOLDOWN_MS,
+    );
+    this.lockoutMs = positiveOrDefault(opts.lockoutMs, LOCKOUT_MS);
     this.store = new Map();
     this.locks = new Map();
     this.failures = new Map();
+  }
+
+  // Evicts expired lockouts, stale failure windows, and expired OTPs so
+  // abandoned keys do not accumulate unboundedly in memory.
+  prune(now = Date.now(), { storeGraceMs = 0 } = {}) {
+    let evicted = 0;
+    for (const [key, until] of this.locks) {
+      if (now >= until) {
+        this.locks.delete(key);
+        evicted += 1;
+      }
+    }
+    for (const [key, entry] of this.failures) {
+      if (now - entry.since >= this.lockoutMs) {
+        this.failures.delete(key);
+        evicted += 1;
+      }
+    }
+    for (const [key, record] of this.store) {
+      if (now > record.expiresAt + storeGraceMs) {
+        this.store.delete(key);
+        evicted += 1;
+      }
+    }
+    return evicted;
   }
 
   // Milliseconds left on the key's lockout, or 0 when it is not locked.
@@ -69,16 +113,25 @@ class OtpStore {
   // Issues a code unless the key is locked or one was sent within the cooldown
   // window. Returns { otp } or { error: "locked" | "cooldown", retryAfterMs }.
   issue(key, now = Date.now()) {
+    this.prune(now, { storeGraceMs: this.lockoutMs });
+
     const lockedMs = this.lockedFor(key, now);
     if (lockedMs > 0) {
       return { error: "locked", retryAfterMs: lockedMs };
     }
     const existing = this.store.get(key);
-    if (existing && now - existing.issuedAt < this.resendCooldownMs) {
-      return {
-        error: "cooldown",
-        retryAfterMs: this.resendCooldownMs - (now - existing.issuedAt),
-      };
+    if (existing && now <= existing.expiresAt) {
+      const elapsed = now - existing.issuedAt;
+      if (elapsed < this.resendCooldownMs) {
+        const retryAfterMs = Math.min(
+          this.resendCooldownMs,
+          this.resendCooldownMs - elapsed,
+        );
+        return {
+          error: "cooldown",
+          retryAfterMs,
+        };
+      }
     }
     const otp = generateOtp();
     this.store.set(key, { otp, issuedAt: now, expiresAt: now + this.ttlMs });
