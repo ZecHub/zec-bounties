@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -34,13 +34,37 @@ type Step = "idle" | "otp_sent" | "unlocked";
 
 function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    if (!navigator?.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setOk(true);
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = setTimeout(() => {
+        setOk(false);
+        timerRef.current = null;
+      }, 2000);
+    } catch {
+      // Clipboard access denied or unavailable
+    }
+  };
+
   return (
     <button
-      onClick={async () => {
-        await navigator.clipboard.writeText(text);
-        setOk(true);
-        setTimeout(() => setOk(false), 2000);
-      }}
+      type="button"
+      onClick={handleCopy}
       className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
     >
       {ok ? (
@@ -94,6 +118,7 @@ function SensitiveField({
         <div className="flex items-center gap-3 shrink-0">
           <CopyBtn text={value} />
           <button
+            type="button"
             onClick={() => setShow((v) => !v)}
             className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
           >
@@ -179,36 +204,74 @@ export function RecoveryPanel({
   const [data, setData] = useState<RecoveryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
+  const sessionRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      sessionRef.current += 1;
+      inFlightRef.current = false;
+    };
+  }, []);
 
   const handleRequest = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const session = sessionRef.current;
     setLoading(true);
     setError(null);
+    setOtp("");
     try {
       const res = await requestOtp();
+      if (sessionRef.current !== session) return;
       setMaskedEmail(res.email);
       setStep("otp_sent");
     } catch (e: any) {
+      if (sessionRef.current !== session) return;
       setError(e?.message ?? "Failed to send code");
     } finally {
-      setLoading(false);
+      if (sessionRef.current === session) {
+        inFlightRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
   const handleVerify = async () => {
-    if (!otp.trim()) return setError("Enter the code from your email");
+    if (inFlightRef.current) return;
+    const trimmedOtp = otp.trim();
+    if (!trimmedOtp) {
+      setError("Enter the code from your email");
+      return;
+    }
+    if (trimmedOtp.length < 6) {
+      setError("Enter the 6-digit code from your email");
+      return;
+    }
+    inFlightRef.current = true;
+    const session = sessionRef.current;
     setLoading(true);
     setError(null);
     try {
-      setData(await verifyOtp(otp.trim()));
+      const recoveryData = await verifyOtp(trimmedOtp);
+      if (sessionRef.current !== session) return;
+      setData(recoveryData);
       setStep("unlocked");
     } catch (e: any) {
+      if (sessionRef.current !== session) return;
       setError(e?.message ?? "Invalid code");
     } finally {
-      setLoading(false);
+      if (sessionRef.current === session) {
+        inFlightRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
   const handleLock = () => {
+    sessionRef.current += 1;
+    inFlightRef.current = false;
+    setLoading(false);
     setStep("idle");
     setData(null);
     setOtp("");
@@ -216,13 +279,12 @@ export function RecoveryPanel({
     setMaskedEmail("");
   };
 
-  const ErrorLine = () =>
-    error ? (
-      <p className="text-xs text-destructive flex items-center gap-1 mt-2">
-        <AlertCircle className="w-3 h-3" />
-        {error}
-      </p>
-    ) : null;
+  const errorLine = error ? (
+    <p className="text-xs text-destructive flex items-center gap-1 mt-2">
+      <AlertCircle className="w-3 h-3" />
+      {error}
+    </p>
+  ) : null;
 
   if (step === "idle") {
     return (
@@ -257,7 +319,7 @@ export function RecoveryPanel({
               </>
             )}
           </Button>
-          <ErrorLine />
+          {errorLine}
         </div>
       </div>
     );
@@ -320,7 +382,7 @@ export function RecoveryPanel({
               Resend
             </Button>
           </div>
-          <ErrorLine />
+          {errorLine}
         </div>
       </div>
     );
