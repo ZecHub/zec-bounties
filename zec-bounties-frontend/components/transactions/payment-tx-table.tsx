@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Copy, ExternalLink, Shield, CheckCircle, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getExplorerUrl } from "@/lib/explorer";
 
 interface PaymentID {
@@ -27,13 +27,33 @@ export function PaymentTxIdsTable({
   chain,
   serverUrl,
 }: PaymentTxIdsTableProps) {
-  const [copiedTxId, setCopiedTxId] = useState<string | null>(null);
+  const [copiedRowKey, setCopiedRowKey] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopyTxId = async (txId: string) => {
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleCopyTxId = async (txId: string, rowKey: string) => {
+    if (!navigator?.clipboard?.writeText) {
+      console.error("Failed to copy transaction ID: Clipboard API unavailable");
+      return;
+    }
     try {
       await navigator.clipboard.writeText(txId);
-      setCopiedTxId(txId);
-      setTimeout(() => setCopiedTxId(null), 2000);
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+      setCopiedRowKey(rowKey);
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopiedRowKey(null);
+      }, 2000);
     } catch (err) {
       console.error("Failed to copy transaction ID:", err);
     }
@@ -74,31 +94,46 @@ export function PaymentTxIdsTable({
         status: "completed",
         createdAt: null,
         id: `tx-${index}`,
+        rowKey: `tx-${index}-${item}`,
         kind: undefined,
       };
     }
+    const baseId = item?.id || item?.txid || `tx-${index}`;
+    const rawStatus =
+      typeof item?.status === "string" && item.status.trim().length > 0
+        ? item.status
+        : "completed";
     return {
       txHash: extractTxHash(item),
-      amount: item.value || null,
-      fee: item.fee || null,
-      status: item.status || "completed",
-      createdAt: item.datetime || null,
-      id: item.id || item.txid || `tx-${index}`,
-      kind: item.kind as "sent" | "received" | undefined,
+      amount:
+        typeof item?.value === "number" && Number.isFinite(item.value)
+          ? item.value
+          : null,
+      fee:
+        typeof item?.fee === "number" && Number.isFinite(item.fee)
+          ? item.fee
+          : null,
+      status: rawStatus,
+      createdAt: item?.datetime || null,
+      id: baseId,
+      rowKey: `${baseId}-${index}`,
+      kind: item?.kind as "sent" | "received" | undefined,
     };
   };
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "N/A";
-    try {
-      return new Date(dateString).toLocaleString();
-    } catch {
+    const parsed = new Date(dateString);
+    if (Number.isNaN(parsed.getTime())) {
       return dateString;
     }
+    return parsed.toLocaleString();
   };
 
   const formatAmount = (amount?: number | null) => {
-    if (!amount) return null;
+    if (amount === null || amount === undefined || !Number.isFinite(amount)) {
+      return null;
+    }
     return `${(amount / 1e8).toFixed(4)} ZEC`;
   };
 
@@ -152,8 +187,9 @@ export function PaymentTxIdsTable({
     );
   }
 
-  const hasRichData =
-    paymentIDs.length > 0 && typeof paymentIDs[0] === "object";
+  const hasRichData = paymentIDs.some(
+    (item) => typeof item === "object" && item !== null,
+  );
   const sortedPaymentIDs = [...paymentIDs].reverse();
 
   const isTestnet =
@@ -220,10 +256,12 @@ export function PaymentTxIdsTable({
               {sortedPaymentIDs.map((item, index) => {
                 const metadata = getPaymentMetadata(item, index);
                 const txHash = metadata.txHash;
+                const formattedAmount = formatAmount(metadata.amount);
+                const formattedFee = formatAmount(metadata.fee);
 
                 return (
                   <tr
-                    key={metadata.id}
+                    key={metadata.rowKey}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors duration-150"
                   >
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-500 dark:text-slate-400">
@@ -258,24 +296,24 @@ export function PaymentTxIdsTable({
                     {hasRichData && (
                       <>
                         <td className="px-4 py-4 whitespace-nowrap">
-                          {metadata.amount ? (
+                          {formattedAmount !== null ? (
                             <Badge
                               variant="secondary"
                               className="font-mono text-xs"
                             >
-                              {formatAmount(metadata.amount)}
+                              {formattedAmount}
                             </Badge>
                           ) : (
                             <span className="text-slate-400 text-sm">N/A</span>
                           )}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap">
-                          {metadata.fee ? (
+                          {formattedFee !== null ? (
                             <Badge
                               variant="secondary"
                               className="font-mono text-xs"
                             >
-                              {formatAmount(metadata.fee)}
+                              {formattedFee}
                             </Badge>
                           ) : (
                             <span className="text-slate-400 text-sm">N/A</span>
@@ -305,12 +343,14 @@ export function PaymentTxIdsTable({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleCopyTxId(txHash)}
+                          onClick={() =>
+                            handleCopyTxId(txHash, metadata.rowKey)
+                          }
                           className="h-8 w-8 p-0 hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors duration-150"
                           title="Copy transaction ID"
                           disabled={txHash === "N/A"}
                         >
-                          {copiedTxId === txHash ? (
+                          {copiedRowKey === metadata.rowKey ? (
                             <CheckCircle className="w-3 h-3 text-green-600 animate-pulse" />
                           ) : (
                             <Copy className="w-3 h-3" />
