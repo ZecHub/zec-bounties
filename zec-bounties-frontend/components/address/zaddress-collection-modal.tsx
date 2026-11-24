@@ -53,6 +53,11 @@ export function ZAddressCollectionModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+      }
+      latestAddress.current = "";
       setZAddress("");
       setError(null);
       setIsSubmitting(false);
@@ -75,6 +80,7 @@ export function ZAddressCollectionModal({
   }, [isOpen]);
 
   const validateAddress = async (address: string) => {
+    latestAddress.current = address;
     const trimmed = address.trim();
     if (!trimmed) {
       setValidationState("idle");
@@ -101,9 +107,6 @@ export function ZAddressCollectionModal({
 
     setValidationState("checking");
 
-    // Keep track of the latest address so stale responses are ignored
-    latestAddress.current = address;
-
     try {
       const result = await verifyZaddress(address.trim());
       // Only apply if this response belongs to the most recent request
@@ -118,12 +121,14 @@ export function ZAddressCollectionModal({
   };
 
   const handleAddressChange = (value: string) => {
+    latestAddress.current = value;
     setZAddress(value);
     setError(null);
 
     // Clear any pending debounce
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
     }
 
     if (!value.trim()) {
