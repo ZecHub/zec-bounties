@@ -72,6 +72,7 @@ function redactPublicUser(user, { forceFull = false } = {}) {
 // so the client can distinguish "hidden" from zero. points is withheld unless
 // both completed and earned are visible (points is derived from both).
 function redactLeaderboardRow(row, user, { forceFull = false } = {}) {
+  if (!row) return null;
   if (forceFull) {
     return {
       id: row.id,
@@ -121,17 +122,35 @@ const BROADCAST_PRIVATE_FIELDS = new Set([
   "profileVisibility",
 ]);
 
-function redactBroadcastPayload(value) {
-  if (Array.isArray(value)) return value.map(redactBroadcastPayload);
-  if (value && typeof value === "object" && !(value instanceof Date)) {
+function redactBroadcastPayload(value, seen = new WeakSet()) {
+  if (value === null || typeof value !== "object" || value instanceof Date) {
+    return value;
+  }
+  if (seen.has(value)) {
+    return undefined;
+  }
+  if (typeof value.toJSON === "function") {
+    seen.add(value);
+    try {
+      return redactBroadcastPayload(value.toJSON(), seen);
+    } finally {
+      seen.delete(value);
+    }
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => redactBroadcastPayload(item, seen));
+    }
     const out = {};
     for (const [key, child] of Object.entries(value)) {
       if (BROADCAST_PRIVATE_FIELDS.has(key)) continue;
-      out[key] = redactBroadcastPayload(child);
+      out[key] = redactBroadcastPayload(child, seen);
     }
     return out;
+  } finally {
+    seen.delete(value);
   }
-  return value;
 }
 
 module.exports = {
