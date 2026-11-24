@@ -6,14 +6,23 @@ if (!process.env.PINATA_JWT) {
   );
 }
 
-const pinata = new PinataSDK({
-  pinataJwt: process.env.PINATA_JWT,
-});
+let cachedJwt = null;
+let cachedClient = null;
 
-async function uploadToPinata(file) {
-  if (!process.env.PINATA_JWT) {
+function getPinataClient() {
+  const jwt = process.env.PINATA_JWT;
+  if (!jwt) {
     throw new Error("PINATA_JWT is not configured");
   }
+  if (!cachedClient || cachedJwt !== jwt) {
+    cachedClient = new PinataSDK({ pinataJwt: jwt });
+    cachedJwt = jwt;
+  }
+  return cachedClient;
+}
+
+async function uploadToPinata(file) {
+  const pinata = getPinataClient();
 
   if (!file?.buffer) {
     throw new Error("No file buffer provided");
@@ -32,10 +41,22 @@ async function uploadToPinata(file) {
  * turns that into something an <img src> can actually load.
  */
 function pinataUrl(cid) {
-  if (!cid) return null;
-  const gateway = process.env.PINATA_GATEWAY || "gateway.pinata.cloud";
-  console.log(gateway);
-  return `https://${gateway}/ipfs/${cid}`;
+  if (typeof cid !== "string") return null;
+  const normalizedCid = cid
+    .trim()
+    .replace(/^ipfs:\/\//i, "")
+    .replace(/^\/?ipfs\//i, "")
+    .replace(/^\/+/, "");
+  if (!normalizedCid) return null;
+
+  const rawGateway = (process.env.PINATA_GATEWAY || "").trim();
+  const gateway =
+    rawGateway
+      .replace(/^https?:\/\//i, "")
+      .replace(/\/ipfs\/?$/i, "")
+      .replace(/\/+$/, "") || "gateway.pinata.cloud";
+
+  return `https://${gateway}/ipfs/${normalizedCid}`;
 }
 
 module.exports = {
