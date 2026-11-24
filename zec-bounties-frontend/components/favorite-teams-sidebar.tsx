@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { Star, Users, Compass } from "lucide-react";
+import { Star, Compass } from "lucide-react";
 import { useBounty } from "@/lib/bounty-context";
-import { backendUrl } from "@/lib/configENV";
 
-function initials(name: string) {
-  return name
-    .split(" ")
+export function getTeamInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
@@ -42,7 +42,7 @@ export function FavoriteTeamsSidebar({
   const loading = communitiesLoading || favoriteTeamsLoading;
 
   return (
-    <div className="imd:w-64">
+    <div className="md:w-64">
       <div className="mb-4 flex items-center gap-2">
         <Star className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">Favorite teams</h3>
@@ -70,6 +70,7 @@ export function FavoriteTeamsSidebar({
         <div className="flex flex-col gap-2">
           <button
             type="button"
+            aria-pressed={activeTeamId === null}
             onClick={() => onSelectTeam(null)}
             className={`flex items-center justify-start gap-2 rounded-md px-3 h-9 text-sm transition ${
               activeTeamId === null
@@ -84,10 +85,11 @@ export function FavoriteTeamsSidebar({
             <button
               key={team.id}
               type="button"
+              aria-pressed={activeTeamId === team.id}
               onClick={() =>
                 onSelectTeam(activeTeamId === team.id ? null : team.id)
               }
-              className={`flex items-center gap-2 rounded-md px-3 py-6 h-9 text-sm transition ${
+              className={`flex items-center gap-2 rounded-md px-3 py-2 min-h-12 text-sm transition ${
                 activeTeamId === team.id
                   ? "bg-secondary font-bold text-primary"
                   : "text-muted-foreground hover:text-primary hover:bg-muted/50"
@@ -101,7 +103,7 @@ export function FavoriteTeamsSidebar({
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  initials(team.name)
+                  getTeamInitials(team.name)
                 )}
               </div>
               <span className="truncate">{team.name}</span>
