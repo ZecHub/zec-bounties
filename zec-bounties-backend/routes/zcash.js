@@ -26,6 +26,37 @@ const router = express.Router();
 // findUnique with teamId:null throws. We use findFirst with an explicit
 // `teamId: null` filter instead, then do all writes via the record's PK.
 // ---------------------------------------------------------------------------
+const MAX_ACCOUNT_NAME_LENGTH = 100;
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeAccountName(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_ACCOUNT_NAME_LENGTH) return null;
+  return trimmed;
+}
+
+function parseBirthdayHeight(value) {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: undefined };
+  }
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0
+      ? { ok: true, value }
+      : { ok: false };
+  }
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    const parsed = Number(value.trim());
+    return Number.isSafeInteger(parsed) && parsed >= 0
+      ? { ok: true, value: parsed }
+      : { ok: false };
+  }
+  return { ok: false };
+}
+
 function findUserWallet(ownerId, accountName) {
   return prisma.zcashParams.findFirst({
     where: { ownerId, accountName, teamId: null },
@@ -53,15 +84,38 @@ router.post("/import-wallet", authenticate, async (req, res) => {
       });
     }
 
-    const { accountName, seedPhrase, chain, serverUrl, birthdayHeight } =
+    if (!isPlainObject(req.body)) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body must be a JSON object",
+      });
+    }
+
+    const { accountName: rawAccountName, seedPhrase, chain, serverUrl, birthdayHeight } =
       req.body;
     const userId = req.user.id;
 
     // Validation
-    if (!accountName || !seedPhrase) {
+    if (!rawAccountName || !seedPhrase) {
       return res.status(400).json({
         success: false,
         message: "Account name and seed phrase are required",
+      });
+    }
+
+    const accountName = normalizeAccountName(rawAccountName);
+    if (!accountName) {
+      return res.status(400).json({
+        success: false,
+        message: `Account name must be a non-empty string of at most ${MAX_ACCOUNT_NAME_LENGTH} characters`,
+      });
+    }
+
+    const parsedBirthday = parseBirthdayHeight(birthdayHeight);
+    if (!parsedBirthday.ok) {
+      return res.status(400).json({
+        success: false,
+        message: "birthdayHeight must be a non-negative integer",
       });
     }
 
@@ -134,7 +188,7 @@ router.post("/import-wallet", authenticate, async (req, res) => {
     };
 
     try {
-      await executeZingoCliSeed(zingoParams, seedPhrase, birthdayHeight);
+      await executeZingoCliSeed(zingoParams, seedPhrase, parsedBirthday.value);
     } catch (seedError) {
       // If the restore fails, remove the wallet again (same steps as
       // DELETE /params/:accountName) so the name can be reused on retry
@@ -321,10 +375,18 @@ router.get("/params/:accountName", authenticate, async (req, res) => {
  */
 router.post("/params", authenticate, async (req, res) => {
   try {
-    const { chain, serverUrl, accountName } = req.body;
+    if (!isPlainObject(req.body)) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body must be a JSON object",
+      });
+    }
+
+    const { chain, serverUrl, accountName: rawAccountName } = req.body;
     const userId = req.user.id;
 
     // Validation
+    const accountName = normalizeAccountName(rawAccountName);
     if (!accountName) {
       return res.status(400).json({
         success: false,
@@ -391,9 +453,27 @@ router.post("/params", authenticate, async (req, res) => {
  */
 router.put("/params/:accountName", authenticate, async (req, res) => {
   try {
+    if (!isPlainObject(req.body)) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body must be a JSON object",
+      });
+    }
+
     const { accountName } = req.params;
-    const { chain, serverUrl, accountName: newAccountName } = req.body;
+    const { chain, serverUrl, accountName: rawNewAccountName } = req.body;
     const userId = req.user.id;
+
+    let newAccountName;
+    if (rawNewAccountName !== undefined) {
+      newAccountName = normalizeAccountName(rawNewAccountName);
+      if (!newAccountName) {
+        return res.status(400).json({
+          success: false,
+          message: `Account name must be a non-empty string of at most ${MAX_ACCOUNT_NAME_LENGTH} characters`,
+        });
+      }
+    }
 
     const connectionError = validateWalletConnection({ chain, serverUrl });
     if (connectionError) {
@@ -465,6 +545,13 @@ router.put("/params/:accountName", authenticate, async (req, res) => {
  */
 router.patch("/params/:accountName", authenticate, async (req, res) => {
   try {
+    if (!isPlainObject(req.body)) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body must be a JSON object",
+      });
+    }
+
     const { accountName } = req.params;
     const updates = req.body;
     const userId = req.user.id;
@@ -494,6 +581,17 @@ router.patch("/params/:accountName", authenticate, async (req, res) => {
         success: false,
         message: "No valid fields to update",
       });
+    }
+
+    if (updateData.accountName !== undefined) {
+      const normalized = normalizeAccountName(updateData.accountName);
+      if (!normalized) {
+        return res.status(400).json({
+          success: false,
+          message: `Account name must be a non-empty string of at most ${MAX_ACCOUNT_NAME_LENGTH} characters`,
+        });
+      }
+      updateData.accountName = normalized;
     }
 
     const connectionError = validateWalletConnection(updateData);
@@ -562,8 +660,6 @@ router.delete("/params/:accountName", authenticate, async (req, res) => {
       (await findUserWallet(userId, accountName)) ??
       (await findTeamWallet(userId, accountName));
 
-    console.log("exi", existing);
-
     if (!existing) {
       return res.status(404).json({
         success: false,
@@ -613,7 +709,25 @@ router.patch(
     try {
       const { accountName } = req.params;
       const userId = req.user.id;
-      const { teamId } = req.body;
+      const body = req.body === undefined ? {} : req.body;
+      if (!isPlainObject(body)) {
+        return res.status(400).json({
+          success: false,
+          message: "Request body must be a JSON object",
+        });
+      }
+
+      const { teamId: rawTeamId } = body;
+      let teamId = null;
+      if (rawTeamId !== undefined && rawTeamId !== null) {
+        if (typeof rawTeamId !== "string" || !rawTeamId.trim()) {
+          return res.status(400).json({
+            success: false,
+            message: "teamId must be a non-empty string",
+          });
+        }
+        teamId = rawTeamId.trim();
+      }
 
       const existing = teamId
         ? await prisma.zcashParams.findFirst({ where: { accountName, teamId } })
@@ -630,16 +744,10 @@ router.patch(
 
       const updated = await prisma.$transaction(
         async (tx) => {
-          const currentDefault = await tx.zcashParams.findFirst({
+          await tx.zcashParams.updateMany({
             where: { isDefault: true, ownerId: userId },
+            data: { isDefault: false },
           });
-
-          if (currentDefault) {
-            await tx.zcashParams.update({
-              where: { id: currentDefault.id },
-              data: { isDefault: false },
-            });
-          }
 
           return tx.zcashParams.update({
             where: { id: existing.id },
@@ -666,10 +774,18 @@ router.patch(
  */
 router.post("/params/upsert", authenticate, async (req, res) => {
   try {
-    const { chain, serverUrl, accountName } = req.body;
+    if (!isPlainObject(req.body)) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body must be a JSON object",
+      });
+    }
+
+    const { chain, serverUrl, accountName: rawAccountName } = req.body;
     const userId = req.user.id;
 
     // Validation
+    const accountName = normalizeAccountName(rawAccountName);
     if (!accountName) {
       return res.status(400).json({
         success: false,
