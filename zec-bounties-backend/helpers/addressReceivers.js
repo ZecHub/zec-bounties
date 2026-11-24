@@ -11,6 +11,10 @@ const EMPTY = { ironwood: false, sapling: false, transparent: false };
 
 let decoderPromise = null;
 
+function cleanAddress(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function loadDecoder() {
   if (!decoderPromise) {
     decoderPromise = import("@elemental-zcash/zaddr_wasm_parser")
@@ -28,21 +32,49 @@ function fromWasm(result) {
   return { ironwood, sapling, transparent };
 }
 
+function isUnifiedAddress(addr) {
+  const lower = addr.toLowerCase();
+  return (
+    lower.startsWith("u1") ||
+    lower.startsWith("utest1") ||
+    lower.startsWith("uregtest1")
+  );
+}
+
+function isTransparentAddress(addr) {
+  return (
+    addr.startsWith("t1") ||
+    addr.startsWith("t3") ||
+    addr.startsWith("tm") ||
+    addr.startsWith("t2")
+  );
+}
+
 function fallback(user) {
-  const ua = typeof user?.UA_address === "string" && user.UA_address.startsWith("u1");
-  const z = typeof user?.z_address === "string" && user.z_address.length > 0;
-  if (ua) {
+  const ua = cleanAddress(user?.UA_address);
+  if (ua && isUnifiedAddress(ua)) {
     // Common modern UA (Zashi / YWallet / Zingo). Exact flags replace this
     // when the WASM decoder is available.
     return { ironwood: true, sapling: true, transparent: false };
   }
-  if (z) return { ironwood: false, sapling: true, transparent: false };
+
+  const z = cleanAddress(user?.z_address);
+  if (z) {
+    if (isUnifiedAddress(z)) {
+      return { ironwood: true, sapling: true, transparent: false };
+    }
+    if (isTransparentAddress(z)) {
+      return { ironwood: false, sapling: false, transparent: true };
+    }
+    return { ironwood: false, sapling: true, transparent: false };
+  }
+
   return { ...EMPTY };
 }
 
 async function receiversForUser(user) {
   if (!user) return { ...EMPTY };
-  const addr = user.UA_address || user.z_address || "";
+  const addr = cleanAddress(user.UA_address) || cleanAddress(user.z_address);
   if (!addr) return { ...EMPTY };
 
   const mod = await loadDecoder();
