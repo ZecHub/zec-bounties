@@ -45,9 +45,17 @@ router.patch("/read-all", authenticate, async (req, res) => {
 
 router.patch("/:notificationId/read", authenticate, async (req, res) => {
   try {
+    const notificationId =
+      typeof req.params?.notificationId === "string"
+        ? req.params.notificationId.trim()
+        : "";
+    if (!notificationId) {
+      return res.status(400).json({ error: "notificationId required" });
+    }
+
     const result = await prisma.inAppNotification.updateMany({
       where: {
-        id: req.params.notificationId,
+        id: notificationId,
         userId: req.user.id,
         readAt: null,
       },
@@ -62,7 +70,8 @@ router.patch("/:notificationId/read", authenticate, async (req, res) => {
 
 router.post("/push/subscribe", authenticate, async (req, res) => {
   try {
-    const { endpoint, keys } = req.body;
+    const { endpoint, keys } =
+      req.body && typeof req.body === "object" ? req.body : {};
 
     if (
       typeof endpoint !== "string" ||
@@ -111,11 +120,18 @@ router.post("/push/subscribe", authenticate, async (req, res) => {
 // Call this on logout, or when the browser tells you the subscription changed
 router.post("/push/unsubscribe", authenticate, async (req, res) => {
   try {
-    const { endpoint } = req.body;
-    if (!endpoint) return res.status(400).json({ error: "endpoint required" });
+    const { endpoint } =
+      req.body && typeof req.body === "object" ? req.body : {};
+    if (
+      typeof endpoint !== "string" ||
+      !endpoint.trim() ||
+      endpoint.length > 1024
+    ) {
+      return res.status(400).json({ error: "endpoint required" });
+    }
 
     await prisma.pushSubscription.deleteMany({
-      where: { endpoint, userId: req.user.id },
+      where: { endpoint: endpoint.trim(), userId: req.user.id },
     });
 
     res.json({ success: true });
