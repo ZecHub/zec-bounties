@@ -61,14 +61,7 @@ async function requireApprover(user) {
 // vets their own teams' approvers but not global admins: anyone can create a team, and
 // a global admin's key also approves platform payouts. Admins vet each other.
 async function vetoableIds(user) {
-  const colleagues = await getColleagueApprovers(prisma, user);
-  if (user.role === "ADMIN") return colleagues;
-  const admins = await prisma.user.findMany({
-    where: { role: "ADMIN" },
-    select: { id: true },
-  });
-  const adminIds = new Set(admins.map((a) => a.id));
-  return colleagues.filter((id) => !adminIds.has(id));
+  return getColleagueApprovers(prisma, user);
 }
 
 // My keys, plus other approvers' still-pending keys (so you can veto a suspicious one)

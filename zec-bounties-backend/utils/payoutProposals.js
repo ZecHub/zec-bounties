@@ -22,28 +22,27 @@ const addressFor = (user, chain) =>
 const itemFor = (round, bountyId) =>
   itemsOf(round).find((i) => i.bountyId === bountyId);
 
-// userIds with payout control. Platform rounds: global admins.
-// Team rounds: global admins + team OWNER/ADMIN members (same rule as requireTeamAdmin).
+// userIds with payout control. Platform rounds (no team): global admins.
+// Team rounds: that team's leaders only. Platform admins are NOT included.
 async function getEligibleApprovers(db, teamId) {
-  const admins = await db.user.findMany({
-    where: { role: "ADMIN" },
-    select: { id: true },
-  });
-  const ids = new Set(admins.map((a) => a.id));
-  if (teamId) {
-    const members = await db.teamMember.findMany({
-      where: { teamId, role: { in: ["OWNER", "ADMIN"] } },
-      select: { userId: true },
+  if (!teamId) {
+    const admins = await db.user.findMany({
+      where: { role: "ADMIN" },
+      select: { id: true },
     });
-    members.forEach((m) => ids.add(m.userId));
+    return admins.map((a) => a.id);
   }
-  return [...ids];
+  const members = await db.teamMember.findMany({
+    where: { teamId, user: { role: { not: "ADMIN" } } },
+    select: { userId: true },
+  });
+  return members.map((m) => m.userId);
 }
 
 async function isApprover(db, user) {
   if (user.role === "ADMIN") return true;
   const m = await db.teamMember.findFirst({
-    where: { userId: user.id, role: { in: ["OWNER", "ADMIN"] } },
+    where: { userId: user.id },
     select: { teamId: true },
   });
   return Boolean(m);
@@ -51,28 +50,27 @@ async function isApprover(db, user) {
 
 // Everyone whose payouts this user's approver status touches (for notices and key vetoes).
 async function getColleagueApprovers(db, user) {
-  const set = new Set(
-    (
-      await db.user.findMany({ where: { role: "ADMIN" }, select: { id: true } })
-    ).map((a) => a.id),
-  );
-  const teamIds =
-    user.role === "ADMIN"
-      ? undefined // a global admin votes on every team's rounds
-      : (
-          await db.teamMember.findMany({
-            where: { userId: user.id, role: { in: ["OWNER", "ADMIN"] } },
-            select: { teamId: true },
-          })
-        ).map((m) => m.teamId);
-  const members = await db.teamMember.findMany({
-    where: {
-      role: { in: ["OWNER", "ADMIN"] },
-      ...(teamIds && { teamId: { in: teamIds } }),
-    },
-    select: { userId: true },
+  const set = new Set();
+  // Global admins share the platform pool with each other only
+  if (user.role === "ADMIN") {
+    const admins = await db.user.findMany({
+      where: { role: "ADMIN" },
+      select: { id: true },
+    });
+    admins.forEach((a) => set.add(a.id));
+  }
+  // Team leaders share a pool with the other leaders of their own teams
+  const mine = await db.teamMember.findMany({
+    where: { userId: user.id },
+    select: { teamId: true },
   });
-  members.forEach((m) => set.add(m.userId));
+  if (mine.length) {
+    const mates = await db.teamMember.findMany({
+      where: { teamId: { in: mine.map((m) => m.teamId) } },
+      select: { userId: true },
+    });
+    mates.forEach((m) => set.add(m.userId));
+  }
   set.delete(user.id);
   return [...set];
 }
@@ -162,7 +160,7 @@ async function loadDecidedProposals(db, bounties, userId) {
 
   for (const p of proposals) {
     if (p.executorId !== userId) {
-      reject(p, "This payout was assigned to another admin");
+      reject(p, "This payout was assigned to another approver");
       continue;
     }
     if (p.executableAt && p.executableAt.getTime() > Date.now()) {
