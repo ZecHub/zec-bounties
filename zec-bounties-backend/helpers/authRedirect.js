@@ -11,8 +11,10 @@
 // @param {string|null|undefined} state
 // @returns {string}
 function buildCallbackRedirect(frontendUrl, token, state) {
-  const stateQuery = state ? `?state=${state}` : "";
-  return `${frontendUrl}/auth/callback${stateQuery}#token=${token}`;
+  const baseUrl = String(frontendUrl || "").replace(/\/+$/, "");
+  const stateQuery = state ? `?state=${encodeURIComponent(state)}` : "";
+  const encodedToken = encodeURIComponent(token);
+  return `${baseUrl}/auth/callback${stateQuery}#token=${encodedToken}`;
 }
 
 module.exports = { buildCallbackRedirect };
