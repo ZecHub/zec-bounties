@@ -17,6 +17,47 @@ interface ProtectedRouteProps {
 const ONBOARDING_PATH = "/onboarding";
 const TEAM_HOME_PATH = "/teams";
 
+function isOnboardingPath(pathname: string | null | undefined): boolean {
+  return pathname === ONBOARDING_PATH || pathname === `${ONBOARDING_PATH}/`;
+}
+
+export function getProtectedRouteRedirect(params: {
+  role: string | null | undefined;
+  pathname: string | null | undefined;
+  requireAdmin: boolean;
+  blockAdmin: boolean;
+  requireTeam: boolean;
+  blockTeam: boolean;
+}): string | null {
+  const { role, pathname, requireAdmin, blockAdmin, requireTeam, blockTeam } = params;
+
+  if (!role) {
+    return "/login";
+  }
+
+  if (role === "CLIENT" && !isOnboardingPath(pathname)) {
+    return ONBOARDING_PATH;
+  }
+
+  if (requireTeam && role !== "TEAM" && role !== "ADMIN") {
+    return "/home";
+  }
+
+  if (blockTeam && role === "TEAM") {
+    return TEAM_HOME_PATH;
+  }
+
+  if (requireAdmin && role !== "ADMIN") {
+    return role === "TEAM" ? TEAM_HOME_PATH : "/home";
+  }
+
+  if (blockAdmin && role === "ADMIN") {
+    return "/admin";
+  }
+
+  return null;
+}
+
 export function ProtectedRoute({
   children,
   requireAdmin = false,
@@ -31,57 +72,32 @@ export function ProtectedRoute({
   const needsOnboarding =
     !!currentUser &&
     currentUser.role === "CLIENT" &&
-    pathname !== ONBOARDING_PATH;
+    !isOnboardingPath(pathname);
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (!currentUser) {
-      router.push("/login");
-      return;
-    }
+    const redirectPath = getProtectedRouteRedirect({
+      role: currentUser?.role,
+      pathname,
+      requireAdmin,
+      blockAdmin,
+      requireTeam,
+      blockTeam,
+    });
 
-    if (needsOnboarding) {
-      router.push(ONBOARDING_PATH);
-      return;
-    }
-
-    // Non-team (but allow ADMIN) trying to access a team-only page
-    if (
-      requireTeam &&
-      currentUser.role !== "TEAM" &&
-      currentUser.role !== "ADMIN"
-    ) {
-      router.push("/home");
-      return;
-    }
-
-    // TEAM trying to access a page that's blocked for them — mirrors blockAdmin
-    if (blockTeam && currentUser.role === "TEAM") {
-      router.push(TEAM_HOME_PATH);
-      return;
-    }
-
-    // Non-admin trying to access admin page
-    if (requireAdmin && currentUser.role !== "ADMIN") {
-      router.push("/home");
-      return;
-    }
-
-    // Admin trying to access non-admin page
-    if (blockAdmin && currentUser.role === "ADMIN") {
-      router.push("/admin");
-      return;
+    if (redirectPath) {
+      router.replace(redirectPath);
     }
   }, [
     currentUser,
+    pathname,
     requireAdmin,
     blockAdmin,
     requireTeam,
     blockTeam,
     router,
     isLoading,
-    needsOnboarding,
   ]);
 
   if (isLoading) {
