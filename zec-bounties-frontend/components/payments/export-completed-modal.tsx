@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -100,11 +100,14 @@ export function ExportCompletedModal({
   const [rows, setRows] = useState<ExportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exportNote, setExportNote] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const loadIdRef = useRef(0);
 
   const toggleOne = (id: string) =>
     setSelectedIds((prev) => {
@@ -138,10 +141,14 @@ export function ExportCompletedModal({
   const getSortValue = (row: ExportRow, key: SortKey): string | number => {
     const recipient = getPrimaryRecipient(row);
     switch (key) {
-      case "date":
-        return row.dateCreated ? new Date(row.dateCreated).getTime() : 0;
-      case "completedAt":
-        return row.completedAt ? new Date(row.completedAt).getTime() : 0;
+      case "date": {
+        const ms = row.dateCreated ? new Date(row.dateCreated).getTime() : 0;
+        return Number.isNaN(ms) ? 0 : ms;
+      }
+      case "completedAt": {
+        const ms = row.completedAt ? new Date(row.completedAt).getTime() : 0;
+        return Number.isNaN(ms) ? 0 : ms;
+      }
       case "recipient":
         return (recipient?.name ?? "").toLowerCase();
       case "contact":
@@ -216,19 +223,32 @@ export function ExportCompletedModal({
   );
 
   const load = async () => {
+    const requestId = ++loadIdRef.current;
     setLoading(true);
     setSelectedIds(new Set());
     setExportNote(null);
+    setLoadError(null);
     try {
       const data = teamId
         ? await fetchTeamExportCompleted(teamId)
         : await fetchExportCompleted();
+      if (loadIdRef.current !== requestId) return;
       setRows(
         data.filter((r: ExportRow) => r.chain === "MAIN" && !r.exportedAt),
       );
       setLoaded(true);
+    } catch (err) {
+      if (loadIdRef.current !== requestId) return;
+      console.error("Failed to load completed bounties:", err);
+      setLoadError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load completed bounties.",
+      );
     } finally {
-      setLoading(false);
+      if (loadIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -238,15 +258,23 @@ export function ExportCompletedModal({
       setLoaded(false);
       setSortKey(null);
       load();
+    } else {
+      loadIdRef.current += 1;
     }
-  }, [open]);
+  }, [open, teamId]);
 
   // Auto-load when modal opens
   const handleOpenChange = (val: boolean) => {
+    if (!val && (exporting || togglingId !== null)) {
+      return;
+    }
     if (!val) {
+      loadIdRef.current += 1;
       setRows([]);
       setLoaded(false);
       setSelectedIds(new Set());
+      setExportNote(null);
+      setLoadError(null);
       setSortKey(null);
     }
     onOpenChange(val);
@@ -254,8 +282,9 @@ export function ExportCompletedModal({
 
   const handleOfacToggle = async (row: ExportRow, value: boolean) => {
     const recipient = getPrimaryRecipient(row);
-    if (!recipient?.id) return;
+    if (!recipient?.id || togglingId !== null || exporting) return;
     setTogglingId(recipient.id);
+    setExportNote(null);
     try {
       await updateUserOfac(recipient.id, value);
       setRows((prev) =>
@@ -279,6 +308,11 @@ export function ExportCompletedModal({
           };
         }),
       );
+    } catch (err) {
+      console.error("Failed to update OFAC status:", err);
+      setExportNote(
+        `Failed to update OFAC status: ${err instanceof Error ? err.message : "unknown error"}.`,
+      );
     } finally {
       setTogglingId(null);
     }
@@ -286,18 +320,25 @@ export function ExportCompletedModal({
 
   const escapeCsv = (val: string) => {
     if (!val) return "";
-    if (val.includes(",") || val.includes('"') || val.includes("\n"))
+    if (
+      val.includes(",") ||
+      val.includes('"') ||
+      val.includes("\n") ||
+      val.includes("\r")
+    )
       return `"${val.replace(/"/g, '""')}"`;
     return val;
   };
 
   const handleExport = async () => {
+    if (exporting || loading) return;
     const exportRows =
       selectedIds.size > 0
         ? sortedRows.filter((r) => selectedIds.has(r.id))
         : sortedRows;
     if (exportRows.length === 0) return;
 
+    setExporting(true);
     setExportNote(null);
     try {
       // Stamp first. The CSV only includes rows the server accepted, so a
@@ -381,6 +422,8 @@ export function ExportCompletedModal({
       setExportNote(
         `Export failed: ${err instanceof Error ? err.message : "unknown error"}. Nothing was written.`,
       );
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -401,7 +444,7 @@ export function ExportCompletedModal({
                 size="sm"
                 variant="outline"
                 onClick={load}
-                disabled={loading}
+                disabled={loading || exporting}
                 className="gap-1.5 h-8 text-xs"
               >
                 {loading ? (
@@ -415,16 +458,26 @@ export function ExportCompletedModal({
                 <Button
                   size="sm"
                   onClick={handleExport}
+                  disabled={exporting || loading}
                   className="gap-1.5 h-8 text-xs"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  Export CSV ({rows.length})
+                  {exporting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  {exporting
+                    ? "Exporting..."
+                    : `Export CSV (${selectedIds.size > 0 ? selectedIds.size : rows.length})`}
                 </Button>
               )}
             </div>
           </div>
 
           {/* Stats */}
+          {loadError && (
+            <p className="mt-2 text-xs text-destructive">{loadError}</p>
+          )}
           {exportNote && (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
               {exportNote}
@@ -529,6 +582,7 @@ export function ExportCompletedModal({
                             href={`${baseUrl}/${row.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             className="text-muted-foreground hover:text-blue-600 shrink-0"
                           >
                             <ExternalLink className="w-3 h-3" />
@@ -570,12 +624,17 @@ export function ExportCompletedModal({
                           <span className="text-yellow-600">Not set</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={recipient?.ofacVerified ?? false}
                             onCheckedChange={(v) => handleOfacToggle(row, v)}
-                            disabled={isToggling || !recipient?.id || !!teamId}
+                            disabled={
+                              isToggling ||
+                              exporting ||
+                              !recipient?.id ||
+                              !!teamId
+                            }
                           />
                           <Badge
                             variant={
