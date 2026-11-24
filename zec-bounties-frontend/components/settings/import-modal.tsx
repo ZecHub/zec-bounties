@@ -73,6 +73,10 @@ export function ImportWalletModal({
   };
 
   const handleImport = async () => {
+    if (isImporting) {
+      return;
+    }
+
     // Reset status
     setImportStatus({ type: null, message: "" });
 
@@ -101,6 +105,28 @@ export function ImportWalletModal({
       return;
     }
 
+    const trimmedServerUrl = formData.serverUrl.trim();
+    if (!trimmedServerUrl) {
+      setImportStatus({
+        type: "error",
+        message: "Server URL is required",
+      });
+      return;
+    }
+
+    const trimmedBirthday = formData.birthdayHeight.trim();
+    let parsedBirthdayHeight: number | undefined;
+    if (trimmedBirthday) {
+      if (!/^\d+$/.test(trimmedBirthday)) {
+        setImportStatus({
+          type: "error",
+          message: "Birthday height must be a non-negative whole number.",
+        });
+        return;
+      }
+      parsedBirthdayHeight = Number.parseInt(trimmedBirthday, 10);
+    }
+
     setIsImporting(true);
 
     try {
@@ -108,10 +134,8 @@ export function ImportWalletModal({
         accountName: formData.accountName.trim(),
         seedPhrase: formData.seedPhrase.trim(),
         chain: formData.chain,
-        serverUrl: formData.serverUrl,
-        birthdayHeight: formData.birthdayHeight
-          ? parseInt(formData.birthdayHeight)
-          : undefined,
+        serverUrl: trimmedServerUrl,
+        birthdayHeight: parsedBirthdayHeight,
       });
 
       if (result.success) {
@@ -131,16 +155,20 @@ export function ImportWalletModal({
           birthdayHeight: "",
         });
 
-        // Close modal after a delay
-        localStorage.setItem("walletImportedAt", Date.now().toString());
-        window.location.reload();
+        try {
+          localStorage.setItem("walletImportedAt", Date.now().toString());
+        } catch {
+          // Ignore storage errors in restricted browser contexts
+        }
 
-        // ✅ Auto-trigger sync status fetch immediately after import
+        // Auto-trigger sync status fetch before reloading so the request is not aborted
         try {
           await fetchSyncStatus();
         } catch {
           // Non-fatal — can be retried manually via the sync button
         }
+
+        window.location.reload();
       } else {
         setImportStatus({
           type: "error",
@@ -160,35 +188,41 @@ export function ImportWalletModal({
 
   const handleClose = () => {
     // Prevent closing if wallet is required and not yet imported
-    if (isRequired) {
+    if (isRequired || isImporting) {
       return;
     }
 
-    if (!isImporting) {
-      setFormData({
-        accountName: "",
-        seedPhrase: "",
-        chain: "mainnet",
-        serverUrl: "https://zec.rocks:443",
-        birthdayHeight: "",
-      });
-      setImportStatus({ type: null, message: "" });
-      setShowSeed(false);
-      onOpenChange(false);
+    setFormData({
+      accountName: "",
+      seedPhrase: "",
+      chain: "mainnet",
+      serverUrl: "https://zec.rocks:443",
+      birthdayHeight: "",
+    });
+    setImportStatus({ type: null, message: "" });
+    setShowSeed(false);
+    onOpenChange(false);
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      handleClose();
+      return;
     }
+    onOpenChange(true);
   };
 
   return (
-    <Dialog open={open} onOpenChange={isRequired ? undefined : handleClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className="max-w-md"
         onPointerDownOutside={(e) => {
-          if (isRequired) {
+          if (isRequired || isImporting) {
             e.preventDefault();
           }
         }}
         onEscapeKeyDown={(e) => {
-          if (isRequired) {
+          if (isRequired || isImporting) {
             e.preventDefault();
           }
         }}
@@ -297,6 +331,7 @@ export function ImportWalletModal({
                 className="absolute right-2 top-2 h-7 w-7"
                 onClick={() => setShowSeed(!showSeed)}
                 disabled={isImporting}
+                aria-label={showSeed ? "Hide seed phrase" : "Show seed phrase"}
               >
                 {showSeed ? (
                   <EyeOff className="h-4 w-4" />
