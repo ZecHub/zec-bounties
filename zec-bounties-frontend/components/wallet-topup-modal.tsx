@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -31,12 +32,30 @@ export function WalletTopupModal({
 
   const [copied, setCopied] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  const clearCopyTimer = () => {
+    if (copyTimerRef.current !== null) {
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearCopyTimer();
+    };
+  }, []);
 
   // Addresses arrive asynchronously (and can change when the active wallet
   // changes), so keep the index inside bounds instead of rendering undefined.
   const safeIndex = addresses.length > 0 ? activeIndex % addresses.length : 0;
 
   useEffect(() => {
+    clearCopyTimer();
     setActiveIndex(0);
     setCopied(false);
   }, [open, addresses.length]);
@@ -45,16 +64,36 @@ export function WalletTopupModal({
   const hasAddress = walletAddress.length > 0;
   const hasMultiple = addresses.length > 1;
 
-  const handleCopyAddress = () => {
+  const selectIndex = (nextIndex: number) => {
+    clearCopyTimer();
+    setCopied(false);
+    setActiveIndex(nextIndex);
+  };
+
+  const handleCopyAddress = async () => {
     if (!hasAddress) return;
-    navigator.clipboard.writeText(walletAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(walletAddress);
+      if (!mountedRef.current) return;
+      clearCopyTimer();
+      setCopied(true);
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        if (mountedRef.current) {
+          setCopied(false);
+        }
+      }, 2000);
+    } catch {
+      if (mountedRef.current) {
+        setCopied(false);
+        toast.error("Failed to copy address to clipboard");
+      }
+    }
   };
 
   const prev = () =>
-    setActiveIndex((i) => (i - 1 + addresses.length) % addresses.length);
-  const next = () => setActiveIndex((i) => (i + 1) % addresses.length);
+    selectIndex((safeIndex - 1 + addresses.length) % addresses.length);
+  const next = () => selectIndex((safeIndex + 1) % addresses.length);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,8 +169,10 @@ export function WalletTopupModal({
             <div className="flex gap-1.5">
               {addresses.map((address, i) => (
                 <button
-                  key={address}
-                  onClick={() => setActiveIndex(i)}
+                  key={`${address}-${i}`}
+                  type="button"
+                  aria-label={`Select address ${i + 1}`}
+                  onClick={() => selectIndex(i)}
                   className={`h-1.5 rounded-full transition-all ${
                     i === safeIndex
                       ? "w-4 bg-primary"
