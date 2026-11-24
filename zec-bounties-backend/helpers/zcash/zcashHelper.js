@@ -3,11 +3,29 @@ const prisma = new PrismaClient();
 const path = require("path");
 
 function getWalletDataDir(walletId) {
-  if (!walletId) {
+  if (typeof walletId !== "string" || !walletId.trim()) {
     throw new Error("walletId is required");
   }
 
-  return path.join(process.cwd(), "wallets", walletId);
+  const trimmed = walletId.trim();
+  if (
+    trimmed === "." ||
+    trimmed === ".." ||
+    trimmed.includes("\0") ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\")
+  ) {
+    throw new Error("Invalid walletId");
+  }
+
+  const walletsRoot = path.resolve(process.cwd(), "wallets");
+  const resolved = path.resolve(walletsRoot, trimmed);
+  const rel = path.relative(walletsRoot, resolved);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("Invalid walletId");
+  }
+
+  return path.join(process.cwd(), "wallets", trimmed);
 }
 
 /**
@@ -44,20 +62,18 @@ async function getLatestZcashParams(ownerId) {
  * This wallet is owned by the application, not a user.
  */
 function getVerificationZcashParams() {
-  const {
-    ZCASH_VERIFICATION_WALLET_PATH,
-    ZCASH_VERIFICATION_CHAIN,
-    ZCASH_VERIFICATION_SERVER,
-  } = process.env;
+  const dataDir = process.env.ZCASH_VERIFICATION_WALLET_PATH?.trim();
+  const chain = process.env.ZCASH_VERIFICATION_CHAIN?.trim();
+  const serverUrl = process.env.ZCASH_VERIFICATION_SERVER?.trim();
 
-  if (!ZCASH_VERIFICATION_WALLET_PATH) {
+  if (!dataDir) {
     throw new Error("Verification wallet is not configured");
   }
 
   return {
-    dataDir: ZCASH_VERIFICATION_WALLET_PATH,
-    chain: ZCASH_VERIFICATION_CHAIN || "mainnet",
-    serverUrl: ZCASH_VERIFICATION_SERVER || "https://zec.rocks:443",
+    dataDir,
+    chain: chain || "mainnet",
+    serverUrl: serverUrl || "https://zec.rocks:443",
   };
 }
 
@@ -112,19 +128,20 @@ async function getDefaultZcashParams(ownerId) {
 }
 
 function getSystemWalletParams() {
-  const { LOGIN_WALLET_CHAIN, ZCASH_SERVER_URL, LOGIN_WALLET_DATA_DIR } =
-    process.env;
+  const chain = process.env.LOGIN_WALLET_CHAIN?.trim();
+  const serverUrl = process.env.ZCASH_SERVER_URL?.trim();
+  const dataDir = process.env.LOGIN_WALLET_DATA_DIR?.trim();
 
-  if (!LOGIN_WALLET_CHAIN || !ZCASH_SERVER_URL || !LOGIN_WALLET_DATA_DIR) {
+  if (!chain || !serverUrl || !dataDir) {
     throw new Error(
       "System wallet not configured: set LOGIN_WALLET_CHAIN, ZCASH_SERVER_URL, LOGIN_WALLET_DATA_DIR",
     );
   }
 
   return {
-    chain: LOGIN_WALLET_CHAIN,
-    serverUrl: ZCASH_SERVER_URL,
-    dataDir: LOGIN_WALLET_DATA_DIR,
+    chain,
+    serverUrl,
+    dataDir,
   };
 }
 
