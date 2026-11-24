@@ -52,17 +52,34 @@ export function SubmitOnBehalfModal({
   const [submitting, setSubmitting] = useState(false);
 
   // Assignee join table first, legacy single `assignee` as fallback
-  // (same precedence the dashboard uses elsewhere).
+  // (same precedence the dashboard uses elsewhere). When editing an existing
+  // submission whose submitter is no longer listed as an assignee, keep that
+  // submitter in the options so the disabled select still displays them.
   const candidates = useMemo(() => {
-    if (!bounty) return [];
-    if (bounty.assignees?.length) {
-      return bounty.assignees.map((a) => ({ id: a.userId, user: a.user }));
+    const list: Array<{ id: string; user: Bounty["assigneeUser"] }> = [];
+    if (bounty?.assignees?.length) {
+      for (const a of bounty.assignees) {
+        list.push({ id: a.userId, user: a.user });
+      }
+    } else if (bounty?.assignee && bounty.assigneeUser) {
+      list.push({ id: bounty.assignee, user: bounty.assigneeUser });
     }
-    if (bounty.assignee && bounty.assigneeUser) {
-      return [{ id: bounty.assignee, user: bounty.assigneeUser }];
+    if (
+      submission &&
+      !list.some((candidate) => candidate.id === submission.submittedBy)
+    ) {
+      list.push({
+        id: submission.submittedBy,
+        user: submission.submitterUser ?? {
+          id: submission.submittedBy,
+          name: submission.submittedBy,
+          email: "",
+          role: "HUNTER",
+        },
+      });
     }
-    return [];
-  }, [bounty]);
+    return list;
+  }, [bounty, submission]);
 
   // Reset the form each time the dialog opens for a bounty.
   useEffect(() => {
@@ -124,9 +141,14 @@ export function SubmitOnBehalfModal({
     }
   };
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && submitting) return;
+    onOpenChange(nextOpen);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="imd:max-w-lg">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base">
             {isEdit ? "Edit submission" : "Submit on behalf of assignee"}
