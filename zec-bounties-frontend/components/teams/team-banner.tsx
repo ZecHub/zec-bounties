@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -135,11 +135,23 @@ export function TeamBanner({
   // Purely cosmetic fallback — only shown when there's no real banner.
   const [gradient, setGradient] = useState(() => defaultGradientFor(teamId));
 
+  useEffect(() => {
+    setGradient(defaultGradientFor(teamId));
+    setEditing(false);
+    setError(null);
+  }, [teamId]);
+
   const hasRealImage = !!bannerUrl;
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && uploading) return;
+    setError(null);
+    setEditing(nextOpen);
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || uploading) return;
     setUploading(true);
     setError(null);
     try {
@@ -151,11 +163,16 @@ export function TeamBanner({
       setError(err instanceof Error ? err.message : "Failed to upload banner");
     } finally {
       setUploading(false);
-      e.target.value = "";
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      } else if (e.target) {
+        e.target.value = "";
+      }
     }
   };
 
   const handleRemove = async () => {
+    if (uploading) return;
     setUploading(true);
     setError(null);
     try {
@@ -196,7 +213,7 @@ export function TeamBanner({
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => setEditing(true)}
+            onClick={() => handleOpenChange(true)}
             className="absolute right-3 top-3 h-8 gap-1.5 rounded-full bg-background/80 backdrop-blur"
           >
             <Pencil className="h-3.5 w-3.5" /> Edit banner
@@ -204,7 +221,7 @@ export function TeamBanner({
         )}
       </div>
 
-      <Dialog open={editing} onOpenChange={setEditing}>
+      <Dialog open={editing} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Team banner</DialogTitle>
@@ -225,6 +242,7 @@ export function TeamBanner({
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/svg+xml"
                 onChange={handleFileSelect}
+                disabled={uploading}
                 className="hidden"
               />
               <div className="mt-3 flex justify-center gap-2">
@@ -268,6 +286,7 @@ export function TeamBanner({
                       key={preset.id}
                       type="button"
                       onClick={() => setGradient(preset)}
+                      disabled={uploading}
                       title={preset.label}
                       className={`relative h-12 rounded-lg border bg-gradient-to-br ${preset.className} transition hover:scale-105`}
                     >
@@ -284,7 +303,12 @@ export function TeamBanner({
           </div>
 
           <div className="mt-2 flex justify-end">
-            <Button onClick={() => setEditing(false)}>Done</Button>
+            <Button
+              onClick={() => handleOpenChange(false)}
+              disabled={uploading}
+            >
+              Done
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
