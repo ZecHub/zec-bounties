@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,6 +32,13 @@ export function WalletSwitchDialog({
   const { zcashParams, teams } = useBounty();
   const [selected, setSelected] = useState<string | null>(null);
 
+  useEffect(() => {
+    setSelected(null);
+  }, [open, targetRole]);
+
+  const getWalletKey = (p: (typeof zcashParams)[number]) =>
+    `${p.isTeam && p.teamId ? `team:${p.teamId}` : "personal"}:${p.accountName}`;
+
   const personal = zcashParams.filter((p) => !p.isTeam || !p.teamId);
   const teamWallets = zcashParams.filter((p) => p.isTeam && p.teamId);
 
@@ -42,7 +49,7 @@ export function WalletSwitchDialog({
       onConfirm(null);
       return;
     }
-    const w = zcashParams.find((p) => p.accountName === selected);
+    const w = zcashParams.find((p) => getWalletKey(p) === selected);
     if (!w) {
       onConfirm(null);
       return;
@@ -54,19 +61,21 @@ export function WalletSwitchDialog({
   };
 
   const renderItem = (p: (typeof zcashParams)[number], isTeam: boolean) => {
+    const walletKey = getWalletKey(p);
     const teamName = isTeam
       ? teams.find((t) => t.id === p.teamId)?.name ?? "Team"
       : null;
-    const isSelected = selected === p.accountName;
+    const isSelected = selected === walletKey;
     const isRecommended =
       (recommendedType === "team" && isTeam) ||
       (recommendedType === "personal" && !isTeam);
 
     return (
       <button
-        key={p.accountName + (p.teamId ?? "")}
+        key={walletKey}
         type="button"
-        onClick={() => setSelected(p.accountName)}
+        aria-pressed={isSelected}
+        onClick={() => setSelected(walletKey)}
         className={cn(
           "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg border text-left transition-colors",
           isSelected
