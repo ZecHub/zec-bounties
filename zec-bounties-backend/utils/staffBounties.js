@@ -68,7 +68,10 @@ function mergeStaffRow(map, row) {
 
 function pageStaffRows(rows, offset, limit = STAFF_PAGE_LIMIT) {
   const start = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
-  const size = STAFF_PAGE_LIMIT;
+  const size =
+    Number.isFinite(limit) && limit >= 1
+      ? Math.min(Math.floor(limit), STAFF_PAGE_LIMIT)
+      : STAFF_PAGE_LIMIT;
   const slice = rows.slice(start, start + size);
   const next = start + slice.length < rows.length ? start + slice.length : null;
   return { rows: slice, nextOffset: next, total: rows.length, limit: size };
@@ -83,14 +86,19 @@ async function resolveStaffUser(
   select = STAFF_USER_SELECT,
   options = {},
 ) {
+  if (typeof key !== "string" || !key.trim()) {
+    return { status: 404, error: "User not found" };
+  }
+  const trimmedKey = key.trim();
+
   const byId = await prisma.user.findUnique({
-    where: { id: key },
+    where: { id: trimmedKey },
     select,
   });
   if (byId) return { user: byId };
 
   const byNickname = await prisma.user.findUnique({
-    where: { nickname: key },
+    where: { nickname: trimmedKey },
     select,
   });
   if (byNickname) return { user: byNickname };
@@ -102,7 +110,7 @@ async function resolveStaffUser(
   }
 
   const byName = await prisma.user.findMany({
-    where: { name: key },
+    where: { name: trimmedKey },
     select,
     take: 2,
   });
@@ -170,10 +178,12 @@ function buildStaffView(
   for (const row of all) {
     if (statusCounts[row.status] != null) statusCounts[row.status] += 1;
     if (row.status === "DONE" && row.relations.includes("assigned")) {
-      const amt = Number(row.bountyAmount) || 0;
-      zecCompleted += amt;
-      if (row.isPaid || row.exportedAt) {
-        zecEarned += amt;
+      const amt = Number(row.bountyAmount);
+      if (Number.isFinite(amt) && amt > 0) {
+        zecCompleted += amt;
+        if (row.isPaid || row.exportedAt) {
+          zecEarned += amt;
+        }
       }
     }
   }
@@ -207,6 +217,7 @@ module.exports = {
   STAFF_USER_SELECT,
   STAFF_BOUNTY_SELECT,
   staffBountyRow,
+  pageStaffRows,
   resolveStaffUser,
   buildStaffView,
 };
