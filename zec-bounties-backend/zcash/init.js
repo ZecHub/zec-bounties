@@ -1,9 +1,7 @@
-const { PrismaClient } = require("@prisma/client");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-
-const prisma = new PrismaClient();
+const prisma = require("../prisma/client");
 
 // ---------------------------------------------------------------------------
 // Wallet directory
@@ -20,11 +18,32 @@ const prisma = new PrismaClient();
  * identifier for the wallet.
  */
 function getWalletDataDir(walletId) {
-  if (!walletId) {
+  if (typeof walletId !== "string") {
     throw new Error("walletId is required");
   }
+  const trimmed = walletId.trim();
+  if (
+    !trimmed ||
+    trimmed === "." ||
+    trimmed === ".." ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("\0") ||
+    path.basename(trimmed) !== trimmed
+  ) {
+    throw new Error("Invalid walletId");
+  }
 
-  return path.join(process.cwd(), "wallets", walletId);
+  const walletsRoot = path.resolve(process.cwd(), "wallets");
+  const resolved = path.resolve(walletsRoot, trimmed);
+  if (
+    resolved !== path.join(walletsRoot, trimmed) ||
+    !resolved.startsWith(walletsRoot + path.sep)
+  ) {
+    throw new Error("Invalid walletId");
+  }
+
+  return resolved;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +67,9 @@ async function initZcashOnce(
   chain = "mainnet",
   teamId = null,
 ) {
-  if (!ownerId) throw new Error("ownerId is required");
+  if (typeof ownerId !== "string" || !ownerId.trim()) {
+    throw new Error("ownerId is required");
+  }
 
   // SQLite does not treat NULLs as equal in unique indexes, so use
   // findFirst instead of findUnique for this lookup.
@@ -74,10 +95,10 @@ async function initZcashOnce(
   }
 
   // New wallet gets its own unique filesystem identity.
+  // Persist the DB row before creating the directory so a concurrent P2002 race
+  // or DB failure never leaks an orphaned wallets/<unused-uuid>/ directory.
   const walletId = crypto.randomUUID();
   const walletDir = getWalletDataDir(walletId);
-
-  fs.mkdirSync(walletDir, { recursive: true });
 
   console.log(`🚀 Initializing Zcash for account "${accountName}"`);
   console.log(`   walletId: ${walletId}`);
@@ -96,6 +117,8 @@ async function initZcashOnce(
         }),
       },
     });
+
+    fs.mkdirSync(walletDir, { recursive: true });
 
     console.log(`✅ Zcash initialization complete for "${accountName}"`);
 
@@ -119,8 +142,8 @@ async function initZcashOnce(
       }
 
       // Make sure the persisted wallet directory exists.
-      const walletDir = getWalletDataDir(existing.walletId);
-      fs.mkdirSync(walletDir, { recursive: true });
+      const existingWalletDir = getWalletDataDir(existing.walletId);
+      fs.mkdirSync(existingWalletDir, { recursive: true });
 
       return existing;
     }
@@ -152,7 +175,9 @@ async function initZcashOnceForTeams(
   accountName = "Main",
   chain = "mainnet",
 ) {
-  if (!teamId) throw new Error("teamId is required");
+  if (typeof teamId !== "string" || !teamId.trim()) {
+    throw new Error("teamId is required");
+  }
 
   const existing = await prisma.zcashParams.findFirst({
     where: {
@@ -179,8 +204,6 @@ async function initZcashOnceForTeams(
   const walletId = crypto.randomUUID();
   const walletDir = getWalletDataDir(walletId);
 
-  fs.mkdirSync(walletDir, { recursive: true });
-
   console.log(`🚀 Initializing Zcash wallet for team account "${accountName}"`);
   console.log(`   walletId: ${walletId}`);
   console.log(`   dataDir: ${walletDir}`);
@@ -196,6 +219,8 @@ async function initZcashOnceForTeams(
         teamId,
       },
     });
+
+    fs.mkdirSync(walletDir, { recursive: true });
 
     console.log(`✅ Zcash initialization complete for team "${accountName}"`);
 
@@ -218,8 +243,8 @@ async function initZcashOnceForTeams(
         throw err;
       }
 
-      const walletDir = getWalletDataDir(existing.walletId);
-      fs.mkdirSync(walletDir, { recursive: true });
+      const existingWalletDir = getWalletDataDir(existing.walletId);
+      fs.mkdirSync(existingWalletDir, { recursive: true });
 
       return existing;
     }
