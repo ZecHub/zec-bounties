@@ -3,7 +3,32 @@ const { existsSync } = require("fs");
 
 const ANSI = /\u001b\[[0-9;]*m/g;
 
-async function executeZingoCliSeed(params, seed, birthday, timeout = 180000) {
+function parseBirthday(birthday) {
+  if (birthday === undefined || birthday === null || birthday === "") {
+    return "0";
+  }
+  if (typeof birthday === "number") {
+    if (!Number.isSafeInteger(birthday) || birthday < 0) {
+      throw new Error("Invalid wallet birthday");
+    }
+    return String(birthday);
+  }
+  if (typeof birthday === "string") {
+    const trimmed = birthday.trim();
+    if (!trimmed) return "0";
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error("Invalid wallet birthday");
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isSafeInteger(parsed)) {
+      throw new Error("Invalid wallet birthday");
+    }
+    return String(parsed);
+  }
+  throw new Error("Invalid wallet birthday");
+}
+
+async function executeZingoCliSeed(params = {}, seed, birthday, timeout = 180000) {
   const zingoPath = process.env.ZINGO_CLI;
   if (!zingoPath || !existsSync(zingoPath)) {
     throw new Error(`zingo-cli not found at ${zingoPath}`);
@@ -12,17 +37,19 @@ async function executeZingoCliSeed(params, seed, birthday, timeout = 180000) {
     throw new Error("Seed phrase required");
   }
 
-  const dataDir = params.dataDir || "/mnt/d/zaino/zebra/.cache/zaino";
+  const normalizedBirthday = parseBirthday(birthday);
+  const opts = params && typeof params === "object" ? params : {};
+  const dataDir = opts.dataDir || "/mnt/d/zaino/zebra/.cache/zaino";
 
   const args = [
     "--chain",
-    params.chain || "mainnet",
+    opts.chain || "mainnet",
     "--server",
-    params.serverUrl || "http://127.0.0.1:8137",
+    opts.serverUrl || "http://127.0.0.1:8137",
     "--data-dir",
     dataDir,
     "--birthday",
-    String(birthday || 0),
+    normalizedBirthday,
   ];
 
   return new Promise((resolve, reject) => {
@@ -37,9 +64,10 @@ async function executeZingoCliSeed(params, seed, birthday, timeout = 180000) {
     let stderr = "";
     let quitSent = false;
     let settled = false;
+    let readyTimer = null;
 
     const sendQuit = () => {
-      if (quitSent || proc.stdin.destroyed) return;
+      if (quitSent || settled || proc.stdin.destroyed) return;
       quitSent = true;
       proc.stdin.write("quit\n");
     };
@@ -49,12 +77,19 @@ async function executeZingoCliSeed(params, seed, birthday, timeout = 180000) {
       settled = true;
       clearTimeout(timer);
       clearTimeout(fallback);
+      if (readyTimer) {
+        clearTimeout(readyTimer);
+        readyTimer = null;
+      }
       fn(value);
     };
 
     const maybeReady = () => {
+      if (quitSent || readyTimer || settled) return;
       const all = (stdout + stderr).replace(ANSI, "");
-      if (/Launching save task/i.test(all)) setTimeout(sendQuit, 2000);
+      if (/Launching save task/i.test(all)) {
+        readyTimer = setTimeout(sendQuit, 2000);
+      }
     };
 
     proc.stdout.on("data", (d) => {
@@ -74,7 +109,7 @@ async function executeZingoCliSeed(params, seed, birthday, timeout = 180000) {
 
     const fallback = setTimeout(sendQuit, 60000);
     const timer = setTimeout(() => {
-      proc.kill();
+      if (!proc.killed) proc.kill();
       finish(reject, new Error("Zingo seed restore timeout"));
     }, timeout);
 
@@ -92,5 +127,7 @@ async function executeZingoCliSeed(params, seed, birthday, timeout = 180000) {
     });
   });
 }
+
+executeZingoCliSeed.parseBirthday = parseBirthday;
 
 module.exports = executeZingoCliSeed;
