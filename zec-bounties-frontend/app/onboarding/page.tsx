@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useBounty } from "@/lib/bounty-context";
 import { AdminNavbar } from "@/components/layout/admin/navbar";
@@ -41,30 +41,54 @@ const ROLE_COPY: Record<
   },
 };
 
+function getRedirectPathForRole(role: string): string {
+  if (role === "ADMIN") return "/admin";
+  if (role === "TEAM") return "/teams";
+  return "/home";
+}
+
 export default function OnboardingPage() {
   const { currentUser, isLoading, selectRole } = useBounty();
   const router = useRouter();
   const [sealing, setSealing] = useState<RoleChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Guard: only CLIENT users mid-onboarding belong here.
+  // Skip redirecting while sealing so the seal confirmation animation can complete
+  // and navigate to the chosen role's destination without being cut off when
+  // selectRole updates currentUser.role.
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || sealing !== null) return;
     if (!currentUser) {
       router.replace("/login");
       return;
     }
     if (currentUser.role !== "CLIENT") {
-      router.replace(currentUser.role === "ADMIN" ? "/admin" : "/home");
+      router.replace(getRedirectPathForRole(currentUser.role));
     }
-  }, [isLoading, currentUser, router]);
+  }, [isLoading, currentUser, router, sealing]);
 
   const handleChoose = async (role: RoleChoice) => {
     if (sealing) return;
     setError(null);
     setSealing(role);
 
-    const ok = await selectRole(role);
+    let ok = false;
+    try {
+      ok = await selectRole(role);
+    } catch {
+      ok = false;
+    }
 
     if (!ok) {
       setError("Couldn't set your role. Try again.");
@@ -73,12 +97,20 @@ export default function OnboardingPage() {
     }
 
     // Let the seal animation play before navigating away.
-    setTimeout(() => {
+    if (redirectTimerRef.current) {
+      clearTimeout(redirectTimerRef.current);
+    }
+    redirectTimerRef.current = setTimeout(() => {
+      redirectTimerRef.current = null;
       router.push(ROLE_COPY[role].redirect);
     }, 900);
   };
 
-  if (isLoading || !currentUser || currentUser.role !== "CLIENT") {
+  if (
+    isLoading ||
+    !currentUser ||
+    (currentUser.role !== "CLIENT" && sealing === null)
+  ) {
     return null;
   }
 
