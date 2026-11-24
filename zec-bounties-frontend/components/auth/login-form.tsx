@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,38 +20,43 @@ import {
   getGithubOAuthErrorMessage,
 } from "@/lib/githubLogin";
 
+function getPostLoginPath(role?: string) {
+  if (role === "ADMIN") return "/admin";
+  if (role === "TEAM") return "/teams";
+  if (role === "CLIENT") return "/onboarding";
+  return "/home";
+}
+
 export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { login, currentUser } = useBounty();
+  const submittingRef = useRef(false);
+  const { login } = useBounty();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Surface OAuth callback errors that arrive as ?error=...
+  // Surface OAuth callback errors that arrive as ?error=... and clear when absent
   useEffect(() => {
     const msg = getGithubOAuthErrorMessage(searchParams.get("error"));
-    if (msg) setOauthError(msg);
+    setOauthError(msg ?? null);
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || isLoading) return;
+    submittingRef.current = true;
     setError("");
     setOauthError(null);
     setIsLoading(true);
 
     try {
-      const result = await login(email, password);
+      const result = await login(email.trim(), password);
 
       if (result.success && result.user) {
-        // Check user role and redirect accordingly
-        if (result.user.role === "ADMIN") {
-          router.push("/admin");
-        } else {
-          router.push("/home");
-        }
+        router.push(getPostLoginPath(result.user.role));
       } else {
         setError("Invalid email or password");
       }
@@ -59,6 +64,7 @@ export function LoginForm() {
       console.error("Login error:", err);
       setError("Login failed. Please try again.");
     } finally {
+      submittingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -130,6 +136,7 @@ export function LoginForm() {
               className="github-login-btn block"
               onClick={(e) => {
                 e.preventDefault();
+                if (isLoading || submittingRef.current) return;
                 startGithubLogin();
               }}
             >
