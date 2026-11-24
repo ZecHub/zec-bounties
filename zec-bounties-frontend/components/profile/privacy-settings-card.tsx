@@ -142,24 +142,27 @@ export function PrivacySettingsCard({
   const [success, setSuccess] = useState(false);
 
   const toggle = (key: keyof ProfileVisibility, value: boolean) => {
+    if (saving || Boolean(visibility[key]) === value) return;
     onVisibilityChange({ ...visibility, [key]: value });
     setDirty(true);
     setSuccess(false);
   };
 
   const setAll = (value: boolean) => {
+    if (saving) return;
+    const keys = Object.keys(DEFAULT_VISIBILITY) as (keyof ProfileVisibility)[];
+    if (keys.every((k) => Boolean(visibility[k]) === value)) return;
     const next = { ...visibility };
-    (Object.keys(DEFAULT_VISIBILITY) as (keyof ProfileVisibility)[]).forEach(
-      (k) => {
-        next[k] = value;
-      },
-    );
+    keys.forEach((k) => {
+      next[k] = value;
+    });
     onVisibilityChange(next);
     setDirty(true);
     setSuccess(false);
   };
 
   const handleSave = async () => {
+    if (saving) return;
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -168,9 +171,16 @@ export function PrivacySettingsCard({
       setDirty(false);
       setSuccess(true);
       toast.success("Privacy settings saved");
-    } catch (e: any) {
-      setError(e.message || "Save failed");
-      toast.error(e.message || "Save failed");
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : typeof (e as { message?: unknown })?.message === "string" &&
+              (e as { message: string }).message
+            ? (e as { message: string }).message
+            : "Save failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -203,6 +213,7 @@ export function PrivacySettingsCard({
                 variant="outline"
                 size="sm"
                 onClick={() => setAll(false)}
+                disabled={saving}
               >
                 Hide all
               </Button>
@@ -211,6 +222,7 @@ export function PrivacySettingsCard({
                 variant="outline"
                 size="sm"
                 onClick={() => setAll(true)}
+                disabled={saving}
               >
                 Show all
               </Button>
@@ -247,6 +259,7 @@ export function PrivacySettingsCard({
                       </div>
                       <Switch
                         checked={!!visibility[item.key]}
+                        disabled={saving}
                         onCheckedChange={(checked) =>
                           toggle(item.key, checked as boolean)
                         }
