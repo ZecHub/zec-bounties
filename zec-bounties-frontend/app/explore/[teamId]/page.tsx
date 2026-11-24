@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { Navbar } from "@/components/layout/navbar";
@@ -38,13 +38,15 @@ type TeamOverview = {
   donationAddress: string | null;
 };
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+export function initials(name: string) {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) {
+    return Array.from(parts[0]).slice(0, 2).join("").toUpperCase() || "?";
+  }
+  const first = Array.from(parts[0])[0] ?? "";
+  const second = Array.from(parts[1])[0] ?? "";
+  return `${first}${second}`.toUpperCase() || "?";
 }
 
 type SocialLink = {
@@ -98,16 +100,25 @@ const TelegramIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-function normalizeUrl(raw: string): string {
+export function normalizeUrl(raw: string): string {
   const v = raw.trim();
-  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  if (!v) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) {
+    return v;
+  }
+  return `https://${v}`;
 }
 
-function describeLink(raw: string): SocialLink | null {
+export function describeLink(raw: string): SocialLink | null {
+  const normalized = normalizeUrl(raw);
+  if (!normalized) return null;
   let u: URL;
   try {
-    u = new URL(normalizeUrl(raw));
+    u = new URL(normalized);
   } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
     return null;
   }
   const host = u.hostname.replace(/^www\./, "").toLowerCase();
@@ -121,7 +132,11 @@ function describeLink(raw: string): SocialLink | null {
       hover: "hover:border-foreground/40 hover:text-foreground",
     };
   }
-  if (host === "discord.gg" || host.endsWith("discord.com")) {
+  if (
+    host === "discord.gg" ||
+    host === "discord.com" ||
+    host.endsWith(".discord.com")
+  ) {
     return {
       url: u.toString(),
       label: "Discord",
@@ -161,12 +176,27 @@ function DonationCard({
   address: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(address);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = setTimeout(() => {
+        setCopied(false);
+        copyTimerRef.current = null;
+      }, 2000);
     } catch {
       // Clipboard can be blocked; the address is still selectable below.
     }
