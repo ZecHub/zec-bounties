@@ -34,18 +34,30 @@ function isFinitePositiveNumber(value) {
 }
 
 function isValidFutureDate(value) {
+  if (
+    !(value instanceof Date) &&
+    typeof value !== "string" &&
+    typeof value !== "number"
+  ) {
+    return false;
+  }
+  if (typeof value === "string" && value.trim().length === 0) {
+    return false;
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return false;
+  }
   const d = value instanceof Date ? value : new Date(value);
   return !isNaN(d.getTime()) && d.getTime() > Date.now();
 }
 
 // ─── Create validation ──────────────────────────────────────────────────────
 
-function validateBountyCreate({
-  title,
-  description,
-  bountyAmount,
-  timeToComplete,
-}) {
+function validateBountyCreate(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { valid: false, error: "Bounty payload must be an object" };
+  }
+  const { title, description, bountyAmount, timeToComplete } = payload;
   // Title
   if (!isNonEmptyString(title)) {
     return { valid: false, error: "Title is required" };
@@ -114,6 +126,9 @@ function validateBountyCreate({
 // ─── Update validation (partial — only checks fields that are present) ──────
 
 function validateBountyUpdate(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { valid: false, error: "Update payload must be an object" };
+  }
   // Title (only if provided)
   if (body.title !== undefined) {
     if (!isNonEmptyString(body.title)) {
@@ -180,20 +195,24 @@ function validateBountyUpdate(body) {
 // ─── Category validation (requires prisma instance) ─────────────────────────
 
 async function validateCategory(prisma, categoryId) {
-  if (categoryId === undefined || categoryId === null || categoryId === "") {
+  if (categoryId === undefined || categoryId === null) {
     return { valid: true }; // optional
   }
   if (typeof categoryId !== "string") {
     return { valid: false, error: "Category must be a string" };
   }
+  const trimmedCategory = categoryId.trim();
+  if (trimmedCategory === "") {
+    return { valid: true }; // optional
+  }
 
   const category = await prisma.bountyCategory.findUnique({
-    where: { name: categoryId },
+    where: { name: trimmedCategory },
   });
   if (!category) {
     return {
       valid: false,
-      error: `Category "${categoryId}" does not exist`,
+      error: `Category "${trimmedCategory}" does not exist`,
     };
   }
   return { valid: true };
