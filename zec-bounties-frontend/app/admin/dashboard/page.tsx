@@ -1,8 +1,6 @@
 "use client";
 
-import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useState, useMemo } from "react";
-import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -23,37 +21,69 @@ import { AdminNavbar } from "@/components/layout/admin/navbar";
 import { NewBountyModal } from "@/components/new-bounty-modal";
 import { useBounty } from "@/lib/bounty-context";
 import { formatStatus } from "@/lib/utils";
-import { WalletGuard } from "@/components/settings/wallet-guard";
+import type { Bounty } from "@/lib/types";
 
-export default function ClientDashboard() {
-  const { bounties, paymentIDs, fetchTransactionHashes, authorizeDuePayment } =
-    useBounty();
-  const [filterStatus, setFilterStatus] = useState<
-    "all" | "TO_DO" | "IN_PROGRESS" | "DONE" | "CANCELLED"
-  >("all");
-  const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
+export type DashboardFilterStatus =
+  | "all"
+  | "TO_DO"
+  | "IN_PROGRESS"
+  | "DONE"
+  | "CANCELLED";
 
-  const clientBounties = useMemo(() => {
-    const filtered = bounties.filter(
-      (b) => filterStatus === "all" || b.status === filterStatus,
-    );
-    return filtered.sort(
-      (a, b) =>
-        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime(),
-    );
-  }, [filterStatus]);
+function toTimestamp(value: string | Date | null | undefined): number {
+  if (!value) return 0;
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
 
-  const stats = {
-    totalRewards: clientBounties.reduce((sum, b) => sum + b.bountyAmount, 0),
-    activeBounties: bounties.filter(
+export function filterAndSortAdminBounties(
+  bounties: Bounty[],
+  filterStatus: DashboardFilterStatus,
+): Bounty[] {
+  const filtered = bounties.filter(
+    (b) => filterStatus === "all" || b.status === filterStatus,
+  );
+  return filtered.sort(
+    (a, b) => toTimestamp(b.dateCreated) - toTimestamp(a.dateCreated),
+  );
+}
+
+export function computeAdminDashboardStats(
+  allBounties: Bounty[],
+  visibleBounties: Bounty[],
+) {
+  return {
+    totalRewards: visibleBounties.reduce(
+      (sum, b) => sum + (Number(b.bountyAmount) || 0),
+      0,
+    ),
+    activeBounties: allBounties.filter(
       (b) => b.status === "TO_DO" || b.status === "IN_PROGRESS",
     ).length,
-    completed: bounties.filter((b) => b.status === "DONE").length,
-    totalApplications: clientBounties.reduce(
+    completed: allBounties.filter((b) => b.status === "DONE").length,
+    totalApplications: visibleBounties.reduce(
       (sum, b) => sum + (b.applications?.length || 0),
       0,
     ),
   };
+}
+
+export function formatApplicationCount(count: number): string {
+  return `${count} ${count === 1 ? "application" : "applications"}`;
+}
+
+export default function ClientDashboard() {
+  const { bounties } = useBounty();
+  const [filterStatus, setFilterStatus] =
+    useState<DashboardFilterStatus>("all");
+  const [isNewBountyModalOpen, setIsNewBountyModalOpen] = useState(false);
+
+  const clientBounties = useMemo(
+    () => filterAndSortAdminBounties(bounties, filterStatus),
+    [bounties, filterStatus],
+  );
+
+  const stats = computeAdminDashboardStats(bounties, clientBounties);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -211,7 +241,9 @@ export default function ClientDashboard() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {bounty.applications?.length || 0} applications
+                          {formatApplicationCount(
+                            bounty.applications?.length || 0,
+                          )}
                         </p>
                       </div>
                       <div className="text-right">
