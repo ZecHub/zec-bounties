@@ -8,6 +8,23 @@ const {
 
 const router = express.Router();
 
+function parseThreshold(value) {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 0 && value <= 1000
+      ? value
+      : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) return null;
+    const parsed = Number(trimmed);
+    return Number.isInteger(parsed) && parsed >= 0 && parsed <= 1000
+      ? parsed
+      : null;
+  }
+  return null;
+}
+
 router.get("/suggestion-settings", authenticate, isAdmin, async (req, res) => {
   try {
     const settings = await getSuggestionSettings();
@@ -30,15 +47,16 @@ router.patch(
           error: "mode must be one of: closed, open, threshold",
         });
       }
-      const t = Number(threshold);
-      if (mode === "threshold" && (!Number.isFinite(t) || t < 0 || t > 1000)) {
+      const parsedThreshold =
+        mode === "threshold" ? parseThreshold(threshold) : 0;
+      if (mode === "threshold" && parsedThreshold === null) {
         return res
           .status(400)
           .json({ error: "threshold must be an integer 0–1000" });
       }
       const updated = await setSuggestionSettings({
         mode,
-        threshold: mode === "threshold" ? t : 0,
+        threshold: parsedThreshold,
       });
       res.json(updated);
     } catch (error) {
@@ -47,5 +65,7 @@ router.patch(
     }
   },
 );
+
+router.parseThreshold = parseThreshold;
 
 module.exports = router;
