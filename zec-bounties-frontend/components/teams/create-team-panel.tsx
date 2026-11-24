@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import type { Team } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -33,15 +33,26 @@ export function CreateTeamPanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const resetForm = () => {
+    setName("");
+    setDescription("");
+    setTwitterUrl("");
+    setDiscordUrl("");
+    setAdditionalLinks([""]);
+    setError(null);
+  };
+
+  useEffect(() => {
+    if (!open) {
+      resetForm();
+    }
+  }, [open]);
+
   const handleClose = (nextOpen: boolean) => {
+    if (!nextOpen && submitting) return;
     onOpenChange(nextOpen);
     if (!nextOpen) {
-      setName("");
-      setDescription("");
-      setTwitterUrl("");
-      setDiscordUrl("");
-      setAdditionalLinks([""]);
-      setError(null);
+      resetForm();
     }
   };
 
@@ -55,7 +66,7 @@ export function CreateTeamPanel({
     setAdditionalLinks((prev) => prev.filter((_, i) => i !== index));
 
   const handleCreate = async () => {
-    if (!name.trim()) return;
+    if (submitting || !name.trim()) return;
     if (!twitterUrl.trim() || !discordUrl.trim()) {
       setError("Twitter and Discord links are required");
       return;
@@ -70,7 +81,8 @@ export function CreateTeamPanel({
         discordUrl: discordUrl.trim(),
         additionalLinks: additionalLinks.map((l) => l.trim()).filter(Boolean),
       });
-      handleClose(false);
+      resetForm();
+      onOpenChange(false);
       onSuccess?.(team);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create team");
@@ -97,6 +109,7 @@ export function CreateTeamPanel({
               placeholder="e.g. Orchard Collective"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={submitting}
               className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
             />
           </div>
@@ -109,6 +122,7 @@ export function CreateTeamPanel({
               placeholder="What does this team work on?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              disabled={submitting}
               rows={3}
               className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
             />
@@ -124,6 +138,7 @@ export function CreateTeamPanel({
               placeholder="https://x.com/yourteam"
               value={twitterUrl}
               onChange={(e) => setTwitterUrl(e.target.value)}
+              disabled={submitting}
               className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
             />
           </div>
@@ -138,6 +153,7 @@ export function CreateTeamPanel({
               placeholder="https://discord.gg/yourteam"
               value={discordUrl}
               onChange={(e) => setDiscordUrl(e.target.value)}
+              disabled={submitting}
               className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
             />
           </div>
@@ -148,7 +164,8 @@ export function CreateTeamPanel({
               <button
                 type="button"
                 onClick={addLinkField}
-                className="text-xs font-medium text-primary hover:underline"
+                disabled={submitting}
+                className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
               >
                 Add link
               </button>
@@ -160,13 +177,15 @@ export function CreateTeamPanel({
                   placeholder="https://..."
                   value={link}
                   onChange={(e) => updateLink(i, e.target.value)}
+                  disabled={submitting}
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-primary"
                 />
                 {additionalLinks.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeLinkField(i)}
-                    className="shrink-0 px-2 text-sm text-muted-foreground hover:text-red-500"
+                    disabled={submitting}
+                    className="shrink-0 px-2 text-sm text-muted-foreground hover:text-red-500 disabled:opacity-50"
                   >
                     ✕
                   </button>
@@ -179,7 +198,11 @@ export function CreateTeamPanel({
         </div>
 
         <div className="mt-2 flex justify-end gap-3">
-          <Button variant="outline" onClick={() => handleClose(false)}>
+          <Button
+            variant="outline"
+            onClick={() => handleClose(false)}
+            disabled={submitting}
+          >
             Cancel
           </Button>
           <Button onClick={handleCreate} disabled={!name.trim() || submitting}>
