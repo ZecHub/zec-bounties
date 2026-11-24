@@ -151,14 +151,25 @@ export default function BountyDetailPage() {
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     setLoading(true);
+    setNotFound(false);
+    setBounty(null);
     fetchBountyById(id)
       .then((data) => {
+        if (cancelled) return;
         if (!data) setNotFound(true);
         else setBounty(data);
       })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setNotFound(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   /* loading */
