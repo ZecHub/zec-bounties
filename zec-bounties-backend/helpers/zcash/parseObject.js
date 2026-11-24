@@ -1,10 +1,62 @@
 /**
+ * Normalizes Zingo-flavored JSON outside of quoted string literals so values
+ * containing colons (URLs, timestamps, memos) or underscores are preserved.
+ * @param {string} rawJson
+ * @returns {string}
+ */
+function normalizeZingoJson(rawJson) {
+  const parts = [];
+  let i = 0;
+  let plainStart = 0;
+
+  const flushPlain = (end) => {
+    if (end <= plainStart) return;
+    let segment = rawJson.slice(plainStart, end);
+    // Remove numeric underscores without altering identifiers like v1_2
+    segment = segment.replace(
+      /(?<![A-Za-z0-9_$])(\d+(?:_\d+)+)(?![A-Za-z0-9_$])/g,
+      (num) => num.replace(/_/g, ""),
+    );
+    // Quote unquoted object keys without touching already-quoted strings
+    segment = segment.replace(/([\{,\s])([A-Za-z_]\w*)\s*:/g, '$1"$2":');
+    // Remove trailing commas before closing braces/brackets
+    segment = segment.replace(/,\s*([}\]])/g, "$1");
+    parts.push(segment);
+  };
+
+  while (i < rawJson.length) {
+    if (rawJson[i] === '"') {
+      flushPlain(i);
+      const strStart = i;
+      i += 1;
+      while (i < rawJson.length) {
+        if (rawJson[i] === "\\") {
+          i += 2;
+        } else if (rawJson[i] === '"') {
+          i += 1;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+      parts.push(rawJson.slice(strStart, i));
+      plainStart = i;
+    } else {
+      i += 1;
+    }
+  }
+  flushPlain(rawJson.length);
+
+  return parts.join("");
+}
+
+/**
  * Extracts and cleans the first JSON object block {...} from raw terminal output.
  * @param {string} rawOutput - The string captured from zingo-cli stdout.
  * @returns {Object|null} - The parsed JSON object or null if not found.
  */
 function parseZingoObject(rawOutput) {
-  if (!rawOutput) return null;
+  if (typeof rawOutput !== "string" || rawOutput.length === 0) return null;
 
   // 1. Regex to find everything from the FIRST '{' to the LAST '}'
   // This handles cases where there might be text before or after the JSON.
@@ -16,13 +68,8 @@ function parseZingoObject(rawOutput) {
   }
 
   try {
-    // 2. Clean Zingo-specific formatting:
-    let cleanJson = jsonMatch[0]
-      .replace(/(\d)_(\d)/g, "$1$2") // Remove underscores from numbers (29_000 -> 29000)
-      .replace(/(?<!")(\b\w+\b):/g, '"$1":') // Ensure keys are double-quoted
-      .replace(/,\s*}/g, "}") // Remove trailing commas before closing brace
-      .replace(/,\s*]/g, "]"); // Remove trailing commas before closing bracket
-
+    // 2. Clean Zingo-specific formatting outside string literals:
+    const cleanJson = normalizeZingoJson(jsonMatch[0]);
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("Failed to parse Zingo Object:", error.message);
@@ -31,4 +78,4 @@ function parseZingoObject(rawOutput) {
   }
 }
 
-module.exports = { parseZingoObject };
+module.exports = { parseZingoObject, normalizeZingoJson };
