@@ -1,14 +1,11 @@
-export function profileHref(user: {
-  id: string;
-  name?: string | null;
-  nickname?: string | null;
-}) {
-  const candidates = [user.nickname, user.name];
-  for (const c of candidates) {
-    const slug = c?.trim();
-    if (slug && /^[a-zA-Z0-9_-]+$/.test(slug)) {
-      return `/users/${slug}`;
-    }
+// The public profile route resolves /users/<key> by id or by the unique
+// nickname, never by display name. Nicknames may contain dots ("alice.1234"
+// is what a second GitHub "alice" signs up as), so they are used as is.
+export function profileHref(user: { id: string; nickname?: string | null }) {
+  const nickname = user.nickname?.trim();
+  // "." and ".." would be read as path segments by the browser.
+  if (nickname && nickname !== "." && nickname !== "..") {
+    return `/users/${encodeURIComponent(nickname)}`;
   }
-  return `/users/${user.id}`;
+  return `/users/${encodeURIComponent(user.id)}`;
 }
