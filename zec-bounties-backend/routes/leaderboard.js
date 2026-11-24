@@ -7,17 +7,38 @@ const { redactLeaderboardRow } = require("../utils/privacy");
 
 const router = express.Router();
 
+const VALID_TIME_RANGES = new Set(["all", "30d", "90d"]);
+const VALID_CHAINS = new Set(["MAIN", "TEST", "ALL"]);
+
+function firstQueryParam(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 router.get("/", optionalAuthenticate, async (req, res) => {
   try {
     const isAdmin = req.user?.role === "ADMIN";
-    const timeRange = ["all", "30d", "90d"].includes(req.query.timeRange)
-      ? req.query.timeRange
+    const rawTimeRange = firstQueryParam(req.query?.timeRange);
+    const timeRange = VALID_TIME_RANGES.has(rawTimeRange)
+      ? rawTimeRange
       : "all";
-    const chainParam = String(req.query.chain || "MAIN").toUpperCase();
+    const rawChain = firstQueryParam(req.query?.chain);
+    const chainParam = String(rawChain || "MAIN")
+      .trim()
+      .toUpperCase();
     if (chainParam !== "MAIN" && !isAdmin) {
       return res.status(403).json({ error: "Non-MAIN chains require admin" });
     }
-    const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 25), 100);
+    if (!VALID_CHAINS.has(chainParam)) {
+      return res
+        .status(400)
+        .json({ error: "Invalid chain. Expected MAIN, TEST, or ALL" });
+    }
+    const rawLimit = firstQueryParam(req.query?.limit);
+    const parsedLimit = Number.parseInt(rawLimit, 10);
+    const limit = Math.min(
+      Math.max(1, Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25),
+      100,
+    );
 
     const version = await getVersion("bounties");
     const privacyVersion = await getVersion("privacy");
@@ -36,6 +57,11 @@ router.get("/", optionalAuthenticate, async (req, res) => {
       })
     ).map((u) => u.id);
 
+    if (hunterIds.length === 0) {
+      await setCache(cacheKey, [], 60);
+      return res.json([]);
+    }
+
     const grouped = await prisma.bounty.groupBy({
       by: ["assignee"],
       where: {
@@ -51,6 +77,11 @@ router.get("/", optionalAuthenticate, async (req, res) => {
       orderBy: { _sum: { bountyAmount: "desc" } },
       take: limit,
     });
+
+    if (grouped.length === 0) {
+      await setCache(cacheKey, [], 60);
+      return res.json([]);
+    }
 
     const users = await prisma.user.findMany({
       where: { id: { in: grouped.map((g) => g.assignee) } },
