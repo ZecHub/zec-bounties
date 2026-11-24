@@ -11,12 +11,48 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, Target, Zap, Lock } from "lucide-react";
+import { Trophy, Target, Lock } from "lucide-react";
 import { BadgeIcons } from "@/components/badges/badge-icons";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 
 type TimeRange = "all" | "30d" | "90d";
+
+export function formatEarned(zec: number | null | undefined): string {
+  if (zec == null || !Number.isFinite(zec)) {
+    return "—";
+  }
+  return `${zec.toLocaleString(undefined, { maximumFractionDigits: 4 })} ZEC`;
+}
+
+export function formatCompletedBounties(
+  completed: number | null | undefined,
+): string {
+  if (completed == null || !Number.isFinite(completed)) {
+    return "— Bounties";
+  }
+  return `${completed} ${completed === 1 ? "Bounty" : "Bounties"}`;
+}
+
+export function getAvatarFallback(
+  entry: { name?: string | null; nickname?: string | null },
+  mine: boolean,
+): string {
+  if (!mine) {
+    return "?";
+  }
+  const source = (entry.nickname || entry.name || "").trim();
+  if (!source) {
+    return "?";
+  }
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const first = Array.from(parts[0])[0] ?? "";
+    const second = Array.from(parts[1])[0] ?? "";
+    return `${first}${second}`.toUpperCase() || "?";
+  }
+  return Array.from(parts[0]).slice(0, 2).join("").toUpperCase() || "?";
+}
 
 export default function AdminLeaderboardPage() {
   const { currentUser, leaderboard, leaderboardLoading, fetchLeaderboard } =
@@ -32,12 +68,6 @@ export default function AdminLeaderboardPage() {
 
   const myEntry = leaderboard.find(isMe);
 
-  // `zec` is the raw ZEC amount; alternates with USD when a price is available.
-  const formatEarned = (zec: number | null) =>
-    zec == null
-      ? "—"
-      : `${zec.toLocaleString(undefined, { maximumFractionDigits: 4 })} ZEC`;
-
   const displayNameFor = (entry: (typeof leaderboard)[number]) =>
     entry.nickname || entry.name;
 
@@ -51,7 +81,7 @@ export default function AdminLeaderboardPage() {
     <ProtectedRoute>
       <main className="min-h-screen bg-background text-foreground">
         <AdminNavbar isAdmin />
-        <div className="imd:container mx-auto px-4 py-8 max-w-5xl">
+        <div className="md:container mx-auto px-4 py-8 max-w-5xl">
           <div className="mb-12 text-center">
             <Badge
               variant="outline"
@@ -70,6 +100,8 @@ export default function AdminLeaderboardPage() {
               {(["all", "30d", "90d"] as TimeRange[]).map((range) => (
                 <button
                   key={range}
+                  type="button"
+                  aria-pressed={timeRange === range}
                   onClick={() => setTimeRange(range)}
                   className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                     timeRange === range
@@ -151,7 +183,9 @@ export default function AdminLeaderboardPage() {
                             <AvatarImage
                               src={entry.avatar || "/placeholder.svg"}
                             />
-                            <AvatarFallback>{"None"}</AvatarFallback>
+                            <AvatarFallback>
+                              {getAvatarFallback(entry, mine)}
+                            </AvatarFallback>
                           </Avatar>
                           <div
                             className={`absolute -bottom-2 -right-2 h-8 w-8 rounded-full flex items-center justify-center font-bold text-sm ${
@@ -184,7 +218,7 @@ export default function AdminLeaderboardPage() {
                         </h3>
                         <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mb-4">
                           <Target className="h-3 w-3" />
-                          <span>{entry.completed ?? "—"} Bounties</span>
+                          <span>{formatCompletedBounties(entry.completed)}</span>
                         </div>
                         <div className="flex items-center justify-center gap-1.5 mb-4">
                           <BadgeIcons
@@ -240,7 +274,9 @@ export default function AdminLeaderboardPage() {
                             <AvatarImage
                               src={entry.avatar || "/placeholder.svg"}
                             />
-                            <AvatarFallback>{"None"}</AvatarFallback>
+                            <AvatarFallback>
+                              {getAvatarFallback(entry, mine)}
+                            </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p
