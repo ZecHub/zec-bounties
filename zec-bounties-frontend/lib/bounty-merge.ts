@@ -1,7 +1,15 @@
 import type { Bounty, User } from "./types";
 
-export const bountyUpdatedAt = (bounty: Bounty) =>
-  bounty.updatedAt ? new Date(bounty.updatedAt).getTime() : 0;
+export const bountyUpdatedAt = (bounty: Bounty) => {
+  if (!bounty.updatedAt) return 0;
+  const ts = new Date(bounty.updatedAt).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+};
+
+function hasValidUpdatedAt(bounty: Bounty): boolean {
+  if (!bounty.updatedAt) return false;
+  return Number.isFinite(new Date(bounty.updatedAt).getTime());
+}
 
 function stripPrivateFields(value: unknown, keepAddresses = false): unknown {
   const drop = keepAddresses
@@ -25,16 +33,23 @@ function mergeUser(
   update: User | null | undefined,
   keepAddresses: boolean,
 ): User | null | undefined {
-  if (!update) return current ?? update;
-  if (!current) return update;
-  const merged = { ...current, ...update };
+  if (update === null) return null;
+  if (!update) {
+    return current
+      ? (stripPrivateFields(current, keepAddresses) as User)
+      : update;
+  }
+  const cleanUpdate = stripPrivateFields(update, keepAddresses) as User;
+  if (!current) return cleanUpdate;
+  const cleanCurrent = stripPrivateFields(current, keepAddresses) as User;
+  const merged = { ...cleanCurrent, ...cleanUpdate };
   delete (merged as { email?: string }).email;
   if (keepAddresses) {
-    if (update.UA_address == null && current.UA_address != null) {
-      merged.UA_address = current.UA_address;
+    if (cleanUpdate.UA_address == null && cleanCurrent.UA_address != null) {
+      merged.UA_address = cleanCurrent.UA_address;
     }
-    if (update.z_address == null && current.z_address != null) {
-      merged.z_address = current.z_address;
+    if (cleanUpdate.z_address == null && cleanCurrent.z_address != null) {
+      merged.z_address = cleanCurrent.z_address;
     }
   } else {
     delete merged.UA_address;
@@ -48,7 +63,10 @@ export function mergeBounty(
   update: Bounty,
   options?: { preservePayoutAddresses?: boolean },
 ): Bounty {
-  if (!update.updatedAt || bountyUpdatedAt(update) < bountyUpdatedAt(current)) {
+  if (
+    !hasValidUpdatedAt(update) ||
+    bountyUpdatedAt(update) < bountyUpdatedAt(current)
+  ) {
     return current;
   }
   const keepAddresses = options?.preservePayoutAddresses === true;
@@ -58,7 +76,16 @@ export function mergeBounty(
   ) as Bounty;
   return {
     ...merged,
-    assigneeUser: mergeUser(current.assigneeUser, merged.assigneeUser, keepAddresses) ?? undefined,
-    createdByUser: mergeUser(current.createdByUser, merged.createdByUser, keepAddresses) ?? undefined,
+    assigneeUser:
+      update.assigneeUser === null
+        ? undefined
+        : (mergeUser(
+            current.assigneeUser,
+            merged.assigneeUser,
+            keepAddresses,
+          ) ?? undefined),
+    createdByUser:
+      mergeUser(current.createdByUser, merged.createdByUser, keepAddresses) ??
+      undefined,
   };
 }
