@@ -36,23 +36,47 @@ function parseAddressLine(zaddress) {
   return `parse_address ${assertPlainAddress(zaddress)}`;
 }
 
+function parsePositiveAmount(raw) {
+  let numeric;
+  if (typeof raw === "number") {
+    numeric = raw;
+  } else if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!/^\d+(?:\.\d+)?$/.test(trimmed)) {
+      throw new Error("Invalid amount");
+    }
+    numeric = Number(trimmed);
+  } else {
+    throw new Error("Invalid amount");
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw new Error("Invalid amount");
+  }
+  const amount = Math.ceil(numeric);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error("Invalid amount");
+  }
+  return amount;
+}
+
 function quicksendLine(recipients) {
   if (!Array.isArray(recipients) || recipients.length === 0) {
     throw new Error("No recipients");
   }
   const sanitized = recipients.map((recipient) => {
-    assertPlainAddress(recipient.address);
-    const amount = Math.ceil(Number(recipient.amount));
-    if (!Number.isInteger(amount) || amount <= 0) {
-      throw new Error("Invalid amount");
+    if (!recipient || typeof recipient !== "object" || Array.isArray(recipient)) {
+      throw new Error("Invalid recipient");
     }
+    assertPlainAddress(recipient.address);
+    const amount = parsePositiveAmount(recipient.amount);
     const memo =
       recipient.memo == null || recipient.memo === ""
         ? DEFAULT_MEMO
         : recipient.memo;
     if (
       typeof memo !== "string" ||
-      memo.length > MEMO_MAX ||
+      Buffer.byteLength(memo, "utf8") > MEMO_MAX ||
       CONTROL.test(memo)
     ) {
       throw new Error("Invalid memo");
