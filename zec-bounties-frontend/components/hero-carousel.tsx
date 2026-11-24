@@ -29,6 +29,30 @@ const DRAG_START_THRESHOLD = 6;
 const SWIPE_THRESHOLD = 120;
 const SWIPE_MAX_FRACTION = 0.35;
 
+export function getSwipeThreshold(containerWidth: number): number {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+    return SWIPE_THRESHOLD;
+  }
+  return Math.min(SWIPE_THRESHOLD, containerWidth * SWIPE_MAX_FRACTION);
+}
+
+export function getSwipeDirection(
+  dragX: number,
+  containerWidth: number,
+): "next" | "prev" | null {
+  const threshold = getSwipeThreshold(containerWidth);
+  if (dragX <= -threshold) return "next";
+  if (dragX >= threshold) return "prev";
+  return null;
+}
+
+export function isSlideCtaDisabled(
+  hasOnClick: boolean,
+  taskCreationBlocked: boolean,
+): boolean {
+  return hasOnClick && taskCreationBlocked;
+}
+
 export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
   const taskCreationBlocked = useTaskCreationBlocked();
   const router = useRouter();
@@ -126,10 +150,10 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
 
   const goTo = useCallback(
     (index: number) => {
-      if (onClone) return;
+      if (onClone || index < 0 || index >= count) return;
       setPos(index);
     },
-    [onClone],
+    [onClone, count],
   );
 
   // After sliding onto a clone, jump (no transition) to the matching real slide
@@ -157,6 +181,9 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
   }, [pos, isPaused, isDragging, next]);
 
   const handleCtaClick = (slide: Slide) => {
+    if (isSlideCtaDisabled(Boolean(slide.cta.onClick), taskCreationBlocked)) {
+      return;
+    }
     if (slide.cta.onClick) {
       slide.cta.onClick();
     } else if (slide.cta.href) {
@@ -196,9 +223,9 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
       const width = containerRef.current?.offsetWidth ?? 0;
-      const threshold = Math.min(SWIPE_THRESHOLD, width * SWIPE_MAX_FRACTION);
-      if (dragX <= -threshold) next();
-      else if (dragX >= threshold) prev();
+      const direction = getSwipeDirection(dragX, width);
+      if (direction === "next") next();
+      else if (direction === "prev") prev();
     }
 
     setDragX(0);
@@ -288,13 +315,23 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
                 ) : (
                   <Button
                     onClick={() => handleCtaClick(slide)}
+                    disabled={isSlideCtaDisabled(
+                      Boolean(slide.cta.onClick),
+                      taskCreationBlocked,
+                    )}
                     title={
-                      slide.cta.onClick && taskCreationBlocked
+                      isSlideCtaDisabled(
+                        Boolean(slide.cta.onClick),
+                        taskCreationBlocked,
+                      )
                         ? "An admin has disabled task creation for your account"
                         : undefined
                     }
                     className={`rounded-full shadow-lg shadow-primary/20 ${
-                      slide.cta.onClick && taskCreationBlocked
+                      isSlideCtaDisabled(
+                        Boolean(slide.cta.onClick),
+                        taskCreationBlocked,
+                      )
                         ? "opacity-50"
                         : ""
                     }`}
@@ -317,6 +354,7 @@ export function HeroCarousel({ onNewBounty }: { onNewBounty: () => void }) {
             type="button"
             onClick={() => goTo(i)}
             aria-label={`Go to slide ${i + 1}`}
+            aria-current={i === active ? "true" : undefined}
             className={`h-1.5 rounded-full transition-all ${
               i === active
                 ? "w-6 bg-primary"
