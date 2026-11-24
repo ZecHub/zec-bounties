@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   Check,
   ChevronDown,
@@ -29,21 +30,30 @@ const ROLE_OPTIONS = [
   { value: "ADMIN", label: "Admin", icon: ShieldCheck, redirect: "/admin" },
   { value: "CLIENT", label: "Client", icon: User, redirect: "/home" },
   { value: "HUNTER", label: "Hunter", icon: Target, redirect: "/home" },
-  { value: "TEAM", label: "Team", icon: Users, redirect: "/home" },
+  { value: "TEAM", label: "Team", icon: Users, redirect: "/teams" },
 ] as const;
 
 export function RoleToggleButton({ compact = false }: { compact?: boolean }) {
   const { currentUser, switchRole, isSwitchingRole } = useBounty();
   const router = useRouter();
+  const inFlightRef = useRef(false);
   if (!currentUser?.isRobin) return null;
 
   const current = ROLE_OPTIONS.find((r) => r.value === currentUser.role);
   const CurrentIcon = current?.icon ?? ShieldCheck;
 
   const handleSelect = async (role: (typeof ROLE_OPTIONS)[number]) => {
-    if (role.value === currentUser.role || isSwitchingRole) return;
-    await switchRole(role.value);
-    router.push(role.redirect);
+    if (role.value === currentUser.role || isSwitchingRole || inFlightRef.current)
+      return;
+    inFlightRef.current = true;
+    try {
+      await switchRole(role.value);
+      router.push(role.redirect);
+    } catch {
+      // switchRole already logs errors; avoid unhandled rejections or wrong navigation
+    } finally {
+      inFlightRef.current = false;
+    }
   };
 
   const items = ROLE_OPTIONS.map((role) => {
@@ -54,7 +64,7 @@ export function RoleToggleButton({ compact = false }: { compact?: boolean }) {
         key={role.value}
         className="gap-2"
         onClick={() => handleSelect(role)}
-        disabled={isActive}
+        disabled={isActive || isSwitchingRole}
       >
         <Icon className="h-4 w-4" />
         {role.label}
