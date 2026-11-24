@@ -2,10 +2,19 @@ const prisma = require("../prisma/client");
 const { sendToUser } = require("../middleware/websocket");
 const { USER_SELECT } = require("./userSelects");
 
+function collectActivityAudience(bounty, admins = [], teamAdmins = []) {
+  const ids = [
+    bounty?.createdBy,
+    ...(Array.isArray(admins) ? admins.map((u) => u?.id) : []),
+    ...(Array.isArray(teamAdmins) ? teamAdmins.map((m) => m?.userId) : []),
+  ];
+  return new Set(ids.filter((id) => typeof id === "string" && id.trim()));
+}
+
 // Same audience as canManageBounty: global admins, creator, team OWNER/ADMIN.
 // The actor is included so their own open modal updates too.
 async function publishActivity(row) {
-  if (!row) return;
+  if (!row || !row.bountyId) return;
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: row.bountyId },
@@ -23,12 +32,17 @@ async function publishActivity(row) {
         : [],
     ]);
 
-    const audience = new Set([
-      bounty.createdBy,
-      ...admins.map((u) => u.id),
-      ...teamAdmins.map((m) => m.userId),
-    ]);
-    audience.forEach((userId) => sendToUser(userId, "bounty_activity", row));
+    const audience = collectActivityAudience(bounty, admins, teamAdmins);
+    for (const userId of audience) {
+      try {
+        sendToUser(userId, "bounty_activity", row);
+      } catch (err) {
+        console.error(
+          `Failed to send bounty activity to user ${userId}:`,
+          err,
+        );
+      }
+    }
   } catch (err) {
     console.error("Failed to publish bounty activity:", err);
   }
@@ -47,4 +61,4 @@ async function logActivity(client, { bountyId, actorId, type, meta }) {
   return row;
 }
 
-module.exports = { logActivity, publishActivity };
+module.exports = { logActivity, publishActivity, collectActivityAudience };
