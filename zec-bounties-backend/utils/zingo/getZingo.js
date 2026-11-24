@@ -1,9 +1,23 @@
 const ZingoProcess = require("./ZingoProcess");
 
+const DEFAULT_CHAIN = "testnet";
+const DEFAULT_SERVER_URL = "https://testnet.zec.rocks:443";
+const DEFAULT_DATA_DIR = "./backup/trash";
+
+function normalizeParams(params) {
+  const p = params && typeof params === "object" ? params : {};
+  return {
+    chain: p.chain || DEFAULT_CHAIN,
+    serverUrl: p.serverUrl || DEFAULT_SERVER_URL,
+    dataDir: p.dataDir || DEFAULT_DATA_DIR,
+  };
+}
+
 /**
  * Generate a stable key for a zingo process
  */
-function zingoKey({ chain, serverUrl, dataDir }) {
+function zingoKey(params) {
+  const { chain, serverUrl, dataDir } = normalizeParams(params);
   return `${chain}::${serverUrl}::${dataDir}`;
 }
 
@@ -21,14 +35,18 @@ const sendLocks = new Map();
 function withSendLock(key, fn) {
   const prev = sendLocks.get(key) || Promise.resolve();
   const run = prev.then(fn, fn);
-  // Keep the chain alive even if fn rejects, so later callers are not stuck.
-  sendLocks.set(
-    key,
-    run.then(
-      () => undefined,
-      () => undefined,
-    ),
+  // Keep the chain alive even if fn rejects, so later callers are not stuck,
+  // and evict the key once the tail settles so sendLocks does not grow unbounded.
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
   );
+  sendLocks.set(key, settled);
+  settled.finally(() => {
+    if (sendLocks.get(key) === settled) {
+      sendLocks.delete(key);
+    }
+  });
   return run;
 }
 
@@ -38,18 +56,13 @@ function withSendLock(key, fn) {
 // either way a send must not share that window. Reads keep reusing the
 // warm process; the worst they see is a garbled display.
 function getZingo(params = {}, { forSend = false } = {}) {
-  const normalized = {
-    chain: params.chain || "testnet",
-    serverUrl: params.serverUrl || "https://testnet.zec.rocks:443",
-    dataDir: params.dataDir || "./backup/trash",
-  };
-
+  const normalized = normalizeParams(params);
   const key = zingoKey(normalized);
 
   // Reuse only for reads, and only if the process is still alive.
   // Sends always get a new process.
   const existing = pool.get(key);
-  const dead = existing && (existing.exited || existing.proc.killed);
+  const dead = existing && (existing.exited || existing.proc?.killed);
   if (existing && !dead && !forSend) {
     return existing;
   }
@@ -64,14 +77,14 @@ function getZingo(params = {}, { forSend = false } = {}) {
   pool.set(key, zingo);
 
   // Auto-cleanup if process exits — but not if it was already replaced.
-  zingo.proc.on("exit", () => {
+  zingo.proc?.on?.("exit", () => {
     if (pool.get(key) === zingo) pool.delete(key);
   });
 
   return zingo;
 }
 
-function invalidateZingo(params) {
+function invalidateZingo(params = {}) {
   const key = zingoKey(params);
   const proc = pool.get(key);
 
@@ -86,4 +99,6 @@ module.exports = {
   invalidateZingo,
   withSendLock,
   zingoKey,
+  normalizeParams,
+  _sendLocks: sendLocks,
 };
