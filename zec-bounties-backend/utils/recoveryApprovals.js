@@ -11,7 +11,7 @@ const OPEN_TTL_MS = 30 * 60 * 1000;
 const APPROVED_TTL_MS = 10 * 60 * 1000; // window to reveal once approved
 
 const requiredSignatures = (eligibleCount) =>
-  Math.min(RECOVERY_THRESHOLD, eligibleCount);
+  Math.max(0, Math.min(RECOVERY_THRESHOLD, eligibleCount));
 
 function httpError(status, message) {
   const e = new Error(message);
@@ -193,7 +193,7 @@ async function recordRecoverySignature(
 }
 
 // Re-verifies every stored signature. A row without a valid signature counts for
-// nothing, and signers must still be OWNER/ADMIN with a non-revoked key.
+// nothing, and signers must still be OWNER/ADMIN with an active, non-revoked key.
 async function countValidSignatures(db, approval) {
   const [sigs, eligibleNow] = await Promise.all([
     db.recoveryApprovalSignature.findMany({
@@ -201,16 +201,29 @@ async function countValidSignatures(db, approval) {
     }),
     getEligibleApproverIds(db, approval.teamId),
   ]);
+  if (sigs.length === 0) return 0;
+
   const eligible = new Set(eligibleNow);
+  const now = new Date();
   const keys = await db.approverKey.findMany({
-    where: { id: { in: sigs.map((s) => s.keyId) }, revokedAt: null },
+    where: {
+      id: { in: sigs.map((s) => s.keyId) },
+      revokedAt: null,
+      activatesAt: { lte: now },
+    },
   });
   const keyById = new Map(keys.map((k) => [k.id, k]));
+  const countedUsers = new Set();
 
   let valid = 0;
   for (const s of sigs) {
-    if (!approval.approverIds.includes(s.userId) || !eligible.has(s.userId))
+    if (
+      countedUsers.has(s.userId) ||
+      !approval.approverIds.includes(s.userId) ||
+      !eligible.has(s.userId)
+    ) {
       continue;
+    }
     const k = keyById.get(s.keyId);
     if (!k || k.userId !== s.userId) continue;
     try {
@@ -219,7 +232,10 @@ async function countValidSignatures(db, approval) {
         assertion: s.assertion,
         key: pin(k),
       });
-      if (r.ok) valid++;
+      if (r.ok) {
+        countedUsers.add(s.userId);
+        valid++;
+      }
     } catch {
       /* invalid signature, not counted */
     }
