@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -28,23 +29,33 @@ export function SelectWinnerModal({
   const [selectedWinnerId, setSelectedWinnerId] = useState<string | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
 
+  useEffect(() => {
+    setSelectedWinnerId(null);
+  }, [open, bounty?.id]);
+
   const handleConfirm = async () => {
-    if (!bounty || !selectedWinnerId) return;
+    if (!bounty || !selectedWinnerId || isConfirming) return;
     setIsConfirming(true);
     try {
       await onConfirm(bounty.id, selectedWinnerId);
-      onOpenChange(false);
       setSelectedWinnerId(null);
+      onOpenChange(false);
     } catch (err) {
       console.error("Failed to mark done with winner:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to mark bounty as done. Please try again.",
+      );
     } finally {
       setIsConfirming(false);
     }
   };
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open) setSelectedWinnerId(null);
-    onOpenChange(open);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isConfirming) return;
+    if (!nextOpen) setSelectedWinnerId(null);
+    onOpenChange(nextOpen);
   };
 
   if (!bounty) return null;
@@ -85,6 +96,7 @@ export function SelectWinnerModal({
               <button
                 key={a.userId}
                 type="button"
+                disabled={isConfirming}
                 onClick={() => setSelectedWinnerId(a.userId)}
                 aria-pressed={isSelected}
                 aria-label={`Select ${user?.name ?? "Unknown"} as payment recipient`}
