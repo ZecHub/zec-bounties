@@ -44,6 +44,7 @@ import { discordInviteUrl } from "@/lib/configENV";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
+import { parseDateInputValue } from "@/lib/utils";
 import { format } from "date-fns";
 import Link from "next/link";
 import {
@@ -346,7 +347,7 @@ export function BountyDetailModal({
       title: bEditTitle.trim(),
       description: bEditDescription.trim(),
       bountyAmount: amount,
-      timeToComplete: new Date(bEditDate),
+      timeToComplete: parseDateInputValue(bEditDate),
     };
     setBountyOverrides((prev) => ({ ...prev, ...next }));
     setIsEditingBounty(false);
@@ -356,7 +357,7 @@ export function BountyDetailModal({
         title: next.title,
         description: next.description,
         bountyAmount: next.bountyAmount,
-        timeToComplete: new Date(bEditDate),
+        timeToComplete: parseDateInputValue(bEditDate),
       });
       toast.success("Bounty updated");
     } catch (error) {
