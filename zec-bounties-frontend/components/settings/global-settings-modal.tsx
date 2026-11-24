@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -124,17 +124,41 @@ function WalletTypeChip({
 // ── Animated copy button ────────────────────────────────────────────────────
 function CopyButton({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        setCopied(false);
+      }, 2000);
+    } catch {
+      // Ignore clipboard permission errors
+    }
   };
 
   return (
     <button
+      type="button"
       onClick={handleCopy}
       title="Copy full address"
+      aria-label="Copy full address"
       className="relative flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
     >
       <span
@@ -392,7 +416,7 @@ function WalletRow({
             size="sm"
             variant="outline"
             onClick={() => onSetActive(config)}
-            disabled={isSetting}
+            disabled={isSettingDefault !== null || isUpdating}
             className="text-[11px] h-7 px-2 hidden sm:flex"
           >
             {isSetting ? "Setting…" : "Set active"}
@@ -444,6 +468,7 @@ export function GlobalSettingsModal({
   const [selectedConfig, setSelectedConfig] = useState<ZcashParams | null>(
     null,
   );
+  const [editingConfig, setEditingConfig] = useState<ZcashParams | null>(null);
   const [configToDelete, setConfigToDelete] = useState<ZcashParams | null>(
     null,
   );
@@ -484,7 +509,7 @@ export function GlobalSettingsModal({
       : undefined;
 
   const handleEditClick = (config: ZcashParams) => {
-    setSelectedConfig(config);
+    setEditingConfig(config);
     setEditForm({
       accountName: config.accountName || "",
       chain: config.chain || "mainnet",
@@ -499,7 +524,7 @@ export function GlobalSettingsModal({
   };
 
   const handleConfirmDelete = async () => {
-    if (!configToDelete) return;
+    if (!configToDelete || isUpdating) return;
     setIsUpdating(true);
     try {
       await deleteZcashParams(configToDelete.accountName);
@@ -536,16 +561,27 @@ export function GlobalSettingsModal({
   };
 
   const handleEditConfig = async () => {
-    if (!selectedConfig) return;
+    if (!editingConfig || isUpdating) return;
+    const trimmedAccountName = editForm.accountName.trim();
+    const trimmedServerUrl = editForm.serverUrl.trim();
+    if (!trimmedAccountName || !trimmedServerUrl) {
+      toast({
+        title: "Validation error",
+        description: "Account name and server URL are required.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsUpdating(true);
     try {
-      await updateZcashParams(selectedConfig.accountName, {
-        accountName: editForm.accountName,
+      await updateZcashParams(editingConfig.accountName, {
+        accountName: trimmedAccountName,
         chain: editForm.chain,
-        serverUrl: editForm.serverUrl,
+        serverUrl: trimmedServerUrl,
       });
       toast({ title: "Saved", description: "Configuration updated." });
       setIsEditDialogOpen(false);
+      setEditingConfig(null);
     } catch {
       toast({
         title: "Error",
@@ -558,6 +594,7 @@ export function GlobalSettingsModal({
   };
 
   const handleSetActive = async (config: ZcashParams) => {
+    if (isSettingDefault !== null || isUpdating) return;
     setIsSettingDefault(config.accountName);
     try {
       await setDefaultWallet(config.accountName, config.teamId ?? undefined);
@@ -723,7 +760,14 @@ export function GlobalSettingsModal({
       </Dialog>
 
       {/* Edit dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && isUpdating) return;
+          setIsEditDialogOpen(nextOpen);
+          if (!nextOpen) setEditingConfig(null);
+        }}
+      >
         <DialogContent className="w-full max-w-sm p-5">
           <DialogHeader>
             <DialogTitle className="text-sm font-semibold">
@@ -744,6 +788,7 @@ export function GlobalSettingsModal({
                     accountName: e.target.value,
                   }))
                 }
+                disabled={isUpdating}
                 placeholder="e.g., My Wallet"
                 className="mt-1.5 h-8 text-sm"
               />
@@ -752,7 +797,11 @@ export function GlobalSettingsModal({
               <Label htmlFor="edit-chain" className="text-xs">
                 Network
               </Label>
-              <Select value={editForm.chain} onValueChange={handleChainChange}>
+              <Select
+                value={editForm.chain}
+                onValueChange={handleChainChange}
+                disabled={isUpdating}
+              >
                 <SelectTrigger className="mt-1.5 h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -775,6 +824,7 @@ export function GlobalSettingsModal({
                     serverUrl: e.target.value,
                   }))
                 }
+                disabled={isUpdating}
                 placeholder="https://zec.rocks:443"
                 className="mt-1.5 h-8 text-sm"
               />
@@ -783,7 +833,11 @@ export function GlobalSettingsModal({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setIsEditDialogOpen(false)}
+                onClick={() => {
+                  if (isUpdating) return;
+                  setIsEditDialogOpen(false);
+                  setEditingConfig(null);
+                }}
                 disabled={isUpdating}
               >
                 Cancel
@@ -804,7 +858,11 @@ export function GlobalSettingsModal({
       {/* Delete confirmation */}
       <AlertDialog
         open={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && isUpdating) return;
+          setIsDeleteDialogOpen(nextOpen);
+          if (!nextOpen) setConfigToDelete(null);
+        }}
       >
         <AlertDialogContent className="w-full max-w-sm p-5">
           <AlertDialogHeader>
@@ -826,7 +884,10 @@ export function GlobalSettingsModal({
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleConfirmDelete}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
               disabled={isUpdating}
               className="bg-destructive hover:bg-destructive/90 h-8 text-xs"
             >
