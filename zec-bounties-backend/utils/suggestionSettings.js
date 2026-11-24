@@ -8,6 +8,21 @@ let cache = null;
 let cacheAt = 0;
 const CACHE_MS = 10_000;
 
+function parseThreshold(raw, fallback = DEFAULT_THRESHOLD) {
+  if (raw === undefined || raw === null) return fallback;
+  const trimmed = String(raw).trim();
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizeThreshold(threshold) {
+  if (typeof threshold === "string" && threshold.trim() === "") return 0;
+  const num = Number(threshold);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  return Math.floor(num);
+}
+
 async function loadSettings() {
   const now = Date.now();
   if (cache && now - cacheAt < CACHE_MS) return cache;
@@ -20,11 +35,7 @@ async function loadSettings() {
   const mode = VALID_MODES.has(map.suggestionMode)
     ? map.suggestionMode
     : DEFAULT_MODE;
-  const threshold = Math.max(
-    0,
-    parseInt(map.suggestionThreshold ?? String(DEFAULT_THRESHOLD), 10) ||
-      DEFAULT_THRESHOLD,
-  );
+  const threshold = parseThreshold(map.suggestionThreshold, DEFAULT_THRESHOLD);
 
   cache = { mode, threshold };
   cacheAt = now;
@@ -44,7 +55,7 @@ async function setSuggestionSettings({ mode, threshold }) {
   if (!VALID_MODES.has(mode)) {
     throw new Error("Invalid suggestion mode");
   }
-  const t = Math.max(0, Math.floor(Number(threshold) || 0));
+  const t = normalizeThreshold(threshold);
 
   await prisma.$transaction([
     prisma.platformSetting.upsert({
@@ -67,5 +78,7 @@ module.exports = {
   getSuggestionSettings,
   setSuggestionSettings,
   invalidateSuggestionSettingsCache,
+  parseThreshold,
+  normalizeThreshold,
   VALID_MODES,
 };
