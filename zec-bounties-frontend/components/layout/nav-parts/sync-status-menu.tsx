@@ -17,6 +17,33 @@ import type { SyncStatus } from "@/lib/bounty-context";
 import { cn } from "@/lib/utils";
 import { SyncStatusSummary } from "./sync-status-summary";
 
+export function getSyncIndicatorState(
+  syncStatus: SyncStatus | null,
+  syncStatusError: string | null | undefined,
+  isSyncing: boolean,
+): { hasError: boolean; done: boolean; dotClass: string } {
+  const hasError = typeof syncStatusError === "string" && syncStatusError.trim().length > 0;
+  const pct =
+    syncStatus?.percentage_total_blocks_scanned ??
+    syncStatus?.percentage_total_outputs_scanned;
+  const done =
+    !isSyncing &&
+    syncStatus?.in_progress !== true &&
+    (pct === 100 || syncStatus?.in_progress === false);
+
+  const dotClass = hasError
+    ? "bg-destructive"
+    : isSyncing
+      ? "bg-amber-400 animate-pulse"
+      : done
+        ? "bg-emerald-500"
+        : syncStatus
+          ? "bg-amber-400 animate-pulse"
+          : "bg-muted-foreground/30";
+
+  return { hasError, done, dotClass };
+}
+
 export function SyncStatusMenu({
   syncStatus,
   syncStatusError,
@@ -26,21 +53,18 @@ export function SyncStatusMenu({
   syncStatus: SyncStatus | null;
   syncStatusError: string | null | undefined;
   isSyncing: boolean;
-  onCheckSync: () => void;
+  onCheckSync: () => void | Promise<unknown>;
 }) {
-  const hasError = !!syncStatusError;
-  const pct =
-    syncStatus?.percentage_total_blocks_scanned ||
-    syncStatus?.percentage_total_outputs_scanned;
-  const done = pct === 100 || syncStatus?.in_progress === false;
+  const { hasError, dotClass } = getSyncIndicatorState(
+    syncStatus,
+    syncStatusError,
+    isSyncing,
+  );
 
-  const dotClass = hasError
-    ? "bg-destructive"
-    : done
-      ? "bg-emerald-500"
-      : syncStatus
-        ? "bg-amber-400 animate-pulse"
-        : "bg-muted-foreground/30";
+  const handleCheckSync = () => {
+    if (isSyncing) return;
+    Promise.resolve(onCheckSync()).catch(() => {});
+  };
 
   return (
     <DropdownMenu>
@@ -88,7 +112,7 @@ export function SyncStatusMenu({
             variant="outline"
             size="sm"
             className="w-full gap-1.5 text-xs h-8"
-            onClick={onCheckSync}
+            onClick={handleCheckSync}
             disabled={isSyncing}
           >
             {isSyncing ? (
