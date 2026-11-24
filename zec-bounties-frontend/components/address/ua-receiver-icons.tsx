@@ -123,15 +123,24 @@ export function matchesReceiverFilter(
     (k) => !!r[k],
   );
 
-  if (filter.includes("none") && filter.length === 1) {
-    return activeKeys.length === 0;
-  }
-
-  const flags = filter.filter((f) => f !== "none") as Exclude<
+  const uniqueFilter = Array.from(new Set(filter));
+  const hasNone = uniqueFilter.includes("none");
+  const flags = uniqueFilter.filter((f) => f !== "none") as Exclude<
     UaReceiverKey,
     "none"
   >[];
-  if (!flags.length) return true;
+
+  if (hasNone && flags.length === 0) {
+    return activeKeys.length === 0;
+  }
+
+  if (hasNone) {
+    // An address cannot simultaneously have no receivers and also include receiver flags.
+    if (mode === "all" || mode === "exact") {
+      return false;
+    }
+    return activeKeys.length === 0 || flags.some((f) => !!r[f]);
+  }
 
   if (mode === "exact") {
     return (
@@ -164,6 +173,7 @@ export function UaFilterChips({
             key={b.key}
             type="button"
             title={b.label}
+            aria-pressed={active}
             onClick={() => toggle(b.key)}
             className={cn(
               "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border",
