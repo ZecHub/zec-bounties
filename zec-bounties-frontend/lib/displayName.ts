@@ -5,8 +5,14 @@ export interface DisplayNameUser {
   name?: string | null;
 }
 
+function cleanText(value?: string | null): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function displayName(user?: DisplayNameUser | null): string {
-  return user?.nickname || user?.name || "User";
+  return cleanText(user?.nickname) || cleanText(user?.name) || "User";
 }
 
 export interface DisplayNameBounty {
@@ -15,33 +21,44 @@ export interface DisplayNameBounty {
 }
 
 export function bountyCreatorName(bounty?: DisplayNameBounty | null): string {
-  return bounty?.team?.name || displayName(bounty?.createdByUser);
+  return cleanText(bounty?.team?.name) || displayName(bounty?.createdByUser);
 }
 
 export function bountyCreatorInitial(
   bounty?: DisplayNameBounty | null,
 ): string {
-  return bountyCreatorName(bounty).charAt(0).toUpperCase() || "?";
+  const first = Array.from(bountyCreatorName(bounty))[0];
+  return first ? first.toUpperCase() : "?";
 }
 
 export interface DisplayNameUserWithAvatar extends DisplayNameUser {
   avatar?: string | null;
 }
 
-const ABSOLUTE_URL_RE = /^https?:\/\//;
+const ABSOLUTE_URL_RE = /^https?:\/\//i;
 
 /** Resolves a possibly-relative backend asset path to a full URL. */
 function resolveAssetUrl(raw: string): string {
-  return ABSOLUTE_URL_RE.test(raw) ? raw : `${backendUrl}${raw}`;
+  const trimmed = raw.trim();
+  if (ABSOLUTE_URL_RE.test(trimmed)) return trimmed;
+  const base = backendUrl.replace(/\/+$/, "");
+  const path = trimmed.replace(/^\/+/, "");
+  return `${base}/${path}`;
 }
 
 export function pinataUrl(cid?: string | null): string | undefined {
-  if (!cid) return undefined;
+  const trimmed = cleanText(cid);
+  if (!trimmed) return undefined;
+  if (ABSOLUTE_URL_RE.test(trimmed)) return trimmed;
 
-  const gateway =
-    process.env.NEXT_PUBLIC_PINATA_GATEWAY || "gateway.pinata.cloud";
+  const normalizedCid = trimmed.replace(/^ipfs:\/\//i, "").replace(/^\/+/, "");
+  if (!normalizedCid) return undefined;
 
-  return `https://${gateway}/ipfs/${cid}`;
+  const rawGateway =
+    cleanText(process.env.NEXT_PUBLIC_PINATA_GATEWAY) || "gateway.pinata.cloud";
+  const gateway = rawGateway.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+
+  return `https://${gateway}/ipfs/${normalizedCid}`;
 }
 
 /**
@@ -57,11 +74,11 @@ export function bountyCreatorAvatarSrc(
       })
     | null,
 ): string | undefined {
-  if (bounty?.team?.logo) {
-    return pinataUrl(bounty.team.logo);
+  const teamLogo = cleanText(bounty?.team?.logo);
+  if (teamLogo) {
+    return pinataUrl(teamLogo);
   }
 
-  return bounty?.createdByUser?.avatar
-    ? resolveAssetUrl(bounty.createdByUser.avatar)
-    : undefined;
+  const userAvatar = cleanText(bounty?.createdByUser?.avatar);
+  return userAvatar ? resolveAssetUrl(userAvatar) : undefined;
 }
