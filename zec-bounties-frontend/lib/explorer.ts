@@ -3,14 +3,19 @@
 // ("mainnet"/"testnet") and bounty chains ("MAIN"/"TEST").
 export function getExplorerUrl(
   txid: string,
-  opts: { chain?: string; serverUrl?: string } = {},
+  opts: { chain?: string; serverUrl?: string } | null = {},
 ): string {
+  const safeOpts = opts ?? {};
+  const chain = typeof safeOpts.chain === "string" ? safeOpts.chain.trim().toLowerCase() : "";
+  const serverUrl = typeof safeOpts.serverUrl === "string" ? safeOpts.serverUrl.toLowerCase() : "";
   const isTestnet =
-    opts.chain === "testnet" ||
-    opts.chain === "TEST" ||
-    (opts.serverUrl ?? "").includes("testnet");
+    chain === "testnet" ||
+    chain === "test" ||
+    serverUrl.includes("testnet");
+
+  const encodedTxid = encodeURIComponent(typeof txid === "string" ? txid.trim() : "");
 
   return isTestnet
-    ? `https://zexplorer.app/testnet/tx/${txid}`
-    : `https://blockchair.com/zcash/transaction/${txid}`;
+    ? `https://zexplorer.app/testnet/tx/${encodedTxid}`
+    : `https://blockchair.com/zcash/transaction/${encodedTxid}`;
 }
