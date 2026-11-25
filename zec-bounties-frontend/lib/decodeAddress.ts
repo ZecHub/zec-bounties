@@ -1,27 +1,38 @@
 // lib/decodeAddress.ts
 import { ZaddrModuleAny } from "./types";
 
-let wasmModule: any = null;
+let wasmModule: ZaddrModuleAny | null = null;
 let wasmInitialized = false;
+let initPromise: Promise<void> | null = null;
 
 export function isDecoderReady() {
-  return wasmInitialized;
+  return wasmInitialized && wasmModule !== null;
 }
 
 export async function initAddressDecoder() {
-  if (wasmInitialized) return;
-  try {
-    const mod: ZaddrModuleAny =
-      await import("@elemental-zcash/zaddr_wasm_parser");
-    if (typeof mod.initWasm === "function") {
-      await mod.initWasm();
+  if (wasmInitialized && wasmModule !== null) return;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      const mod: ZaddrModuleAny =
+        await import("@elemental-zcash/zaddr_wasm_parser");
+      if (typeof mod.initWasm === "function") {
+        await mod.initWasm();
+      }
+      wasmModule = mod;
+      wasmInitialized = true;
+      console.log("[decodeAddress] WASM decoder ready");
+    } catch (err) {
+      wasmModule = null;
+      wasmInitialized = false;
+      console.error("Failed to load Zcash address decoder WASM:", err);
+    } finally {
+      initPromise = null;
     }
-    wasmModule = mod;
-    wasmInitialized = true;
-    console.log("[decodeAddress] WASM decoder ready");
-  } catch (err) {
-    console.error("Failed to load Zcash address decoder WASM:", err);
-  }
+  })();
+
+  return initPromise;
 }
 
 export type AddressReceivers = {
@@ -64,7 +75,12 @@ export function getAddressReceivers(address: string): AddressReceivers {
     type: "Unknown",
   };
 
-  if (!wasmModule || !address?.trim()) {
+  if (!wasmModule || typeof address !== "string") {
+    return empty;
+  }
+
+  const addr = address.trim();
+  if (!addr) {
     return empty;
   }
 
@@ -76,18 +92,20 @@ export function getAddressReceivers(address: string): AddressReceivers {
     const receiversFn =
       wasmModule.getAddressReceivers ?? wasmModule.get_address_receivers;
 
-    if (!receiversFn) {
+    if (typeof receiversFn !== "function") {
       return empty;
     }
 
-    const addr = address.trim();
-
-    if (validateFn && !validateFn(addr)) {
+    if (typeof validateFn === "function" && !validateFn(addr)) {
       return { ...empty, type: "Invalid" };
     }
 
-    const rawType = typeFn ? String(typeFn(addr)) : null;
+    const rawTypeValue = typeof typeFn === "function" ? typeFn(addr) : null;
+    const rawType = rawTypeValue != null ? String(rawTypeValue) : null;
     const result = receiversFn(addr);
+    if (!result || typeof result !== "object") {
+      return { ...empty, rawType, type: "Invalid" };
+    }
 
     // WASM still exposes orchard; product label is Ironwood
     const ironwood = !!result.orchard;
