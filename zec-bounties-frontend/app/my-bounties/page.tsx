@@ -24,6 +24,10 @@ import { useState, useMemo } from "react";
 import { Bounty } from "@/lib/types";
 import type { BountyStatus } from "@/lib/types";
 import { useTaskCreationBlocked } from "@/hooks/use-task-creation-blocked";
+import {
+  bountyEarningDate,
+  buildMonthlyEarnings,
+} from "@/lib/bounty-earnings";
 
 const STATUS_COLUMNS: {
   status: BountyStatus;
@@ -144,25 +148,15 @@ export default function MyBountiesPage() {
     };
   }, [userBounties, mainnetEarned]);
 
-  const monthlyEarnings = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const mapAmount: Record<number, number> = {};
-    const mapBounties: Record<number, Bounty[]> = {};
-    mainnetEarned.forEach((b) => {
-      const raw = (b as any).dateCreated ?? (b as any).createdAt ?? null;
-      if (!raw) return;
-      const d = new Date(raw);
-      if (isNaN(d.getTime()) || d.getFullYear() !== currentYear) return;
-      const m = d.getMonth();
-      mapAmount[m] = (mapAmount[m] || 0) + b.bountyAmount;
-      mapBounties[m] = [...(mapBounties[m] || []), b];
-    });
-    return MONTH_LABELS.map((label, i) => ({
-      label,
-      amount: mapAmount[i] || 0,
-      bounties: mapBounties[i] || [],
-    }));
-  }, [mainnetEarned]);
+  const monthlyEarnings = useMemo(
+    () =>
+      buildMonthlyEarnings(
+        mainnetEarned,
+        new Date().getFullYear(),
+        MONTH_LABELS,
+      ),
+    [mainnetEarned],
+  );
 
   const maxEarning = Math.max(...monthlyEarnings.map((m) => m.amount), 1);
   const yearTotal = monthlyEarnings.reduce((s, m) => s + m.amount, 0);
@@ -627,13 +621,13 @@ export default function MyBountiesPage() {
                                     {b.title}
                                   </p>
                                   <p className="text-xs text-muted-foreground mt-0.5">
-                                    {new Date(
-                                      (b as any).dateCreated ??
-                                        (b as any).createdAt,
-                                    ).toLocaleDateString("en-US", {
-                                      month: "short",
-                                      day: "numeric",
-                                    })}
+                                    {bountyEarningDate(b)?.toLocaleDateString(
+                                      "en-US",
+                                      {
+                                        month: "short",
+                                        day: "numeric",
+                                      },
+                                    )}
                                   </p>
                                 </div>
                                 <span className="text-sm font-semibold shrink-0 tabular-nums">
