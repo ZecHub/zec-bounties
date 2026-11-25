@@ -42,24 +42,45 @@ let cachedAt = 0;
 let inFlight: Promise<number> | null = null;
 const subscribers = new Set<(price: number) => void>();
 
+function createTimeoutSignal(timeoutMs: number): {
+  signal: AbortSignal | undefined;
+  cleanup: () => void;
+} {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return { signal: AbortSignal.timeout(timeoutMs), cleanup: () => {} };
+  }
+  if (typeof AbortController === "undefined") {
+    return { signal: undefined, cleanup: () => {} };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+  };
+}
+
 async function fetchFromSources(): Promise<number> {
   for (const source of PRICE_SOURCES) {
+    const { signal, cleanup } = createTimeoutSignal(REQUEST_TIMEOUT_MS);
     try {
       const res = await fetch(source.url, {
         headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        ...(signal ? { signal } : {}),
       });
       if (!res.ok) continue;
       const price = source.parse(await res.json());
       if (Number.isFinite(price) && price > 0) return price;
     } catch {
       // network/CORS/timeout: try the next source
+    } finally {
+      cleanup();
     }
   }
   throw new Error("All ZEC price sources failed");
 }
 
-async function fetchZecPrice(): Promise<number> {
+export async function fetchZecPrice(): Promise<number> {
   const now = Date.now();
 
   if (cachedPrice !== null && now - cachedAt < CACHE_TTL_MS) {
@@ -87,6 +108,12 @@ async function fetchZecPrice(): Promise<number> {
   return inFlight;
 }
 
+export function resetZecPriceCache(): void {
+  cachedPrice = null;
+  cachedAt = 0;
+  inFlight = null;
+}
+
 export function useZecPrice(): PriceState {
   const [price, setPrice] = useState<number | null>(cachedPrice);
   const [isLoading, setIsLoading] = useState(cachedPrice === null);
@@ -96,7 +123,11 @@ export function useZecPrice(): PriceState {
     let cancelled = false;
 
     const onUpdate = (p: number) => {
-      if (!cancelled) setPrice(p);
+      if (!cancelled) {
+        setPrice(p);
+        setError(null);
+        setIsLoading(false);
+      }
     };
     subscribers.add(onUpdate);
 
@@ -104,6 +135,7 @@ export function useZecPrice(): PriceState {
       .then((p) => {
         if (!cancelled) {
           setPrice(p);
+          setError(null);
           setIsLoading(false);
         }
       })
