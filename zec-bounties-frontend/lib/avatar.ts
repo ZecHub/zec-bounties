@@ -9,16 +9,23 @@ const PALETTE = [
   "#853535",
 ];
 
-export function nameToColor(name: string): string {
+export function nameToColor(name: string | null | undefined): string {
+  const safeName = typeof name === "string" ? name : "";
   let h = 0;
-  for (let i = 0; i < name.length; i++) {
-    h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
+  for (let i = 0; i < safeName.length; i++) {
+    h = (h * 31 + safeName.charCodeAt(i)) & 0xffffffff;
   }
   return PALETTE[Math.abs(h) % PALETTE.length];
 }
 
-export function nameToInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0][0].toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+function firstChar(part: string): string {
+  return Array.from(part)[0] ?? "";
+}
+
+export function nameToInitials(name: string | null | undefined): string {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed) return "?";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return firstChar(parts[0]).toUpperCase() || "?";
+  return (firstChar(parts[0]) + firstChar(parts[parts.length - 1])).toUpperCase() || "?";
 }
