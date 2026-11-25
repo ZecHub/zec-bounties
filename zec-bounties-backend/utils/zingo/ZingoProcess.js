@@ -1,5 +1,6 @@
 const { spawn } = require("child_process");
 const { existsSync } = require("fs");
+const { isSafeShieldedAddress } = require("../../helpers/validateAddress");
 const {
   assertFixedCommand,
   parseAddressLine,
@@ -33,22 +34,41 @@ function log(tag, message, data) {
   else console.log(`${head}\n${preview(data)}`);
 }
 
-function extractJson(text) {
-  let start = text.indexOf("{");
+function extractBalancedJson(text, openChar, closeChar) {
+  const start = text.indexOf(openChar);
   if (start === -1) return null;
 
   let depth = 0;
+  let inString = false;
+  let escaped = false;
 
   for (let i = start; i < text.length; i++) {
-    if (text[i] === "{") depth++;
-    else if (text[i] === "}") depth--;
+    const ch = text[i];
 
-    if (depth === 0) {
-      return text.slice(start, i + 1);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === openChar) {
+      depth++;
+    } else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
     }
   }
 
   return null;
+}
+
+function extractJson(text) {
+  return extractBalancedJson(text, "{", "}");
 }
 
 // Extract complete top-level JSON blocks while respecting nested objects
@@ -88,36 +108,10 @@ function extractJsonBlocks(text) {
 }
 
 function extractJsonAddress(text) {
-  let start = text.indexOf("[");
+  const arrayJson = extractBalancedJson(text, "[", "]");
+  if (arrayJson !== null) return arrayJson;
 
-  if (start !== -1) {
-    let depth = 0;
-
-    for (let i = start; i < text.length; i++) {
-      if (text[i] === "[") depth++;
-      else if (text[i] === "]") depth--;
-
-      if (depth === 0) {
-        return text.slice(start, i + 1);
-      }
-    }
-  }
-
-  start = text.indexOf("{");
-  if (start === -1) return null;
-
-  let depth = 0;
-
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === "{") depth++;
-    else if (text[i] === "}") depth--;
-
-    if (depth === 0) {
-      return text.slice(start, i + 1);
-    }
-  }
-
-  return null;
+  return extractBalancedJson(text, "{", "}");
 }
 
 function parseZingoBalance(output) {
@@ -405,8 +399,20 @@ class ZingoProcess {
     return new Promise((resolve, reject) => {
       let buffer = "";
       let resolved = false;
+      let settled = false;
+      let resolveTimer = null;
 
       log("rescan", `sending "${command}" (timeout ${timeout}ms)`);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        if (resolveTimer !== null) {
+          clearTimeout(resolveTimer);
+          resolveTimer = null;
+        }
+        this.proc.stdout.off("data", onData);
+        this.proc.stderr.off("data", onError);
+      };
 
       const onData = (chunk) => {
         buffer += chunk.toString();
@@ -415,9 +421,15 @@ class ZingoProcess {
         // Check if "Launching rescan..." appeared
         if (clean.includes("Launching rescan...") && !resolved) {
           resolved = true;
+          clearTimeout(timer);
+          this.proc.stdout.off("data", onData);
+          this.proc.stderr.off("data", onError);
           log("rescan", "saw 'Launching rescan...', resolving in 3s");
 
-          setTimeout(() => {
+          resolveTimer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolveTimer = null;
             log("rescan", "resolved", clean);
             resolve({ message: "Rescan launched", output: clean });
           }, 3000);
@@ -425,18 +437,16 @@ class ZingoProcess {
       };
 
       const onError = (err) => {
+        if (settled) return;
+        settled = true;
         cleanup();
         log("rescan", "stderr rejection", err.toString());
         reject(err);
       };
 
-      const cleanup = () => {
-        clearTimeout(timer);
-        this.proc.stdout.off("data", onData);
-        this.proc.stderr.off("data", onError);
-      };
-
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         cleanup();
         log("rescan", "TIMEOUT, output so far:", buffer);
         reject(new Error("Rescan command timeout"));
@@ -452,11 +462,20 @@ class ZingoProcess {
   sync(command, timeout = 360000) {
     return new Promise((resolve, reject) => {
       const startBufferLen = this.buffer.length;
+      let settled = false;
+
+      const cleanup = () => {
+        clearInterval(interval);
+        clearTimeout(timer);
+        const idx = this.waiters.indexOf(onWaiter);
+        if (idx !== -1) this.waiters.splice(idx, 1);
+      };
 
       log("sync", `sending "${command}" (timeout ${timeout}ms)`);
       this.proc.stdin.write(assertFixedCommand(command) + "\n");
 
       const check = () => {
+        if (settled) return true;
         const chunk = this.buffer.slice(startBufferLen);
 
         // Remove ANSI
@@ -465,6 +484,8 @@ class ZingoProcess {
         const jsonText = extractJson(clean);
 
         if (jsonText) {
+          settled = true;
+          cleanup();
           try {
             const parsed = JSON.parse(jsonText);
             log("sync", "resolved", parsed);
@@ -480,15 +501,18 @@ class ZingoProcess {
         return false;
       };
 
+      const onWaiter = () => {
+        check();
+      };
+
       const interval = setInterval(() => {
-        if (check()) {
-          clearInterval(interval);
-          clearTimeout(timer);
-        }
+        check();
       }, 50);
 
       const timer = setTimeout(() => {
-        clearInterval(interval);
+        if (settled) return;
+        settled = true;
+        cleanup();
         log(
           "sync",
           "TIMEOUT, output so far:",
@@ -497,23 +521,27 @@ class ZingoProcess {
         reject(new Error("Zingo command timeout"));
       }, timeout);
 
-      this.waiters.push(() => {
-        if (check()) {
-          clearInterval(interval);
-          clearTimeout(timer);
-        }
-      });
+      this.waiters.push(onWaiter);
     });
   }
 
   addresses(command, timeout = 30000) {
     return new Promise((resolve, reject) => {
       const startBufferLen = this.buffer.length;
+      let settled = false;
+
+      const cleanup = () => {
+        clearInterval(interval);
+        clearTimeout(timer);
+        const idx = this.waiters.indexOf(onWaiter);
+        if (idx !== -1) this.waiters.splice(idx, 1);
+      };
 
       log("addresses", `sending "${command}" (timeout ${timeout}ms)`);
       this.proc.stdin.write(assertFixedCommand(command) + "\n");
 
       const check = () => {
+        if (settled) return true;
         const chunk = this.buffer.slice(startBufferLen);
 
         // Remove ANSI
@@ -522,6 +550,8 @@ class ZingoProcess {
         const jsonText = extractJsonAddress(clean);
 
         if (jsonText) {
+          settled = true;
+          cleanup();
           try {
             const parsed = JSON.parse(jsonText);
             log("addresses", "resolved", parsed);
@@ -537,15 +567,18 @@ class ZingoProcess {
         return false;
       };
 
+      const onWaiter = () => {
+        check();
+      };
+
       const interval = setInterval(() => {
-        if (check()) {
-          clearInterval(interval);
-          clearTimeout(timer);
-        }
+        check();
       }, 50);
 
       const timer = setTimeout(() => {
-        clearInterval(interval);
+        if (settled) return;
+        settled = true;
+        cleanup();
         log(
           "addresses",
           "TIMEOUT, output so far:",
@@ -554,12 +587,7 @@ class ZingoProcess {
         reject(new Error("Zingo command timeout"));
       }, timeout);
 
-      this.waiters.push(() => {
-        if (check()) {
-          clearInterval(interval);
-          clearTimeout(timer);
-        }
-      });
+      this.waiters.push(onWaiter);
     });
   }
 
@@ -643,16 +671,28 @@ class ZingoProcess {
       }
 
       const startBufferLen = this.buffer.length;
+      let settled = false;
+
+      const cleanup = () => {
+        clearInterval(interval);
+        clearTimeout(timer);
+        const idx = this.waiters.indexOf(onWaiter);
+        if (idx !== -1) this.waiters.splice(idx, 1);
+      };
+
       log("parseAddress", `sending "${command}" (timeout ${timeout}ms)`);
       this.proc.stdin.write(command + "\n");
 
       const check = () => {
+        if (settled) return true;
         const chunk = this.buffer.slice(startBufferLen);
         const clean = chunk.replace(/\u001b\[[0-9;]*m/g, "");
 
         const jsonText = extractJsonAddress(clean);
 
         if (jsonText) {
+          settled = true;
+          cleanup();
           try {
             const parsed = JSON.parse(jsonText);
             log("parseAddress", "resolved", parsed);
@@ -668,15 +708,18 @@ class ZingoProcess {
         return false;
       };
 
+      const onWaiter = () => {
+        check();
+      };
+
       const interval = setInterval(() => {
-        if (check()) {
-          clearInterval(interval);
-          clearTimeout(timer);
-        }
+        check();
       }, 50);
 
       const timer = setTimeout(() => {
-        clearInterval(interval);
+        if (settled) return;
+        settled = true;
+        cleanup();
         log(
           "parseAddress",
           "TIMEOUT, output so far:",
@@ -685,17 +728,17 @@ class ZingoProcess {
         reject(new Error("Zingo parse_address timeout"));
       }, timeout);
 
-      this.waiters.push(() => {
-        if (check()) {
-          clearInterval(interval);
-          clearTimeout(timer);
-        }
-      });
+      this.waiters.push(onWaiter);
     });
   }
 
   // Resolves with { txids, error, timedOut, raw, stderr }.
   async quicksend(recipients, timeout = 360000) {
+    if (!Array.isArray(recipients) || recipients.length === 0) {
+      log("quicksend", "refusing empty recipient list");
+      throw new Error("No recipients provided");
+    }
+
     log(
       "quicksend",
       `called with ${recipients.length} recipient(s)`,
@@ -705,18 +748,31 @@ class ZingoProcess {
     // An address rides inside the single-quoted REPL command and mutating
     // one would redirect funds, so reject, never sanitize.
     const sanitizedRecipients = recipients.map((r) => {
-      if (!/^[a-z0-9]+$/i.test(String(r.address))) {
-        log("quicksend", `refusing malformed address: ${String(r.address)}`);
+      if (
+        !r ||
+        typeof r.address !== "string" ||
+        !isSafeShieldedAddress(r.address)
+      ) {
+        log("quicksend", `refusing malformed address: ${String(r?.address)}`);
         throw new Error("Refusing to send to malformed address");
+      }
+
+      const numericAmount = Number(r.amount);
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        log("quicksend", `refusing invalid amount: ${String(r.amount)}`);
+        throw new Error("Refusing to send invalid amount");
       }
 
       return {
         address: r.address,
-        amount: Math.ceil(Number(r.amount)),
+        amount: Math.ceil(numericAmount),
         // zingo-cli splits the line with shellwords, so a quote in a memo
         // (bounty titles end up here) cuts the argument short and the REPL
         // answers "Mismatched Quotes". Strip rather than fail the batch.
-        memo: (r.memo || "Sent from the ZEC bounty app!").replace(/'/g, ""),
+        memo: String(r.memo || "Sent from the ZEC bounty app!").replace(
+          /'/g,
+          "",
+        ),
       };
     });
 
@@ -1019,5 +1075,9 @@ for (const name of [
     return this.exclusive(() => command.apply(this, args), name);
   };
 }
+
+ZingoProcess.extractJson = extractJson;
+ZingoProcess.extractJsonBlocks = extractJsonBlocks;
+ZingoProcess.extractJsonAddress = extractJsonAddress;
 
 module.exports = ZingoProcess;
