@@ -34,3 +34,16 @@ export const hasInvalidLinks = (fields: string[]) =>
     .split(/[\s,]+/)
     .filter(Boolean)
     .some((t) => !isHttpUrl(t));
+
+export type DeliverableLinkValidationError = "invalid" | "too_many";
+
+// Validation shared by initial submission and later edits. Empty input is
+// allowed here because the API treats deliverableUrl as optional; callers that
+// require a link for a new submission check that separately.
+export function validateDeliverableLinks(
+  fields: string[],
+): DeliverableLinkValidationError | null {
+  if (hasInvalidLinks(fields)) return "invalid";
+  if (parseLinks(fields.join("\n")).length > MAX_LINKS) return "too_many";
+  return null;
+}

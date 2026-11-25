@@ -34,3 +34,25 @@ for (const [label, body] of badBodies) {
     assert.equal(route.effects.broadcasts.length, 0);
   });
 }
+
+
+for (const [label, deliverableUrl, error] of [
+  ["non-http link", "javascript:alert(1)", "valid http:// or https:// URL"],
+  ["more than five packed links", Array.from({ length: 6 }, (_, i) => `https://example.com/${i}`).join(" "), "up to 5 deliverable links"],
+]) {
+  test(`submit: ${label} is a 400 and never reaches the database`, async () => {
+    const route = loadSubmissionRoute(untouchedDb);
+    const res = await route.submit(hunter, "bounty", { description: "Done", deliverableUrl });
+    assert.equal(res.statusCode, 400, JSON.stringify(res.body));
+    assert.match(res.body.error, new RegExp(error));
+    assert.equal(route.effects.broadcasts.length, 0);
+  });
+
+  test(`edit submission: ${label} is a 400 and never reaches the database`, async () => {
+    const route = loadSubmissionEditRoute(untouchedDb);
+    const res = await route.edit(hunter, "submission", { description: "Done", deliverableUrl });
+    assert.equal(res.statusCode, 400, JSON.stringify(res.body));
+    assert.match(res.body.error, new RegExp(error));
+    assert.equal(route.effects.broadcasts.length, 0);
+  });
+}

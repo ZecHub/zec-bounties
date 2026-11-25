@@ -22,6 +22,7 @@ const {
 } = require("../utils/cache");
 const sendMail = require("../utils/sendMail");
 const notifyUser = require("../utils/notifyUser");
+const { validateDeliverableUrl } = require("../utils/deliverableLinks");
 const { notifyNewBounty } = require("../utils/discord/discordNotify");
 // Bot notices for In-progress bounties and bounty state changes
 const {
@@ -1583,6 +1584,10 @@ router.post("/:id/submit", authenticate, async (req, res) => {
         .status(400)
         .json({ error: "Deliverable URL must be a string" });
     }
+    const deliverableUrlError = validateDeliverableUrl(deliverableUrl);
+    if (deliverableUrlError) {
+      return res.status(400).json({ error: deliverableUrlError });
+    }
 
     // Retry serialization conflicts with a fresh eligibility snapshot. Retrying
     // only the writes would preserve a stale duplicate/status decision.
@@ -2057,6 +2062,10 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       return res
         .status(400)
         .json({ error: "Deliverable URL must be a string" });
+    }
+    const deliverableUrlError = validateDeliverableUrl(deliverableUrl);
+    if (deliverableUrlError) {
+      return res.status(400).json({ error: deliverableUrlError });
     }
 
     const submission = await prisma.workSubmission.findUnique({
