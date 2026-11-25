@@ -40,6 +40,10 @@ export function parseDateInputValue(value: string): Date {
   return new Date(year, month - 1, day);
 }
 
+export function localDateAfter(days: number, from = new Date()): Date {
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
+}
+
 export const confirmedTotal = (b: Balance | undefined) => {
   return (
     ((b?.confirmed_ironwood_balance ?? 0) +

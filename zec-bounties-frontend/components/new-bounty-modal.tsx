@@ -27,7 +27,11 @@ import type { BountyFormData } from "@/lib/types";
 import { Loader2, Plus, Clock, Tag, AlignLeft, Users, Ban } from "lucide-react";
 import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
-import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
+import {
+  localDateAfter,
+  toDateInputValue,
+  parseDateInputValue,
+} from "@/lib/utils";
 import { REPOS } from "@/lib/repos";
 import { RepoMenuLabel } from "@/components/repo-filter";
 
@@ -66,7 +70,7 @@ export function NewBountyModal({
     title: "",
     description: "",
     bountyAmount: 0,
-    timeToComplete: new Date(),
+    timeToComplete: localDateAfter(7),
     category: "",
     teamId: "",
     targetRepo: "",
@@ -197,7 +201,7 @@ export function NewBountyModal({
         title: "",
         description: "",
         bountyAmount: 0,
-        timeToComplete: new Date(),
+        timeToComplete: localDateAfter(7),
         category: "",
         teamId: "",
         targetRepo: "",
@@ -525,7 +529,7 @@ export function NewBountyModal({
               <Input
                 id="date"
                 type="date"
-                min={new Date().toISOString().split("T")[0]}
+                min={toDateInputValue(localDateAfter(1))}
                 value={toDateInputValue(formData.timeToComplete)}
                 onChange={handleDateChange}
                 required
