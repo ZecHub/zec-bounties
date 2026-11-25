@@ -18,6 +18,10 @@ const toZat = (amount) => BigInt(Math.round(Number(amount) * 1e8));
 const addressFor = (user, chain) =>
   chain === "MAIN" ? user?.UA_address : user?.z_address;
 
+// Signatures needed: PAYOUT_THRESHOLD, but never more than the people eligible.
+const thresholdFor = (eligibleCount) =>
+  Math.max(1, Math.min(PAYOUT_THRESHOLD, eligibleCount));
+
 // The locked item for one bounty inside a round.
 const itemFor = (round, bountyId) =>
   itemsOf(round).find((i) => i.bountyId === bountyId);
@@ -284,6 +288,7 @@ async function notifyApprovers(db, userIds, { subject, text, url = "/" }) {
 
 module.exports = {
   PAYOUT_THRESHOLD,
+  thresholdFor,
   PAYOUT_DELAY_MS,
   toZat,
   addressFor,
