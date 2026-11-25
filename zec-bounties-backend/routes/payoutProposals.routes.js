@@ -21,7 +21,7 @@ const {
   verifyVoteAssertion,
 } = require("../utils/payoutPasskeys");
 const {
-  PAYOUT_THRESHOLD,
+  thresholdFor,
   PAYOUT_DELAY_MS,
   toZat,
   addressFor,
@@ -172,17 +172,21 @@ router.post(
       const teamId = [...teams][0];
       const chain = [...chains][0];
 
+      // Threshold follows the pool size: a 2-leader team needs 2, not 3
+      const eligible = await getEligibleApprovers(tx, teamId);
+      const threshold = thresholdFor(eligible.length);
       const snap = await snapshotApprovers(tx, teamId);
+
       const approverIds = Object.keys(snap);
       if (!snap[req.user.id])
         throw httpError(
           403,
           "You need an active payout passkey to open a round",
         );
-      if (approverIds.length < PAYOUT_THRESHOLD)
+      if (approverIds.length < threshold)
         throw httpError(
           400,
-          `Not enough approvers have an active passkey (${approverIds.length}/${PAYOUT_THRESHOLD})`,
+          `${threshold} team leader${threshold === 1 ? "" : "s"} need an active passkey; only ${approverIds.length} ${approverIds.length === 1 ? "has" : "have"} one`,
         );
 
       const items = picked.map((b) => ({
@@ -197,7 +201,7 @@ router.post(
           teamId,
           createdById: req.user.id,
           chain,
-          threshold: PAYOUT_THRESHOLD,
+          threshold,
           nonce: crypto.randomBytes(16).toString("hex"),
           items,
           bountyIds: items.map((i) => i.bountyId),
