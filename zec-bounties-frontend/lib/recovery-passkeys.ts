@@ -14,10 +14,20 @@ export async function signRecoveryApproval(
   approvalId: string,
   confirm: (m: RecoveryMessage) => boolean | Promise<boolean>,
 ): Promise<{ challengeId: string; assertion: unknown }> {
-  const { challengeId, message, options } = await api(
-    `/teams/${teamId}/wallet/recovery/requests/${approvalId}/challenge`,
+  const response = await api(
+    `/teams/${encodeURIComponent(teamId)}/wallet/recovery/requests/${encodeURIComponent(approvalId)}/challenge`,
     { method: "POST" },
   );
+  const { challengeId, message, options } = response ?? {};
+  if (
+    typeof challengeId !== "string" ||
+    !challengeId ||
+    typeof message !== "string" ||
+    !options ||
+    typeof options.challenge !== "string"
+  ) {
+    throw new Error("The server returned an invalid recovery challenge. Aborted.");
+  }
 
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -28,7 +38,18 @@ export async function signRecoveryApproval(
       "The server's challenge does not match the request details. Aborted.",
     );
 
-  const parsed: RecoveryMessage = JSON.parse(message);
+  let parsed: RecoveryMessage;
+  try {
+    const decoded = JSON.parse(message);
+    if (!decoded || typeof decoded !== "object") {
+      throw new Error("Invalid recovery message payload");
+    }
+    parsed = decoded as RecoveryMessage;
+  } catch {
+    throw new Error(
+      "The server's recovery request details could not be parsed. Aborted.",
+    );
+  }
   if (parsed.approval !== approvalId || parsed.team !== teamId)
     throw new Error("The request details do not match. Aborted.");
 
