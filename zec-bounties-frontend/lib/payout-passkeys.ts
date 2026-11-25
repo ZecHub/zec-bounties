@@ -32,25 +32,49 @@ export interface VoteMessage {
   expiresAt: string;
 }
 
+function getAuthToken(): string | null {
+  try {
+    return typeof localStorage !== "undefined"
+      ? localStorage.getItem("authToken")
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function api(path: string, init?: RequestInit) {
-  const token = localStorage.getItem("authToken");
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const res = await fetch(`${backendUrl}/api${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
+    headers,
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
   return json;
 }
 
-export const b64url = (bytes: ArrayBuffer) =>
-  btoa(String.fromCharCode(...new Uint8Array(bytes)))
+export const b64url = (bytes: ArrayBuffer | ArrayBufferView) => {
+  const view =
+    bytes instanceof ArrayBuffer
+      ? new Uint8Array(bytes)
+      : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const chunks: string[] = [];
+  const chunkSize = 0x8000;
+  for (let i = 0; i < view.length; i += chunkSize) {
+    chunks.push(String.fromCharCode(...view.subarray(i, i + chunkSize)));
+  }
+  return btoa(chunks.join(""))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
+};
 
 export const listPayoutKeys = (): Promise<{
   mine: PayoutKey[];
@@ -69,7 +93,7 @@ export async function enrollPayoutKey(label?: string): Promise<PayoutKey> {
 }
 
 export const revokePayoutKey = (id: string) =>
-  api(`/payout-keys/${id}`, { method: "DELETE" });
+  api(`/payout-keys/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // Asks the server for the exact message to sign, checks that its hash is the passkey
 // challenge, shows the details to the approver, then has the passkey sign it.
@@ -79,9 +103,13 @@ export async function signPayoutVote(
   confirm: (m: VoteMessage) => boolean | Promise<boolean>,
 ): Promise<{ challengeId: string; assertion: unknown }> {
   const { challengeId, message, options } = await api(
-    `/payout-proposals/${roundId}/vote/options`,
+    `/payout-proposals/${encodeURIComponent(roundId)}/vote/options`,
     { method: "POST", body: JSON.stringify({ candidateId }) },
   );
+
+  if (typeof message !== "string" || typeof options?.challenge !== "string") {
+    throw new Error("The server returned an invalid vote challenge. Vote aborted.");
+  }
 
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -92,8 +120,18 @@ export async function signPayoutVote(
       "The server's challenge does not match the vote details. Vote aborted.",
     );
 
-  const parsed: VoteMessage = JSON.parse(message);
-  if (parsed.round !== roundId || parsed.executor !== candidateId)
+  let parsed: VoteMessage;
+  try {
+    parsed = JSON.parse(message);
+  } catch {
+    throw new Error("The vote details could not be parsed. Vote aborted.");
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    parsed.round !== roundId ||
+    parsed.executor !== candidateId
+  )
     throw new Error("The vote details do not match your choice. Vote aborted.");
 
   if (!(await confirm(parsed))) throw new Error("Vote cancelled");
