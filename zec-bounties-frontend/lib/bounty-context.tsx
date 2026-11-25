@@ -2777,13 +2777,6 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
             );
             break;
 
-          case "bounty_chat_cleared":
-            window.dispatchEvent(
-              new CustomEvent("bounty-chat-cleared", { detail: msg.payload }),
-            );
-            window.dispatchEvent(new Event("bounty-notification"));
-            break;
-
           case "notification_new":
             window.dispatchEvent(new Event("bounty-notification"));
             break;

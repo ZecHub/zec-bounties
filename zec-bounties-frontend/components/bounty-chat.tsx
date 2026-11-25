@@ -126,18 +126,8 @@ export function BountyChat({
       );
     };
     window.addEventListener("bounty-chat-message", handleIncomingMessage);
-    const handleChatCleared = (event: Event) => {
-      const detail = (event as CustomEvent<{ bountyId: string }>).detail;
-      if (detail.bountyId !== bountyId) return;
-      setMessages([]);
-      setContent("");
-      setSelectedImage(null);
-      setPreviewUrl(null);
-    };
-    window.addEventListener("bounty-chat-cleared", handleChatCleared);
     return () => {
       window.removeEventListener("bounty-chat-message", handleIncomingMessage);
-      window.removeEventListener("bounty-chat-cleared", handleChatCleared);
     };
   }, [active, bountyId]);
 
@@ -267,7 +257,7 @@ export function BountyChat({
 
       {closed ? (
         <p className="mt-3 rounded-md border bg-muted/20 p-3 text-center text-xs text-muted-foreground">
-          Chat is closed. Messages were cleared when this bounty was completed.
+          Chat is closed for new messages. The conversation stays here for reference.
         </p>
       ) : (
         <>

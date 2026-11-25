@@ -129,7 +129,6 @@ function createPaymentCacheHarness({ sendError = null } = {}) {
       snapshotApprovers: async () => [],
       verifiedTally: () => 0,
     },
-    "../helpers/clearBountyChat": { clearBountyChat: forbidden, isTransitionToDone: () => false },
     "../utils/sendMail": forbidden, "../utils/notifyUser": forbidden,
     "../utils/discord/discordNotify": {}, "../utils/discord/discordAssignWebhook": { notifyBountyAssignees: noOp, notifyBountyState: noOp },
     "../utils/constants": {},
