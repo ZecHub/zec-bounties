@@ -13,6 +13,12 @@ function assignedDoneWhere(userId, chain) {
   };
 }
 
+// Earnings go to the paid assignee only. Marking a multi-assignee bounty Done
+// keeps every roster row but sets `assignee` to the winner, who is paid.
+function earnedDoneWhere(userId, chain) {
+  return { status: "DONE", chain, assignee: userId };
+}
+
 function recentCompletedWhere(userId, chain, includePrivate) {
   return {
     ...assignedDoneWhere(userId, chain),
@@ -30,6 +36,7 @@ function recentCreatedWhere(userId, chain, includePrivate) {
 
 module.exports = {
   assignedDoneWhere,
+  earnedDoneWhere,
   recentCompletedWhere,
   recentCreatedWhere,
 };
