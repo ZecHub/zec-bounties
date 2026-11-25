@@ -261,10 +261,15 @@ export function BountyEditModal({
   const lacksAddress = (u: User) => hasAddress(u) === false;
 
   const q = assigneeSearch.toLowerCase();
+  // Admins also search by the "Name (@nickname)" that Staff view shows.
+  const searchName = (u: User) =>
+    isAdminView && u.name && u.nickname
+      ? `${u.name} (@${u.nickname})`
+      : displayName(u);
   const filteredUsers = candidates
     .filter(
       (u) =>
-        displayName(u).toLowerCase().includes(q) ||
+        searchName(u).toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q),
     )
     .sort((a, b) => {
