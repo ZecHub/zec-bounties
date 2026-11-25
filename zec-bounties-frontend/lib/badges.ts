@@ -78,13 +78,19 @@ export function effectiveStarKey(
   badges?: string[],
 ): StarKey {
   const list = Array.isArray(badges) ? badges : [];
-  const override = list.find((b) => b.startsWith("avatar:"));
-  if (override && STAR_OVERRIDE[override]) return STAR_OVERRIDE[override];
-  if (completed >= 50) return "50-tasks";
-  if (completed >= 25) return "25-tasks";
-  if (completed >= 15) return "15-tasks";
-  if (completed >= 10) return "10-tasks";
-  if (completed >= 5) return "5-tasks";
+  const override = list.find(
+    (b) =>
+      typeof b === "string" &&
+      Object.prototype.hasOwnProperty.call(STAR_OVERRIDE, b),
+  );
+  if (override) return STAR_OVERRIDE[override];
+  const count =
+    typeof completed === "number" && Number.isFinite(completed) ? completed : 0;
+  if (count >= 50) return "50-tasks";
+  if (count >= 25) return "25-tasks";
+  if (count >= 15) return "15-tasks";
+  if (count >= 10) return "10-tasks";
+  if (count >= 5) return "5-tasks";
   return "1-task";
 }
 
@@ -115,19 +121,39 @@ export function matchesBadgeFilter(
   filter: string[],
   user: { completed?: number; badges?: string[]; role?: string },
 ): boolean {
-  if (!filter.length) return true;
-  const badges = Array.isArray(user.badges) ? user.badges : [];
-  const star = effectiveStarKey(user.completed || 0, badges);
+  if (!Array.isArray(filter) || !filter.length) return true;
+  const safeUser = user ?? {};
+  const badges = Array.isArray(safeUser.badges) ? safeUser.badges : [];
+  const star = effectiveStarKey(safeUser.completed || 0, badges);
   return filter.some((key) => {
     if ((STAR_KEYS as readonly string[]).includes(key)) return star === key;
-    return badges.includes(key) || (key === "admin" && user.role === "ADMIN");
+    return badges.includes(key) || (key === "admin" && safeUser.role === "ADMIN");
   });
 }
 
 export function getBadgeTooltip(badges?: string[]): string {
-  const real = (badges || []).filter((b) => !b.startsWith("avatar:"));
+  const list = Array.isArray(badges) ? badges : [];
+  const seen = new Set<string>();
+  const real: string[] = [];
+  for (const b of list) {
+    if (
+      typeof b === "string" &&
+      b.trim().length > 0 &&
+      !b.startsWith("avatar:") &&
+      !seen.has(b)
+    ) {
+      seen.add(b);
+      real.push(b);
+    }
+  }
   if (!real.length) return "Regular User";
-  return real.map((b) => BADGE_LABELS[b] ?? b).join(" • ");
+  return real
+    .map((b) =>
+      Object.prototype.hasOwnProperty.call(BADGE_LABELS, b)
+        ? BADGE_LABELS[b]
+        : b,
+    )
+    .join(" • ");
 }
 
 export function badgeAssetPath(folder: "Dark-Mode" | "Light-Mode", key: string) {
