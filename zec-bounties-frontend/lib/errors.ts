@@ -1,31 +1,56 @@
+function nonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function getErrorMessage(
   error: unknown,
   fallbackMessage = "Something went wrong"
 ): string {
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error;
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message;
+  const direct = nonEmptyString(error);
+  if (direct) {
+    return direct;
   }
 
   if (typeof error === "object" && error !== null) {
     const err = error as Record<string, any>;
-    if (typeof err.error === "string" && err.error.trim().length > 0) {
-      return err.error;
-    }
-    if (err.response?.data) {
-      const data = err.response.data;
-      if (typeof data.error === "string" && data.error.trim().length > 0) {
-        return data.error;
+
+    // Check structured HTTP / API error payloads before generic Error.message
+    // (AxiosError and custom HTTP errors are instanceof Error).
+    const responseData = err.response?.data;
+    if (responseData !== undefined && responseData !== null) {
+      const rawData = nonEmptyString(responseData);
+      if (rawData) {
+        return rawData;
       }
-      if (typeof data.message === "string" && data.message.trim().length > 0) {
-        return data.message;
+      if (typeof responseData === "object") {
+        const dataError = nonEmptyString(responseData.error);
+        if (dataError) {
+          return dataError;
+        }
+        const dataMessage = nonEmptyString(responseData.message);
+        if (dataMessage) {
+          return dataMessage;
+        }
       }
     }
-    if (typeof err.message === "string" && err.message.trim().length > 0) {
-      return err.message;
+
+    const nestedError = nonEmptyString(err.error);
+    if (nestedError) {
+      return nestedError;
+    }
+
+    if (error instanceof Error) {
+      const errorMessage = nonEmptyString(error.message);
+      if (errorMessage) {
+        return errorMessage;
+      }
+    }
+
+    const objectMessage = nonEmptyString(err.message);
+    if (objectMessage) {
+      return objectMessage;
     }
   }
 
