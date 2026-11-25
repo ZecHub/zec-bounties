@@ -161,8 +161,9 @@ export function filterAndSortBounties(
   filters: BountyBoardFilters,
 ): Bounty[] {
   const terms = normalizeSearch(filters.query);
+  // The end of the chosen day in the viewer's own time zone, like the presets.
   const maxDeadline = filters.deadline
-    ? Date.parse(`${filters.deadline}T23:59:59.999Z`)
+    ? Date.parse(`${filters.deadline}T23:59:59.999`)
     : null;
 
   const results = bounties.filter((bounty) => {
