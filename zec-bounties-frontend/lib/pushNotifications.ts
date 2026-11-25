@@ -1,9 +1,26 @@
 import { backendUrl } from "./configENV";
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
+function getAuthToken(): string | null {
+  try {
+    return typeof localStorage !== "undefined"
+      ? localStorage.getItem("authToken")
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  if (typeof base64String !== "string") {
+    throw new Error("VAPID public key must be a string");
+  }
+  const trimmed = base64String.trim();
+  if (!trimmed) {
+    throw new Error("VAPID public key is empty");
+  }
+  const padding = "=".repeat((4 - (trimmed.length % 4)) % 4);
+  const base64 = (trimmed + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = globalThis.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; i++) {
     outputArray[i] = rawData.charCodeAt(i);
@@ -12,11 +29,14 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export async function subscribeToPush() {
-  if (!("serviceWorker" in navigator)) {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     throw new Error("Service workers are not supported");
   }
-  if (!("PushManager" in window)) {
+  if (typeof window === "undefined" || !("PushManager" in window)) {
     throw new Error("Push API is not supported");
+  }
+  if (typeof Notification === "undefined") {
+    throw new Error("Notifications are not supported");
   }
 
   const permission = await Notification.requestPermission();
@@ -46,7 +66,7 @@ export async function subscribeToPush() {
       applicationServerKey,
     }));
 
-  const token = localStorage.getItem("authToken");
+  const token = getAuthToken();
   const res = await fetch(`${backendUrl}/api/notifications/push/subscribe`, {
     method: "POST",
     headers: {
@@ -57,13 +77,20 @@ export async function subscribeToPush() {
   });
 
   if (!res.ok) {
-    throw new Error("Failed to register push subscription with server");
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      body?.error || "Failed to register push subscription with server",
+    );
   }
 
   return subscription;
 }
 
 export async function unsubscribeFromPush() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.getSubscription();
   if (!subscription) return;
@@ -71,8 +98,8 @@ export async function unsubscribeFromPush() {
   const endpoint = subscription.endpoint;
   await subscription.unsubscribe();
 
-  const token = localStorage.getItem("authToken");
-  await fetch(`${backendUrl}/api/notifications/push/unsubscribe`, {
+  const token = getAuthToken();
+  const res = await fetch(`${backendUrl}/api/notifications/push/unsubscribe`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -80,4 +107,11 @@ export async function unsubscribeFromPush() {
     },
     body: JSON.stringify({ endpoint }),
   });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      body?.error || "Failed to unregister push subscription with server",
+    );
+  }
 }
