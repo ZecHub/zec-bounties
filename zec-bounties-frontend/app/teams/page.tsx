@@ -257,7 +257,7 @@ export default function TeamsPage() {
                       <img
                         src={team.banner}
                         alt={`${team.name} banner`}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover object-center"
                       />
                     ) : (
                       <div
