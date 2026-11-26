@@ -271,9 +271,9 @@ export default function PublicUserProfilePage() {
                         </p>
                       )}
 
-                      {v?.showGithub && profile.githubId && (
+                      {v?.showGithub && profile.githubProfileUrl && (
                         <a
-                          href={`https://github.com/${profile.githubId}`}
+                          href={profile.githubProfileUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"

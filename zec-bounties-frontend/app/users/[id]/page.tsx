@@ -401,10 +401,9 @@ export default function PublicUserProfilePage() {
                       )}
 
                       <div className="flex flex-col imd:flex-row gap-4 items-baseline">
-                        {v?.showGithub &&
-                          (profile.githubUsername || profile.nickname) && (
+                        {v?.showGithub && profile.githubProfileUrl && (
                             <a
-                              href={`https://github.com/${profile.githubUsername}`}
+                              href={profile.githubProfileUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
