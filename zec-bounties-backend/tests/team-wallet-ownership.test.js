@@ -46,8 +46,10 @@ function createDb() {
       upsert: async ({ where, update, create }) => {
         const existing = members.find((m) => matches(m, where.teamId_userId));
         if (existing) return Object.assign(existing, update);
-        members.push(create);
-        return create;
+        // The route leaves role to the schema default (@default("MEMBER")).
+        const row = { role: "MEMBER", ...create };
+        members.push(row);
+        return row;
       },
     },
     user: {
