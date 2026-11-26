@@ -15,11 +15,11 @@ const anything = new Proxy(function () {}, {
 // Load bountyHelpers.js with a stubbed prisma client. No team members or
 // favorites exist, so the only recipients beyond the creator/admins are the
 // assignees the fix adds.
-function loadHelpers() {
+function loadHelpers({ teamMembers = [], favorites = [] } = {}) {
   const db = {
     user: { findMany: async () => [{ id: "admin" }] },
-    teamMember: { findMany: async () => [] },
-    teamFavorite: { findMany: async () => [] },
+    teamMember: { findMany: async () => teamMembers },
+    teamFavorite: { findMany: async () => favorites },
   };
   const dependencies = {
     "../prisma/client": db,
@@ -93,4 +93,30 @@ test("a public bounty still broadcasts to everyone (null)", async () => {
   const { getBroadcastRecipients } = loadHelpers();
   const recipients = await getBroadcastRecipients({ isPrivate: false });
   assert.equal(recipients, null);
+});
+
+test("application events go to the creator and admins, not the public", async () => {
+  const { getApplicationRecipients } = loadHelpers();
+  const recipients = await getApplicationRecipients({
+    createdBy: "creator",
+    teamId: null,
+  });
+  assert.ok(recipients.includes("creator"), recipients);
+  assert.ok(recipients.includes("admin"), recipients);
+  assert.equal(recipients.length, 2);
+});
+
+test("application events include team members but not favorites", async () => {
+  const { getApplicationRecipients } = loadHelpers({
+    teamMembers: [{ userId: "member" }],
+    favorites: [{ userId: "fan" }],
+  });
+  const recipients = await getApplicationRecipients({
+    createdBy: "creator",
+    teamId: "team-1",
+  });
+  assert.ok(recipients.includes("member"), recipients);
+  assert.ok(recipients.includes("creator"), recipients);
+  assert.ok(recipients.includes("admin"), recipients);
+  assert.ok(!recipients.includes("fan"), recipients);
 });

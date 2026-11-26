@@ -89,6 +89,26 @@ async function getBroadcastRecipients(bounty) {
   return [...recipients];
 }
 
+async function getApplicationRecipients(bounty) {
+  const recipients = new Set([bounty.createdBy]);
+
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  admins.forEach((admin) => recipients.add(admin.id));
+
+  if (bounty.teamId) {
+    const members = await prisma.teamMember.findMany({
+      where: { teamId: bounty.teamId },
+      select: { userId: true },
+    });
+    members.forEach((member) => recipients.add(member.userId));
+  }
+
+  return [...recipients];
+}
+
 // Sends a realtime event about one team to the people allowed to see it.
 // membersOnly — internal team business (members, roles, wallets, payments):
 //   team members and platform admins, whatever the team's privacy.
@@ -377,6 +397,7 @@ module.exports = {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  getApplicationRecipients,
   getSubmissionRecipients,
   withoutSubmissionBodies,
   broadcastBountyEvent,

@@ -52,6 +52,7 @@ const {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  getApplicationRecipients,
   getSubmissionRecipients,
   withoutSubmissionBodies,
   broadcastBountyEvent,
@@ -2762,11 +2763,16 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
     await invalidateBounty(application.bountyId);
 
     // Notify clients about the application change.
+    const recipients = new Set(
+      await getApplicationRecipients(application.bounty),
+    );
+    recipients.add(application.applicantId);
     await broadcastBountyEvent(
       "application_updated",
       result,
       application.bountyId,
       req.user.id,
+      [...recipients],
     );
 
     // When accepted, also notify clients that the bounty itself changed.
@@ -2934,6 +2940,7 @@ router.post("/apply", authenticate, async (req, res) => {
       application,
       bountyId,
       applicantId,
+      await getApplicationRecipients(bounty),
     );
     res.status(201).json(application);
   } catch (err) {
