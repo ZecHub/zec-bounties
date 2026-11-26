@@ -88,7 +88,7 @@ export interface PublicUserProfile {
     globalName: string | null;
     connectedAt?: string | null;
   };
-  githubUsername?: string;
+  githubProfileUrl?: string;
   completed?: number;
   submitted?: number;
   created?: number;

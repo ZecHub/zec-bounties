@@ -440,17 +440,11 @@ router.get("/:idOrNickname/public", async (req, res) => {
     }
 
     if (show("showGithub") && user.githubId) {
-      // Prefer nickname (set from githubUser.login at signup).
-      // Fall back to name only if it looks like a handle.
-      const handle =
-        user.nickname ||
-        (user.name && /^[a-zA-Z0-9-]+$/.test(user.name) ? user.name : null);
-
-      if (handle) {
-        profile.githubUsername = handle;
-      }
-      // Optional: keep id for admin tools only, not required on public page
-      // profile.githubId = user.githubId;
+      // Link by the verified, immutable GitHub account id. nickname is freely
+      // editable (PATCH /auth/update-nickname), so deriving the link from it
+      // let a user point their "GitHub" link at a handle they don't own.
+      // github.com/u/<id> redirects to that account's real profile.
+      profile.githubProfileUrl = `https://github.com/u/${user.githubId}`;
     }
 
     if (show("showDiscord") && user.discordUserId) {
