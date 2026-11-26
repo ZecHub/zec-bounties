@@ -163,6 +163,39 @@ async function getSubmissionRecipients(bountyId, submitterId) {
   ];
 }
 
+// Who REST lets see one application's body (the applicant's message and
+// identity): the bounty creator, platform admins, the applicant, and — for a
+// team bounty — that team's members. GET /:bountyId/applications is gated to
+// canManageBounty, so other viewers of a *public* bounty must not receive the
+// application over the socket either. Returns [] when the bounty is gone so the
+// caller fails closed.
+async function getApplicationRecipients(bountyId, applicantId) {
+  const bounty = await prisma.bounty.findUnique({
+    where: { id: bountyId },
+    select: { createdBy: true, teamId: true },
+  });
+  if (!bounty) return [];
+  const [admins, members] = await Promise.all([
+    prisma.user.findMany({ where: { role: "ADMIN" }, select: { id: true } }),
+    bounty.teamId
+      ? prisma.teamMember.findMany({
+          where: { teamId: bounty.teamId },
+          select: { userId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  return [
+    ...new Set(
+      [
+        bounty.createdBy,
+        applicantId,
+        ...admins.map((a) => a.id),
+        ...members.map((m) => m.userId),
+      ].filter(Boolean),
+    ),
+  ];
+}
+
 // Wide bounty_updated events must not carry submission bodies. Involved
 // clients get those on the scoped work_submitted / submission_* events.
 function withoutSubmissionBodies(bounty) {
@@ -378,6 +411,7 @@ module.exports = {
   sendPushToOptedIn,
   getBroadcastRecipients,
   getSubmissionRecipients,
+  getApplicationRecipients,
   withoutSubmissionBodies,
   broadcastBountyEvent,
   broadcastTeamEvent,
