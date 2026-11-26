@@ -15,7 +15,7 @@ Public read, no token:
 ```bash
 curl -sS "https://zechub.zone/api/leaderboard?limit=25"
 curl -sS "https://zechub.zone/api/users/<id-or-nickname>/public"
-curl -sS "https://zechub.zone/api/bounties"
+curl -sS "https://zechub.zone/api/bounties?page=1&limit=50"
 ```
 
 Authenticated write:
@@ -60,9 +60,11 @@ Never send a seed phrase or spending key. Payouts use the registered receive add
 |--------|------|------|-----|
 | GET | `/api/leaderboard` | optional | Hunter ranks. Query: `timeRange=all\|30d\|90d`, `chain`, `limit` (max 100) |
 | GET | `/api/users/:idOrNickname/public` | optional | Privacy-filtered profile. Owner or admin may pass `?full=1` |
-| GET | `/api/bounties` | optional | Open board. Private team bounties are filtered for non-admins |
+| GET | `/api/bounties` | optional | Paginated board. Private team bounties are filtered for non-admins |
 | GET | `/api/bounties/categories` | no | Category list |
 | GET | `/api/teams/:teamId/overview` | optional | Public team overview |
+
+`GET /api/bounties` returns `data`, `total`, `page`, and `limit`. Pages start at 1. The page size defaults to 10 and is capped at 50. To find tasks marked To Do, select rows with `status === "TO_DO"` from each page. The endpoint ignores the `status` query parameter. Keep requesting the next page while `page * limit < total`, even if the current page has no matches.
 
 `GET /api/users/:idOrNickname/public` is the privacy boundary. Flags live on `profileVisibility`. Missing keys are false, except `showAvatar` and `showDisplayName`, which default true.
 
