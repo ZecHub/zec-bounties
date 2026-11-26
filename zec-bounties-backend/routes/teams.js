@@ -1305,8 +1305,8 @@ router.post(
                   subject: `New Bounty Created: ${bounty.title}`,
                   text: `A new bounty has been created for ${team.name}.\n\nTitle: ${bounty.title}\nAmount: ${bounty.bountyAmount}`,
                   html: `
-                  <h2>New Bounty Created — ${team.name}</h2>
-                  <p><strong>Title:</strong> ${bounty.title}</p>
+                  <h2>New Bounty Created — ${escapeHtml(team.name)}</h2>
+                  <p><strong>Title:</strong> ${escapeHtml(bounty.title)}</p>
                   <p><strong>Amount:</strong> ${bounty.bountyAmount} ZEC</p>
                 `,
                 }),
