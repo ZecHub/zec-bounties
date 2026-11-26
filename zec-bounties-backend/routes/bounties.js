@@ -1913,6 +1913,28 @@ router.patch(
               let newBountyStatus = submission.bounty.status;
 
               if (status === "approved") {
+                // Approval makes the submitter the bounty's payee, so they must
+                // still be on the roster. A submission from someone since
+                // removed must not be approvable — that would reinstate them as
+                // the paid assignee.
+                const submitterAssigned =
+                  submission.bounty.assignee === submission.submittedBy ||
+                  !!(await tx.bountyAssignee.findUnique({
+                    where: {
+                      bountyId_userId: {
+                        bountyId: submission.bounty.id,
+                        userId: submission.submittedBy,
+                      },
+                    },
+                    select: { userId: true },
+                  }));
+                if (!submitterAssigned) {
+                  return {
+                    statusCode: 400,
+                    error:
+                      "Cannot approve: the submitter is no longer assigned to this bounty",
+                  };
+                }
                 if (submission.bounty.status !== "DONE") {
                   newBountyStatus = "DONE";
                 }
@@ -2079,6 +2101,31 @@ router.patch("/submissions/:submissionId", authenticate, async (req, res) => {
       return res
         .status(403)
         .json({ error: "You can only edit submissions you filed" });
+    }
+
+    // The editor must still be assigned to the bounty (admins exempt). A
+    // "needs_revision" edit resubmits the work and re-opens the bounty with the
+    // submitter as the implicit payee, so a removed assignee editing their old
+    // submission would otherwise climb back onto the bounty and be paid on a
+    // later approval.
+    if (req.user.role !== "ADMIN") {
+      const [rosterRow, bountyRow] = await Promise.all([
+        prisma.bountyAssignee.findUnique({
+          where: {
+            bountyId_userId: { bountyId: submission.bountyId, userId },
+          },
+          select: { userId: true },
+        }),
+        prisma.bounty.findUnique({
+          where: { id: submission.bountyId },
+          select: { assignee: true },
+        }),
+      ]);
+      if (!rosterRow && bountyRow?.assignee !== userId) {
+        return res
+          .status(403)
+          .json({ error: "You are no longer assigned to this bounty" });
+      }
     }
 
     if (submission.status === "pending") {
