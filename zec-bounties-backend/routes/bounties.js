@@ -53,6 +53,7 @@ const {
   sendPushToOptedIn,
   getBroadcastRecipients,
   getSubmissionRecipients,
+  getApplicationRecipients,
   withoutSubmissionBodies,
   broadcastBountyEvent,
   invalidateBounty,
@@ -2767,6 +2768,10 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
       result,
       application.bountyId,
       req.user.id,
+      await getApplicationRecipients(
+        application.bountyId,
+        application.applicantId,
+      ),
     );
 
     // When accepted, also notify clients that the bounty itself changed.
@@ -2934,6 +2939,7 @@ router.post("/apply", authenticate, async (req, res) => {
       application,
       bountyId,
       applicantId,
+      await getApplicationRecipients(bountyId, applicantId),
     );
     res.status(201).json(application);
   } catch (err) {

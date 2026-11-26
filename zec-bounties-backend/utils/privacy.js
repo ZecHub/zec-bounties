@@ -115,6 +115,7 @@ const BROADCAST_PRIVATE_FIELDS = new Set([
   "UA_address",
   "githubId",
   "discordUserId",
+  "discordUsername",
   "emailNotifications",
   "pushNotifications",
   "ofacVerified",

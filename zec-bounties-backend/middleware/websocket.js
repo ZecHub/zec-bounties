@@ -13,6 +13,7 @@ const PRIVATE_USER_FIELDS = new Set([
   "UA_address",
   "githubId",
   "discordUserId",
+  "discordUsername",
   "emailNotifications",
   "pushNotifications",
   "ofacVerified",
