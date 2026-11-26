@@ -38,12 +38,25 @@ function findTeamWallet(ownerId, accountName) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Resource guards for import-wallet. Each successful import spawns a zingo-cli
+// seed-restore process and allocates a wallet data directory. Without bounds,
+// an authenticated caller can exhaust CPU/memory/fds/disk by firing imports in
+// a loop or in parallel (the role gate is TEAM, which is self-selectable), so
+// the endpoint caps concurrency per-user and globally, plus total wallets held.
+// ---------------------------------------------------------------------------
+const MAX_CONCURRENT_IMPORTS = 3; // global cap on simultaneous restores
+const MAX_WALLETS_PER_USER = 25; // cap on total wallets a single user can hold
+let activeImports = 0; // global in-flight restore count
+const importingUsers = new Set(); // userIds with an import currently in flight
+
 /**
  * POST /api/zcash/import-wallet
  * Import a wallet using seed phrase (seed phrase is never stored)
  * Protected route - requires authentication
  */
 router.post("/import-wallet", authenticate, async (req, res) => {
+  let acquired = false;
   try {
     // Only ADMIN and TEAM roles are allowed.
     if (!["ADMIN", "TEAM"].includes(req.user.role)) {
@@ -81,6 +94,37 @@ router.post("/import-wallet", authenticate, async (req, res) => {
     });
     if (connectionError) {
       return res.status(400).json({ success: false, message: connectionError });
+    }
+
+    // Reserve a slot BEFORE any await so a burst of parallel requests cannot
+    // all pass the check before the counters move. One in-flight import per
+    // user, and a global cap on concurrent zingo-cli restores.
+    if (importingUsers.has(userId)) {
+      return res.status(429).json({
+        success: false,
+        message: "An import is already in progress for your account. Please wait for it to finish.",
+      });
+    }
+    if (activeImports >= MAX_CONCURRENT_IMPORTS) {
+      return res.status(503).json({
+        success: false,
+        message: "The server is busy importing wallets. Please try again shortly.",
+      });
+    }
+    importingUsers.add(userId);
+    activeImports++;
+    acquired = true;
+
+    // Cap total wallets per user to bound slow, serial accumulation of data
+    // directories (each import allocates one).
+    const walletCount = await prisma.zcashParams.count({
+      where: { ownerId: userId },
+    });
+    if (walletCount >= MAX_WALLETS_PER_USER) {
+      return res.status(429).json({
+        success: false,
+        message: `Wallet limit reached (${MAX_WALLETS_PER_USER}). Delete an existing wallet before importing another.`,
+      });
     }
 
     // Check if account already exists for this user
@@ -186,6 +230,12 @@ router.post("/import-wallet", authenticate, async (req, res) => {
       message: "Failed to import wallet",
       error: error.message,
     });
+  } finally {
+    // Release the reserved slot on every path once it was acquired.
+    if (acquired) {
+      activeImports--;
+      importingUsers.delete(req.user.id);
+    }
   }
 });
 
