@@ -1250,7 +1250,9 @@ router.get("/:id/assignees", authenticate, async (req, res) => {
     // Email and payout addresses are admin-only, same as the bounty read routes.
     // Cache key is scoped by viewer so an admin payload cannot be served to a hunter.
     const viewerIsAdmin = req.user?.role === "ADMIN";
-    const userSelect = viewerIsAdmin ? USER_SELECT_FULL : USER_SELECT_PUBLIC;
+    const userSelect = viewerIsAdmin
+      ? USER_SELECT_FULL
+      : { ...USER_SELECT_PUBLIC, profileVisibility: true };
     const cacheKey = `assignees:${viewerIsAdmin ? "admin" : "user"}:${req.params.id}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
@@ -1259,8 +1261,12 @@ router.get("/:id/assignees", authenticate, async (req, res) => {
       include: { user: { select: userSelect } },
       orderBy: { assignedAt: "asc" },
     });
-    await setCache(cacheKey, assignees, TTL.ASSIGNEES);
-    res.json(assignees);
+    // Same profileVisibility redaction as GET /:id, applied before the cache write.
+    const result = viewerIsAdmin
+      ? assignees
+      : assignees.map((a) => ({ ...a, user: redactPublicUser(a.user) }));
+    await setCache(cacheKey, result, TTL.ASSIGNEES);
+    res.json(result);
   } catch (error) {
     console.error("Error fetching assignees:", error);
     res.status(500).json({ error: "Failed to fetch assignees" });
