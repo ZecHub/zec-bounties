@@ -51,6 +51,8 @@ const {
 const {
   sendMailIfEnabled,
   sendPushToOptedIn,
+  bountiesVisibleTo,
+  canViewPrivateBounty,
   getBroadcastRecipients,
   getApplicationRecipients,
   getSubmissionRecipients,
@@ -172,40 +174,6 @@ async function canAdministerBounty(bounty, user, db = prisma) {
       where: { teamId_userId: { teamId: bounty.teamId, userId: user.id } },
     });
     if (member && ["OWNER", "ADMIN"].includes(member.role)) return true;
-  }
-  return false;
-}
-
-async function canViewPrivateBounty(bounty, user) {
-  if (!bounty.isPrivate) return true;
-  if (!user) return false;
-  if (user.role === "ADMIN") return true;
-  if (bounty.createdBy === user.id) return true;
-
-  // An assignee can always see a bounty they are assigned to, whether it is
-  // individually private or owned by a private team they are not a member of.
-  // Covers the legacy single `assignee` field and the `bountyAssignee` roster.
-  if (bounty.assignee === user.id) return true;
-  const assignment = await prisma.bountyAssignee.findUnique({
-    where: { bountyId_userId: { bountyId: bounty.id, userId: user.id } },
-    select: { userId: true },
-  });
-  if (assignment) return true;
-
-  if (!bounty.teamId) return false;
-
-  const teamMember = await prisma.teamMember.findUnique({
-    where: { teamId_userId: { teamId: bounty.teamId, userId: user.id } },
-  });
-  if (teamMember) return true;
-
-  // Community membership = favorited the team (hunters only)
-  if (user.role === "HUNTER") {
-    const fav = await prisma.teamFavorite.findUnique({
-      where: { userId_teamId: { userId: user.id, teamId: bounty.teamId } },
-      select: { userId: true },
-    });
-    return !!fav;
   }
   return false;
 }
@@ -614,72 +582,10 @@ router.get("/", optionalAuthenticate, async (req, res) => {
     }
 
     // ------------------------------------------------------------
-    // Visibility
-    //
-    // A bounty is publicly visible only when:
-    // - Bounty.isPrivate is false, AND
-    // - It has no team or its team is not private.
-    //
-    // Admins see all bounties.
-    // Creators and authorized team members retain access to
-    // private bounties under the existing access rules.
-    //
+    // Visibility (canonical Prisma filter from utils/bountyHelpers.js)
     // Filtering happens in the database before pagination.
     // ------------------------------------------------------------
-    const visibilityFilter = isAdmin
-      ? {}
-      : {
-          OR: [
-            // Public bounties not owned by private teams.
-            {
-              isPrivate: false,
-              OR: [{ teamId: null }, { team: { isPrivate: false } }],
-            },
-
-            // Creators can see their own individually private bounties.
-            ...(userId
-              ? [
-                  {
-                    isPrivate: true,
-                    createdBy: userId,
-                  },
-
-                  // Assignees can see any private bounty they are assigned to,
-                  // whether individually private or owned by a private team
-                  // they do not belong to. Covers the legacy `assignee` field
-                  // and the `bountyAssignee` roster.
-                  {
-                    isPrivate: true,
-                    assignee: userId,
-                  },
-                  {
-                    isPrivate: true,
-                    assignees: { some: { userId } },
-                  },
-
-                  // Members can see bounties owned by their private team.
-                  {
-                    team: {
-                      isPrivate: true,
-                      members: { some: { userId } },
-                    },
-                  },
-
-                  // Preserve existing hunter access to favorited teams.
-                  ...(req.user?.role === "HUNTER"
-                    ? [
-                        {
-                          team: {
-                            isPrivate: true,
-                            favoritedBy: { some: { userId } },
-                          },
-                        },
-                      ]
-                    : []),
-                ]
-              : []),
-          ],
-        };
+    const visibilityFilter = bountiesVisibleTo(req.user);
 
     // ------------------------------------------------------------
     // Optional user filter (admin only)
@@ -1241,7 +1147,13 @@ router.get("/:id/assignees", authenticate, async (req, res) => {
   try {
     const bounty = await prisma.bounty.findUnique({
       where: { id: req.params.id },
-      select: { id: true, isPrivate: true, createdBy: true, teamId: true },
+      select: {
+        id: true,
+        isPrivate: true,
+        createdBy: true,
+        assignee: true,
+        teamId: true,
+      },
     });
     if (!bounty) return res.status(404).json({ error: "Bounty not found" });
     if (!(await canViewPrivateBounty(bounty, req.user))) {
