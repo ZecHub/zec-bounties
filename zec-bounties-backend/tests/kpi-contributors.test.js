@@ -19,6 +19,7 @@ async function contributors(rows, chain = "MAIN") {
     "@prisma/client": { PrismaClient: function () { return db; } },
     "../middleware/auth": { authenticate() {}, isAdmin() {} },
     "../utils/cache": { delCache() {} },
+    "../utils/privacy": require("../utils/privacy"),
   };
   const filename = path.join(__dirname, "../routes/kpis.js");
   vm.runInNewContext(fs.readFileSync(filename, "utf8"), {
