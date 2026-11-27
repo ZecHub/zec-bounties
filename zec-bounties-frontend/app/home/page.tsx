@@ -322,14 +322,10 @@ function HomeContent() {
   );
 
   const defragBounties = useMemo(() => {
-    return [...shownBounties].sort((a, b) => {
-      const ai = STATUS_ORDER.indexOf(a.status);
-      const bi = STATUS_ORDER.indexOf(b.status);
-      if (ai !== bi) return ai - bi;
-      return (
-        new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime()
-      );
-    });
+    // Stable sort keeps the selected list order within each status group.
+    return [...shownBounties].sort(
+      (a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status),
+    );
   }, [shownBounties]);
 
   const missingUA = !currentUser?.UA_address;
