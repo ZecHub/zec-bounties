@@ -84,6 +84,7 @@ export function RepoFilter({
       <FilterButton
         active={value === "all"}
         label="All repos"
+        name="All"
         count={REPOS.reduce((sum, repo) => sum + counts[repo.id], counts.untagged)}
         onClick={() => onChange("all")}
       >
@@ -126,12 +127,15 @@ export function RepoFilter({
 function FilterButton({
   active,
   label,
+  name = label,
   count,
   onClick,
   children,
 }: {
   active: boolean;
   label: string;
+  // Accessible name. It must contain the button's visible text (WCAG 2.5.3).
+  name?: string;
   count: number;
   onClick: () => void;
   children: ReactNode;
@@ -141,7 +145,7 @@ function FilterButton({
       type="button"
       role="tab"
       aria-selected={active}
-      aria-label={`${label}, ${count}`}
+      aria-label={`${name}, ${count}`}
       title={`${label} (${count})`}
       onClick={onClick}
       className={`relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full border transition ${
@@ -150,7 +154,7 @@ function FilterButton({
           : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"
       }`}
     >
-      {children}
+      {children}{" "}
       <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-background px-1 text-[10px] leading-4 tabular-nums text-muted-foreground ring-1 ring-border">
         {count}
       </span>
