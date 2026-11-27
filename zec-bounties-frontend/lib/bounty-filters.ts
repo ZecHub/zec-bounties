@@ -1,7 +1,20 @@
 import { bountyRepo, isRepoId, REPOS, type RepoId } from "@/lib/repos";
-import type { Bounty } from "@/lib/types";
+import type { Bounty, BountyStatus } from "@/lib/types";
 
-export type BountyBoardStatus = "" | "open" | "assigned" | "in_review";
+export const BOUNTY_BOARD_STATUS_VIEWS = [
+  { value: "open", label: "Open", status: "TO_DO" },
+  { value: "assigned", label: "In progress", status: "IN_PROGRESS" },
+  { value: "in_review", label: "In review", status: "IN_REVIEW" },
+  { value: "done", label: "Done", status: "DONE" },
+  { value: "cancelled", label: "Cancelled", status: "CANCELLED" },
+  { value: "all", label: "All", status: null },
+] as const satisfies readonly {
+  value: string;
+  label: string;
+  status: BountyStatus | null;
+}[];
+
+export type BountyBoardStatus = "" | (typeof BOUNTY_BOARD_STATUS_VIEWS)[number]["value"];
 export type BountyBoardSort = "newest" | "highest_reward" | "soonest_deadline";
 
 export interface BountyBoardFilters {
@@ -28,12 +41,7 @@ export const DEFAULT_BOUNTY_BOARD_FILTERS: BountyBoardFilters = {
   sort: "newest",
 };
 
-const VALID_STATUSES = new Set<BountyBoardStatus>([
-  "",
-  "open",
-  "assigned",
-  "in_review",
-]);
+const VALID_STATUSES = new Set<string>(BOUNTY_BOARD_STATUS_VIEWS.map(({ value }) => value));
 const VALID_SORTS = new Set<BountyBoardSort>([
   "newest",
   "highest_reward",
@@ -161,6 +169,9 @@ export function filterAndSortBounties(
   filters: BountyBoardFilters,
 ): Bounty[] {
   const terms = normalizeSearch(filters.query);
+  const requiredStatus = BOUNTY_BOARD_STATUS_VIEWS.find(
+    ({ value }) => value === filters.status,
+  )?.status;
   const maxDeadline = filters.deadline
     ? Date.parse(`${filters.deadline}T23:59:59.999Z`)
     : null;
@@ -197,19 +208,7 @@ export function filterAndSortBounties(
         return false;
     }
 
-    if (filters.status === "open" && bounty.status !== "TO_DO") return false;
-    if (
-      filters.status === "assigned" &&
-      bounty.status !== "IN_PROGRESS"
-    ) {
-      return false;
-    }
-    if (
-      filters.status === "in_review" &&
-      bounty.status !== "IN_REVIEW"
-    ) {
-      return false;
-    }
+    if (requiredStatus && bounty.status !== requiredStatus) return false;
 
     if (terms.length) {
       const text = searchableText(bounty);

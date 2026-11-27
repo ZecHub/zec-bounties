@@ -33,6 +33,7 @@ import { Bounty } from "@/lib/types";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyStatus } from "@/lib/types";
 import {
+  BOUNTY_BOARD_STATUS_VIEWS,
   DEFAULT_BOUNTY_BOARD_FILTERS,
   filterAndSortBounties,
   readBountyBoardFilters,
@@ -120,27 +121,6 @@ const DEADLINE_PRESETS = [
   { label: "This month", days: 30 },
 ];
 
-type StatusView =
-  | "open"
-  | "assigned"
-  | "in_review"
-  | "done"
-  | "cancelled"
-  | "all";
-
-const STATUS_VIEWS: {
-  value: StatusView;
-  label: string;
-  status: BountyStatus | null; // null = every status
-}[] = [
-  { value: "open", label: "Open", status: "TO_DO" },
-  { value: "assigned", label: "In progress", status: "IN_PROGRESS" },
-  { value: "in_review", label: "In review", status: "IN_REVIEW" },
-  { value: "done", label: "Done", status: "DONE" },
-  { value: "cancelled", label: "Cancelled", status: "CANCELLED" },
-  { value: "all", label: "All", status: null },
-];
-
 function HomeContent() {
   const taskCreationBlocked = useTaskCreationBlocked();
   const { bountyQuota } = useBounty();
@@ -179,9 +159,10 @@ function HomeContent() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const [statusView, setStatusView] = useState<StatusView>("open"); // default: open
-  const activeStatus = STATUS_VIEWS.find((v) => v.value === statusView)!;
-  const statusLabel = statusView === "all" ? "All" : activeStatus.label;
+  const statusView = filters.status || "open";
+  const statusLabel = BOUNTY_BOARD_STATUS_VIEWS.find(
+    ({ value }) => value === statusView,
+  )!.label;
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -280,8 +261,9 @@ function HomeContent() {
       ...filters,
       repo: "all",
       sort: "newest",
+      status: statusView,
     });
-  }, [sourceBounties, filters]);
+  }, [sourceBounties, filters, statusView]);
 
   const repoCounts = useMemo(() => {
     const counts = {
@@ -299,26 +281,18 @@ function HomeContent() {
     return counts;
   }, [categoryFilteredBounties]);
 
-  const filteredBounties = useMemo(
-    () => filterAndSortBounties(sourceBounties, filters),
-    [sourceBounties, filters],
-  );
-
   const shownBounties = useMemo(
-    () =>
-      filterAndSortBounties(sourceBounties, { ...filters, status: "" }).filter(
-        (b) => activeStatus.status === null || b.status === activeStatus.status,
-      ),
-    [sourceBounties, filters, activeStatus],
+    () => filterAndSortBounties(sourceBounties, { ...filters, status: statusView }),
+    [sourceBounties, filters, statusView],
   );
 
   const kanbanGroups = useMemo(
     () =>
       KANBAN_COLUMNS.map((col) => ({
         ...col,
-        bounties: filteredBounties.filter((b) => b.status === col.status),
+        bounties: shownBounties.filter((b) => b.status === col.status),
       })),
-    [filteredBounties],
+    [shownBounties],
   );
 
   const defragBounties = useMemo(() => {
@@ -394,7 +368,6 @@ function HomeContent() {
     filters.minReward != null ||
     filters.maxReward != null ||
     filters.deadline !== "" ||
-    filters.status !== "" ||
     filters.sort !== "newest" ||
     statusView !== "open";
 
@@ -404,7 +377,6 @@ function HomeContent() {
     filters.minReward != null,
     filters.maxReward != null,
     filters.deadline !== "",
-    filters.status !== "",
     filters.teamId !== "",
     filters.sort !== "newest",
   ].filter(Boolean).length;
@@ -794,11 +766,11 @@ function HomeContent() {
                 aria-label="Bounty status"
                 className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
-                {STATUS_VIEWS.map((v) => (
+                {BOUNTY_BOARD_STATUS_VIEWS.map((v) => (
                   <FilterChip
                     key={v.value}
                     active={statusView === v.value}
-                    onClick={() => setStatusView(v.value)}
+                    onClick={() => updateFilter("status", v.value === "open" ? "" : v.value)}
                   >
                     {v.label}
                   </FilterChip>
