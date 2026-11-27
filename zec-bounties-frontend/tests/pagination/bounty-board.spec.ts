@@ -100,7 +100,7 @@ async function openBoard(
   });
 
   await page.goto(options.path ?? "/home");
-  await expect(page.getByRole("heading", { name: "All Bounties" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Bounty status" })).toBeVisible();
   await expect.poll(() => Boolean(socket)).toBe(true);
 
   // React Strict Mode may run the initial fetch twice in development.
@@ -139,6 +139,47 @@ async function selectFilter(page: Page, label: string, optionLabel: string) {
   await page.getByRole("option", { name: optionLabel }).click();
 }
 
+test("restores a shared bounty status and keeps chip changes in the URL", async ({ page }, testInfo) => {
+  const rows = ["TO_DO", "IN_PROGRESS", "IN_REVIEW", "DONE", "CANCELLED"].map(
+    (status, index) => ({ ...bounty(index + 1), status }),
+  );
+  await openBoard(page, rows.length, { rows, path: "/home?status=in_review" });
+
+  const status = page.getByRole("tablist", { name: "Bounty status" });
+  await expect(
+    status.getByRole("button", { name: "In review", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(cards(page)).toHaveText(["Pagination bounty 03"]);
+  await page.getByRole("heading", { name: "In review Bounties" })
+    .locator("../..")
+    .screenshot({ path: testInfo.outputPath("shared-review-status.png"), animations: "disabled" });
+
+  await status.getByRole("button", { name: "In progress", exact: true }).click();
+  await expect(page).toHaveURL(/status=assigned/);
+  await expect(cards(page)).toHaveText(["Pagination bounty 02"]);
+
+  await status.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page).toHaveURL(/status=done/);
+  await page.reload();
+  await expect(cards(page)).toHaveText(["Pagination bounty 04"]);
+
+  await status.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page).toHaveURL(/status=all/);
+  await expect(cards(page)).toHaveCount(5);
+  await status.getByRole("button", { name: "Cancelled", exact: true }).click();
+  await expect(page).toHaveURL(/status=cancelled/);
+  await expect(cards(page)).toHaveText(["Pagination bounty 05"]);
+
+  await status.getByRole("button", { name: "Open", exact: true }).click();
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(cards(page)).toHaveText(["Pagination bounty 01"]);
+
+  await page.getByRole("button", { name: "Defrag map view" }).click();
+  await status.getByRole("button", { name: "In review", exact: true }).click();
+  const tiles = page.locator('button[title^="Pagination bounty"]');
+  await expect(tiles).toHaveCount(1);
+  await expect(tiles.first()).toHaveAttribute("title", /^Pagination bounty 03 — /);
+});
 
 test("combines shareable bounty filters and keeps them when reopened on mobile", async ({ page }) => {
   const rows = Array.from({ length: 10 }, (_, index) => {
