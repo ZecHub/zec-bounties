@@ -1685,7 +1685,9 @@ router.post("/:id/submit", authenticate, async (req, res) => {
                 ...(isProxy && { meta: { submittedFor: userId } }),
               },
 
-              include: { actor: { select: USER_SELECT_BASIC } },
+              // Sent by publishActivity through sendToUser, which does not
+              // redact, to the creator and admins: public fields only.
+              include: { actor: { select: USER_SELECT } },
             });
             return { workSubmission, updatedBounty, activityRow };
           },
