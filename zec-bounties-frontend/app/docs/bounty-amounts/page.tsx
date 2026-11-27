@@ -208,8 +208,8 @@ export default function BountyAmountsPage() {
             Worked example
           </p>
           <p className="mt-2 text-sky-950/80 dark:text-sky-100/80">
-            Suggested $40 (S) at $500 / ZEC → listed 0.0800 ZEC. Payout week
-            spot $800 / ZEC → change the reward to 0.0500 ZEC. Same implied
+            Suggested $20 (S) at $500 / ZEC → listed 0.0400 ZEC. Payout week
+            spot $800 / ZEC → change the reward to 0.0250 ZEC. Same implied
             dollar value; different ZEC quantity.
           </p>
         </div>
