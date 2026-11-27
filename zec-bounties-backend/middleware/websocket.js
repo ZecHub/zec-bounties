@@ -83,13 +83,11 @@ function handleWebSocket(ws, prisma, user) {
     }),
   );
 
-  broadcast(
-    {
-      type: "system",
-      content: `${user.name} joined the chat`,
-    },
-    ws,
-  );
+  // No "joined"/"left" broadcast to other sockets: it told every signed-in
+  // user who is online and under which name, including users who hide their
+  // display name (profileVisibility.showDisplayName = false). The client never
+  // showed these messages, and there is no chat (no Message model), so the old
+  // "message" case below was removed too.
 
   console.log(`User ${user.name} connected. Total clients: ${clients.size}`);
 
@@ -98,40 +96,6 @@ function handleWebSocket(ws, prisma, user) {
       const message = JSON.parse(data.toString());
 
       switch (message.type) {
-        case "message": {
-          if (!message.content) {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                content: "Invalid message format",
-              }),
-            );
-            break;
-          }
-
-          // userId comes from the authenticated `user`, never from the
-          // client-sent message.
-          const savedMessage = await prisma.message.create({
-            data: {
-              content: message.content,
-              userId: user.id,
-            },
-            include: { user: true },
-          });
-
-          const responseData = {
-            type: "message",
-            id: savedMessage.id,
-            content: savedMessage.content,
-            userName: savedMessage.user.name,
-            userId: savedMessage.userId,
-            createdAt: savedMessage.createdAt,
-          };
-
-          broadcast(responseData);
-          break;
-        }
-
         case "ping":
           ws.send(JSON.stringify({ type: "pong" }));
           break;
@@ -155,10 +119,6 @@ function handleWebSocket(ws, prisma, user) {
       console.log(
         `User ${user.name} disconnected. Total clients: ${clients.size}`,
       );
-      broadcast({
-        type: "system",
-        content: `${user.name} left the chat`,
-      });
     }
   });
 
@@ -185,19 +145,14 @@ function sendRealtimeUpdate(
   }
 }
 
-// Profile fields other users may see when someone's account changes. Their
-// clients only use the event to refresh bounty and user lists.
-const PUBLIC_USER_UPDATE_FIELDS = ["id", "name", "nickname", "avatar", "role"];
-
-// The owner gets the full row; everyone else gets the public profile fields
-// so nickname and avatar changes still show up for them.
+// The owner gets the full row. Everyone else gets only the id: their client
+// uses the event to refetch bounties and users (bounty-context.tsx), and that
+// REST refetch applies profileVisibility. Sending name/nickname/avatar here
+// showed them to every signed-in user even when the owner hides them, because
+// the rows passed in don't carry profileVisibility.
 function sendUserUpdated(userId, user) {
   sendToUser(userId, "user_updated", user);
-  const publicUser = {};
-  for (const field of PUBLIC_USER_UPDATE_FIELDS) {
-    if (user[field] !== undefined) publicUser[field] = user[field];
-  }
-  sendRealtimeUpdate("user_updated", publicUser, userId);
+  sendRealtimeUpdate("user_updated", { id: user.id ?? userId }, userId);
 }
 
 module.exports = {
