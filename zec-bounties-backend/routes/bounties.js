@@ -3129,23 +3129,46 @@ router.get("/mine", authenticate, async (req, res) => {
             ],
           };
 
+    // Other users' profiles follow the same profileVisibility flags as
+    // GET /:id. Admins and the viewer's own rows are left as they are.
+    const isAdmin = userRole === "ADMIN";
+    const withVisibility = (select) =>
+      isAdmin ? select : { ...select, profileVisibility: true };
+
     const bounties = await prisma.bounty.findMany({
       where,
       orderBy: { dateCreated: "desc" },
       include: {
         assignees: {
-          include: { user: { select: USER_SELECT } },
+          include: { user: { select: withVisibility(USER_SELECT) } },
         },
         assigneeUser: {
-          select: USER_SELECT_FULL,
+          select: withVisibility(USER_SELECT_FULL),
         },
         createdByUser: {
-          select: USER_SELECT_WITH_ROLE,
+          select: withVisibility(USER_SELECT_WITH_ROLE),
         },
       },
     });
 
-    res.json({ data: bounties, total: bounties.length });
+    const shown = (u) => {
+      if (!u || isAdmin) return u;
+      if (u.id === userId) {
+        const { profileVisibility, ...own } = u;
+        return own;
+      }
+      return redactPublicUser(u);
+    };
+    const data = bounties.map((b) => ({
+      ...b,
+      assigneeUser: shown(b.assigneeUser),
+      createdByUser: shown(b.createdByUser),
+      assignees: Array.isArray(b.assignees)
+        ? b.assignees.map((a) => ({ ...a, user: shown(a.user) }))
+        : b.assignees,
+    }));
+
+    res.json({ data, total: data.length });
   } catch (error) {
     console.error("Error fetching my bounties:", error);
     res.status(500).json({ error: "Failed to fetch your bounties" });
