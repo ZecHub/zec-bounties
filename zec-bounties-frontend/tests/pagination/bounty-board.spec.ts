@@ -100,7 +100,7 @@ async function openBoard(
   });
 
   await page.goto(options.path ?? "/home");
-  await expect(page.getByRole("heading", { name: "All Bounties" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open Bounties" })).toBeVisible();
   await expect.poll(() => Boolean(socket)).toBe(true);
 
   // React Strict Mode may run the initial fetch twice in development.
@@ -238,6 +238,42 @@ test("sorts the full bounty set by reward and deadline", async ({ page }) => {
   await selectFilter(page, "Sort by", "Soonest deadline");
   await expect(cards(page).first()).toHaveText("Pagination bounty 12");
   await expect(page).toHaveURL(/sort=soonest_deadline/);
+});
+
+test("keeps the chosen sort within the defrag map status group", async ({ page }, testInfo) => {
+  const rows = [
+    {
+      ...bounty(1), bountyAmount: 5,
+      dateCreated: "2026-09-01T00:00:00Z", timeToComplete: "2099-10-15T00:00:00Z",
+    },
+    {
+      ...bounty(2), bountyAmount: 2,
+      dateCreated: "2026-09-02T00:00:00Z", timeToComplete: "2099-10-05T00:00:00Z",
+    },
+    {
+      ...bounty(3), bountyAmount: 3,
+      dateCreated: "2026-09-03T00:00:00Z", timeToComplete: "2099-10-11T00:00:00Z",
+    },
+  ];
+  await openBoard(page, rows.length, { rows, path: "/home?sort=highest_reward" });
+  await expect(cards(page).first()).toHaveText("Pagination bounty 01");
+
+  await page.getByRole("button", { name: "Defrag map view" }).click();
+  const tiles = page.locator('button[title^="Pagination bounty"]');
+  await expect(tiles.first()).toHaveAttribute("title", /^Pagination bounty 01 — /);
+  await tiles.first().click();
+  await expect(page.getByRole("heading", { name: "Pagination bounty 01" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("map-highest-reward.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await selectFilter(page, "Sort by", "Soonest deadline");
+  await expect(tiles.first()).toHaveAttribute("title", /^Pagination bounty 02 — /);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await tiles.first().click();
+  await expect(page.getByRole("heading", { name: "Pagination bounty 02" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("map-soonest-deadline.png"), animations: "disabled" });
 });
 
 test("loads more results, then all results, after a list refresh", async ({ page }, testInfo) => {
