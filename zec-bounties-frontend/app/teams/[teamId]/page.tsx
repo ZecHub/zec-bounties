@@ -1218,7 +1218,7 @@ function OverviewTab({
                 </TableCell>
               </TableRow>
             ) : (
-              teamBounties.map((bounty) => {
+              filteredBounties.map((bounty) => {
                 const bountyApps = applications.filter(
                   (a) => a.bountyId === bounty.id,
                 );
