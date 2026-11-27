@@ -13,6 +13,8 @@ const stub = (relative, exports) => {
 // Shared in-memory data the fake Prisma reads and writes.
 let bounties;
 let records;
+let members;
+let caller;
 
 const matches = (row, where = {}) =>
   Object.entries(where).every(([k, v]) => row[k] === v);
@@ -36,6 +38,14 @@ function makeReadBarrier(parties) {
 }
 
 const fakePrisma = {
+  teamMember: {
+    findUnique: async ({ where }) =>
+      members.find(
+        (m) =>
+          m.teamId === where.teamId_userId.teamId &&
+          m.userId === where.teamId_userId.userId,
+      ) || null,
+  },
   payoutProposal: {
     updateMany: async () => ({ count: 0 }),
     findMany: async () => [],
@@ -85,7 +95,7 @@ const fakePrisma = {
 }
 stub("middleware/auth.js", {
   authenticate: (req, res, next) => {
-    req.user = { id: "admin1", role: "ADMIN" };
+    req.user = caller;
     next();
   },
   optionalAuthenticate: (req, res, next) => next(),
@@ -141,10 +151,15 @@ after(() => server.close());
 
 const TEAM = "team1";
 const TXID = "B".repeat(64);
+// Only this team's leaders may resolve its records; platform admins have no
+// bypass (#725/#726).
+const LEADER = { id: "leader1", role: "TEAM" };
 
 beforeEach(() => {
   bounties = [{ id: "b1", teamId: TEAM, isPaid: false, paymentInFlight: true }];
   records = [{ id: "r1", bountyId: "b1", status: "UNKNOWN" }];
+  members = [{ teamId: TEAM, userId: LEADER.id, role: "MEMBER" }];
+  caller = LEADER;
   readBarrier = null;
 });
 
@@ -197,6 +212,13 @@ describe("POST /:teamId/wallet/payment-records/:id/resolve", () => {
       assertLocked();
     });
   }
+
+  it("refuses a platform admin who is not a leader of the team", async () => {
+    caller = { id: "admin1", role: "ADMIN" };
+    const { status } = await resolve({ outcome: "failed", confirm: true });
+    assert.equal(status, 403);
+    assertLocked();
+  });
 
   it("returns 404 for a record on another team", async () => {
     bounties[0].teamId = "other-team";
