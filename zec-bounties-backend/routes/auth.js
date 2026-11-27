@@ -460,6 +460,21 @@ router.get("/has-zcash-params", authenticate, async (req, res) => {
   }
 });
 
+// The update data for a new payout address. OFAC also lists crypto addresses,
+// so an OFAC check covers the address it was made for: when the address
+// actually changes, the user goes back to pending until an admin re-checks.
+async function payoutAddressUpdate(userId, field, address) {
+  const current = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { [field]: true },
+  });
+  const data = { [field]: address };
+  if (current?.[field] !== address) {
+    data.ofacVerified = false;
+  }
+  return data;
+}
+
 router.patch("/update-zaddress", authenticate, async (req, res) => {
   const { z_address } = req.body;
 
@@ -493,7 +508,11 @@ router.patch("/update-zaddress", authenticate, async (req, res) => {
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: { z_address: z_address.trim() },
+      data: await payoutAddressUpdate(
+        req.user.id,
+        "z_address",
+        z_address.trim(),
+      ),
       select: {
         id: true,
         email: true,
@@ -699,7 +718,11 @@ router.patch("/update-ua-address", authenticate, async (req, res) => {
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: { UA_address: UA_address.trim() },
+      data: await payoutAddressUpdate(
+        req.user.id,
+        "UA_address",
+        UA_address.trim(),
+      ),
       select: {
         id: true,
         email: true,
