@@ -451,6 +451,7 @@ export function BountyDetailModal({
   const canApply =
     currentUser &&
     canViewPrivate &&
+    bounty.status === "TO_DO" &&
     bounty.createdBy !== currentUser.id &&
     !userApplication &&
     !isAssignedToCurrentUser &&
@@ -473,6 +474,21 @@ export function BountyDetailModal({
       };
     }
     if (!isAssignedToCurrentUser && !hasApplied) {
+      if (!canViewPrivate) {
+        return {
+          type: "info",
+          title: "Private bounty",
+          message:
+            "This bounty belongs to a private team. Favorite the team to join its community and apply.",
+        };
+      }
+      if (bounty.status !== "TO_DO") {
+        return {
+          type: "info",
+          title: "Applications closed",
+          message: "Only bounties in Todo accept applications.",
+        };
+      }
       if (!currentUser) {
         return {
           type: "info",
@@ -495,14 +511,6 @@ export function BountyDetailModal({
             "You're a member of this team, so you can't apply to its bounties.",
         };
       }
-      if (!canViewPrivate) {
-        return {
-          type: "info",
-          title: "Private bounty",
-          message:
-            "This bounty belongs to a private team. Favorite the team to join its community and apply.",
-        };
-      }
       if (isSuggestedTask) {
         return {
           type: "info",
@@ -517,13 +525,6 @@ export function BountyDetailModal({
           message:
             "This bounty pays out on mainnet. You need a Unified Address (UA) set on your profile before you can apply.",
           action: { label: "Set your UA", href: "/profile" },
-        };
-      }
-      if (bounty.status === "DONE" || bounty.status === "CANCELLED") {
-        return {
-          type: "info",
-          title: "Bounty closed",
-          message: "This bounty is no longer accepting applications.",
         };
       }
     }
