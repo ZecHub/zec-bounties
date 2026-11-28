@@ -27,7 +27,11 @@ import { CalendarIcon, Loader2, Search, UserPlus, CheckCircle2, AlertTriangle } 
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
 import { toast } from "sonner";
-import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
+import {
+  localDateAfter,
+  toDateInputValue,
+  parseDateInputValue,
+} from "@/lib/utils";
 import { RewardAmountHint } from "@/components/reward-amount-hint";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { displayName } from "@/lib/displayName";
@@ -58,7 +62,7 @@ export function AdminBountyModal({
     description: "",
     assignee: "none",
     bountyAmount: 0,
-    timeToComplete: new Date(),
+    timeToComplete: localDateAfter(7),
     category: "",
     targetRepo: "",
   });
@@ -119,7 +123,7 @@ export function AdminBountyModal({
         description: "",
         assignee: "none",
         bountyAmount: 0,
-        timeToComplete: new Date(),
+        timeToComplete: localDateAfter(7),
         category: "",
         targetRepo: "",
       });
@@ -295,7 +299,7 @@ export function AdminBountyModal({
                   <Input
                     id="timeToComplete"
                     type="date"
-                    min={toDateInputValue(new Date())}
+                    min={toDateInputValue(localDateAfter(1))}
                     value={toDateInputValue(formData.timeToComplete)}
                     onChange={handleDateChange}
                     required
