@@ -12,36 +12,36 @@ import {
 const INTERVALS = [
   {
     band: "XS",
-    usd: "$15–$25",
-    work: "Newsletter, tiny edit",
+    usd: "$3–$6",
+    work: "Typos, links, trivial fixes",
     row: "bg-emerald-500/15 text-emerald-200",
     pip: "bg-emerald-400",
   },
   {
     band: "S",
-    usd: "$25–$50",
+    usd: "$6–$12",
     work: "Short wiki, small PR",
     row: "bg-sky-500/15 text-sky-200",
     pip: "bg-sky-400",
   },
   {
     band: "M",
-    usd: "$50–$120",
-    work: "Tutorial, medium change",
+    usd: "$12–$25",
+    work: "Medium change + tests",
     row: "bg-amber-500/15 text-amber-200",
     pip: "bg-amber-400",
   },
   {
     band: "L",
-    usd: "$120–$250",
+    usd: "$50–$120",
     work: "Multi-file feature",
     row: "bg-orange-500/15 text-orange-200",
     pip: "bg-orange-400",
   },
   {
     band: "XL",
-    usd: "$250–$400",
-    work: "Large PR",
+    usd: "$120–$220",
+    work: "Large PR / multi-day",
     row: "bg-violet-500/15 text-violet-200",
     pip: "bg-violet-400",
   },
@@ -80,6 +80,7 @@ export function RewardAmountHint() {
             <p className="text-xs leading-relaxed text-zinc-400">
               This field stores ZEC only. Pick a band, then enter{" "}
               <span className="font-mono text-zinc-200">USD / spot</span>.
+              Prefer the lower half.
             </p>
           </div>
           <div className="space-y-1.5">

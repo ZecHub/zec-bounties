@@ -18,40 +18,40 @@ export const metadata: Metadata = {
 const INTERVALS = [
   {
     band: "XS",
-    usd: "$8–$15",
-    work: "Newsletter edition, broken-link fix, small copy edit",
+    usd: "$3–$6",
+    work: "Typos, broken links, one-line data/chart fixes, trivial copy",
     card: "border-emerald-300/80 bg-emerald-50 dark:border-emerald-500/40 dark:bg-emerald-950/40",
     badge: "bg-emerald-500 text-white",
     usdColor: "text-emerald-700 dark:text-emerald-300",
   },
   {
     band: "S",
-    usd: "$15–$30",
-    work: "New short wiki page, accepted translation, small docs PR",
+    usd: "$6–$12",
+    work: "Short wiki pages, translations, small docs PRs, simple helper + tests",
     card: "border-sky-300/80 bg-sky-50 dark:border-sky-500/40 dark:bg-sky-950/40",
     badge: "bg-sky-500 text-white",
     usdColor: "text-sky-700 dark:text-sky-300",
   },
   {
     band: "M",
-    usd: "$30–$80",
-    work: "Substantial wiki or tutorial (video), medium application change",
+    usd: "$12–$25",
+    work: "Medium app changes, multi-section wiki, non-trivial chart/data fixes with tests",
     card: "border-amber-300/80 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/40",
     badge: "bg-amber-500 text-white",
     usdColor: "text-amber-700 dark:text-amber-300",
   },
   {
     band: "L",
-    usd: "$120–$250",
-    work: "Multi-file feature, wallet/tooling work, longer research",
+    usd: "$50–$120",
+    work: "Multi-file features, tooling, sustained research",
     card: "border-orange-300/80 bg-orange-50 dark:border-orange-500/40 dark:bg-orange-950/40",
     badge: "bg-orange-500 text-white",
     usdColor: "text-orange-700 dark:text-orange-300",
   },
   {
     band: "XL",
-    usd: "$250–$400",
-    work: "Large approved PR or multi-day engineering task",
+    usd: "$120–$220",
+    work: "Large approved PRs, multi-day engineering, high-impact protocol-adjacent work",
     card: "border-violet-300/80 bg-violet-50 dark:border-violet-500/40 dark:bg-violet-950/40",
     badge: "bg-violet-500 text-white",
     usdColor: "text-violet-700 dark:text-violet-300",
@@ -108,7 +108,10 @@ export default function BountyAmountsPage() {
         <h2 className="text-xl font-semibold">Suggesting an amount</h2>
         <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
           <li>Match the work to an interval below.</li>
-          <li>Pick a USD target inside that band — not automatically the top.</li>
+          <li>
+            Pick a USD target inside that band — not automatically the top.
+            Prefer the lower half.
+          </li>
           <li>
             Look up a public ZEC/USD spot (CoinGecko, Coinbase, Kraken, or
             Binance).
@@ -131,8 +134,8 @@ export default function BountyAmountsPage() {
             Example
           </p>
           <p className="mt-2 text-sm text-foreground">
-            Short wiki page, S band, $20 target, spot $800 / ZEC → enter{" "}
-            <strong>0.0250 ZEC</strong>.
+            Short wiki page, S band, $8 target, spot $750 / ZEC → enter{" "}
+            <strong>0.0107 ZEC</strong>.
           </p>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
@@ -146,7 +149,7 @@ export default function BountyAmountsPage() {
         <h2 className="text-xl font-semibold">Suggested intervals</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
           These are what you should propose. Admins can still adjust before the
-          bounty goes live.
+          bounty goes live. Default to the lower half of the band.
         </p>
         <div className="grid gap-3">
           {INTERVALS.map((row) => (
@@ -167,12 +170,13 @@ export default function BountyAmountsPage() {
                   implicit USD
                 </span>
               </div>
-              <p className="mt-2 text-sm text-foreground/80">{row.work}</p>
+              <p className="mt-2 text-sm text-foreground/90">{row.work}</p>
             </div>
           ))}
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Stay inside the band. Do not treat the top as the default.
+          Stay inside the band. Pure AI-scaffolded or near-mechanical PRs
+          should land in XS or be merged unpaid.
         </p>
       </section>
 
@@ -188,30 +192,24 @@ export default function BountyAmountsPage() {
           ZEC field before authorizing payment so the implicit USD value is
           still in the same band.
         </p>
-        <div className="rounded-xl border border-orange-300/80 bg-orange-50 p-4 dark:border-orange-500/40 dark:bg-orange-950/30">
-          <p className="flex items-center gap-2 font-semibold text-orange-900 dark:text-orange-200">
+        <div className="rounded-xl border bg-muted/40 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold">
             <RefreshCw className="h-4 w-4" />
-            Recompute the ZEC you entered when any of these is true
+            Recompute when any of these is true
           </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-orange-950/80 dark:text-orange-100/80">
-            <li>
-              Spot has moved <strong>≥ 20%</strong> from the rate you used
-            </li>
-            <li>
-              More than <strong>7 days</strong> since you set the amount
-            </li>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>Spot has moved ≥ 20% from the rate you used</li>
+            <li>More than 7 days since you set the amount</li>
             <li>Payment is about to run</li>
           </ul>
         </div>
-        <div className="rounded-xl border border-sky-300/70 bg-sky-50 p-4 text-sm dark:border-sky-500/40 dark:bg-sky-950/30">
-          <p className="font-semibold text-sky-900 dark:text-sky-200">
-            Worked example
-          </p>
-          <p className="mt-2 text-sky-950/80 dark:text-sky-100/80">
-            Suggested $40 (S) at $500 / ZEC → listed 0.0800 ZEC. Payout week
-            spot $800 / ZEC → change the reward to 0.0500 ZEC. Same implied
-            dollar value; different ZEC quantity.
-          </p>
+        <div className="rounded-xl border p-4 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Worked example</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>Suggested: $8 (S) at $500 / ZEC → listed 0.0160 ZEC</li>
+            <li>Payout week: spot $750 / ZEC → change the reward to 0.0107 ZEC</li>
+            <li>Same implied dollar value; different ZEC quantity</li>
+          </ul>
         </div>
         <p className="text-sm text-muted-foreground leading-relaxed">
           If ZEC falls, the ZEC number should go up. Fund the paying wallet for
@@ -222,13 +220,11 @@ export default function BountyAmountsPage() {
 
       <section className="space-y-3">
         <h2 className="text-xl font-semibold">Rounding</h2>
-        <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
-          <li>
-            Enter ZEC to <strong>4 decimal places</strong>.
-          </li>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Enter ZEC to 4 decimal places.</li>
           <li>
             Prefer rounding so the implied USD value does not sit more than
-            about <strong>$1</strong> under the target you chose.
+            about $1 under the target you chose.
           </li>
           <li>Do not post dust below 0.0001 ZEC.</li>
         </ul>
@@ -244,23 +240,22 @@ export default function BountyAmountsPage() {
         </p>
       </section>
 
-      <p className="flex flex-wrap items-center gap-2 border-t pt-6 text-sm text-muted-foreground">
-        Next
+      <div className="flex flex-wrap gap-4 border-t pt-6">
         <Link
           href="/docs/creators"
-          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          className="inline-flex items-center text-sm font-medium text-primary hover:underline"
         >
           Creators
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ArrowRight className="ml-1 h-4 w-4" />
         </Link>
         <Link
           href="/docs/faq"
-          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          className="inline-flex items-center text-sm font-medium text-primary hover:underline"
         >
           FAQ
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ArrowRight className="ml-1 h-4 w-4" />
         </Link>
-      </p>
+      </div>
     </div>
   );
 }
