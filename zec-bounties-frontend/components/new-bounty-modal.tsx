@@ -525,7 +525,7 @@ export function NewBountyModal({
               <Input
                 id="date"
                 type="date"
-                min={new Date().toISOString().split("T")[0]}
+                min={toDateInputValue(new Date())}
                 value={toDateInputValue(formData.timeToComplete)}
                 onChange={handleDateChange}
                 required
