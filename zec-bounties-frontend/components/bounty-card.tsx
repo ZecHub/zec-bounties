@@ -99,6 +99,7 @@ export function BountyCard({
 
   const canApply =
     currentUser &&
+    bounty.status === "TO_DO" &&
     bounty.createdBy !== currentUser.id &&
     !userApplication &&
     !isAssignedToCurrentUser;
@@ -490,12 +491,18 @@ export function BountyCard({
             ) : (
               <div className="hidden lg:flex flex-col gap-1 items-start px-4 border-l min-w-[140px]">
                 <span className="text-[10px] uppercase text-muted-foreground font-bold">
-                  {isSuggestedTask ? "Invite Only" : "Available"}
+                  {isSuggestedTask
+                    ? "Invite Only"
+                    : bounty.status === "TO_DO"
+                      ? "Available"
+                      : "Closed"}
                 </span>
                 <span className="text-[11px] text-muted-foreground">
                   {isSuggestedTask
                     ? "No other applicants"
-                    : "Open for applications"}
+                    : bounty.status === "TO_DO"
+                      ? "Open for applications"
+                      : "Not accepting applications"}
                 </span>
               </div>
             )}
@@ -759,11 +766,17 @@ export function BountyCard({
                   </span>
                 )}
               </div>
-            ) : (
+            ) : !isSuggestedTask && bounty.status === "TO_DO" ? (
               <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10 border border-green-500/20">
                 <ClipboardList className="h-3 w-3 text-green-600" />
                 <span className="text-[10px] font-semibold text-green-600">
                   Apply
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-muted border border-border">
+                <span className="text-[10px] font-semibold text-muted-foreground">
+                  {isSuggestedTask ? "Invite Only" : "Closed"}
                 </span>
               </div>
             )}
