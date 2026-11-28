@@ -52,6 +52,7 @@ const {
   sendMailIfEnabled,
   sendPushToOptedIn,
   getBroadcastRecipients,
+  getApplicationRecipients,
   getSubmissionRecipients,
   withoutSubmissionBodies,
   broadcastBountyEvent,
@@ -2762,11 +2763,16 @@ router.put("/applications/:applicationId", authenticate, async (req, res) => {
     await invalidateBounty(application.bountyId);
 
     // Notify clients about the application change.
+    const recipients = new Set(
+      await getApplicationRecipients(application.bounty),
+    );
+    recipients.add(application.applicantId);
     await broadcastBountyEvent(
       "application_updated",
       result,
       application.bountyId,
       req.user.id,
+      [...recipients],
     );
 
     // When accepted, also notify clients that the bounty itself changed.
@@ -2934,11 +2940,110 @@ router.post("/apply", authenticate, async (req, res) => {
       application,
       bountyId,
       applicantId,
+      await getApplicationRecipients(bounty),
     );
     res.status(201).json(application);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+const EXPORT_DATE_FIELDS = [
+  "dateCreated",
+  "paidAt",
+  "completedAt",
+  "timeToComplete",
+  "updatedAt",
+  "exportedAt",
+];
+
+const EXPORT_STATUSES = [
+  "TO_DO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "DONE",
+  "CANCELLED",
+];
+const EXPORT_CHAINS = ["MAIN", "TEST"];
+const EXPORT_DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
+const validDate = (v) => !v || !Number.isNaN(new Date(v).getTime());
+
+router.get("/export-all", authenticate, isAdmin, async (req, res) => {
+  try {
+    const q = req.query;
+    if (
+      (q.status && !EXPORT_STATUSES.includes(q.status)) ||
+      (q.chain && q.chain !== "ALL" && !EXPORT_CHAINS.includes(q.chain)) ||
+      (q.difficulty && !EXPORT_DIFFICULTIES.includes(q.difficulty)) ||
+      !validDate(q.from) ||
+      !validDate(q.to)
+    ) {
+      return res.status(400).json({ error: "Invalid filter value" });
+    }
+    const bool = (v) =>
+      v === "true" ? true : v === "false" ? false : undefined;
+
+    const dateField = EXPORT_DATE_FIELDS.includes(q.dateField)
+      ? q.dateField
+      : "dateCreated";
+
+    const range =
+      q.from || q.to
+        ? {
+            [dateField]: {
+              ...(q.from && { gte: new Date(q.from) }),
+              ...(q.to && { lte: new Date(`${q.to}T23:59:59.999Z`) }),
+            },
+          }
+        : {};
+
+    const where = {
+      ...(q.status && { status: q.status }),
+      ...(q.chain && q.chain !== "ALL" && { chain: q.chain }),
+      ...(q.difficulty && { difficulty: q.difficulty }),
+      ...(q.teamId && { teamId: q.teamId === "none" ? null : q.teamId }),
+      ...(q.categoryId && { categoryId: q.categoryId }),
+      ...(q.createdBy && { createdBy: q.createdBy }),
+      ...(q.assignee && { assignee: q.assignee }),
+      ...(bool(q.isPaid) !== undefined && { isPaid: bool(q.isPaid) }),
+      ...(bool(q.isApproved) !== undefined && {
+        isApproved: bool(q.isApproved),
+      }),
+      ...(bool(q.isPrivate) !== undefined && { isPrivate: bool(q.isPrivate) }),
+      ...(bool(q.exported) !== undefined && {
+        exportedAt: bool(q.exported) ? { not: null } : null,
+      }),
+      ...range,
+    };
+
+    const data = await prisma.bounty.findMany({
+      where,
+      orderBy: { dateCreated: "desc" },
+      include: {
+        assigneeUser: {
+          select: USER_SELECT_EXPORT,
+        },
+        createdByUser: { select: { id: true, name: true, email: true } },
+        category: { select: { name: true } },
+        team: { select: { id: true, name: true } },
+        assignees: {
+          select: { userId: true, user: { select: USER_SELECT_EXPORT } },
+        },
+        _count: {
+          select: {
+            applications: true,
+            workSubmissions: true,
+            transactions: true,
+          },
+        },
+      },
+    });
+
+    res.json({ data, total: data.length });
+  } catch (err) {
+    console.error("export-all failed:", err);
+    res.status(500).json({ error: "Failed to export bounties" });
   }
 });
 

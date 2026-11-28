@@ -11,7 +11,7 @@ const OPEN_TTL_MS = 30 * 60 * 1000;
 const APPROVED_TTL_MS = 10 * 60 * 1000; // window to reveal once approved
 
 const requiredSignatures = (eligibleCount) =>
-  Math.min(RECOVERY_THRESHOLD, eligibleCount);
+  Math.max(1, Math.min(RECOVERY_THRESHOLD, eligibleCount));
 
 function httpError(status, message) {
   const e = new Error(message);
@@ -21,7 +21,7 @@ function httpError(status, message) {
 
 async function getEligibleApproverIds(db, teamId) {
   const members = await db.teamMember.findMany({
-    where: { teamId, role: { in: ["OWNER", "ADMIN"] } },
+    where: { teamId, user: { role: { not: "ADMIN" } } },
     select: { userId: true },
   });
   return members.map((m) => m.userId);

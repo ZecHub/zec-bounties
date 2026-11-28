@@ -119,7 +119,7 @@ type Tab =
   | "Overview"
   | "Bounty program"
   | "Community"
-  | "Members"
+  | "Team Leaders"
   | "Treasury"
   | "Activity"
   | "Settings";
@@ -127,7 +127,7 @@ const TABS: Tab[] = [
   "Overview",
   "Bounty program",
   "Community",
-  "Members",
+  "Team Leaders",
   "Treasury",
   "Activity",
   "Settings",
@@ -314,6 +314,12 @@ export default function TeamConsolePage() {
   const role = getUserRole(team, currentUser.id, currentUser.role === "ADMIN");
   const canManage = role === "OWNER" || role === "ADMIN";
 
+  // Passkey features are for this team's own leaders, not platform admins.
+  const isTeamLeader = team.members.some(
+    (m) =>
+      m.userId === currentUser.id && (m.role === "OWNER" || m.role === "ADMIN"),
+  );
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <TeamNavbar
@@ -405,7 +411,7 @@ export default function TeamConsolePage() {
             msOverflowStyle: "none",
           }}
         >
-          {TABS.filter((t) => t !== "Activity" || canManage).map((tab) => (
+          {TABS.filter((t) => t !== "Activity" || isTeamLeader).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -437,8 +443,8 @@ export default function TeamConsolePage() {
             canManage={canManage}
           />
         )}
-        {activeTab === "Members" && (
-          <MembersTab team={team} canManage={canManage} />
+        {activeTab === "Team Leaders" && (
+          <LeadersTab team={team} canManage={canManage} />
         )}
         {activeTab === "Community" && <CommunityTab team={team} />}
         {activeTab === "Treasury" && (
@@ -447,9 +453,10 @@ export default function TeamConsolePage() {
             teamBounties={teamBounties}
             canManage={canManage}
             isOwner={role === "OWNER"}
+            isTeamLeader={isTeamLeader}
           />
         )}
-        {activeTab === "Activity" && canManage && (
+        {activeTab === "Activity" && isTeamLeader && (
           <PasskeyActivityTab team={team} />
         )}
         {activeTab === "Settings" && (
@@ -1055,7 +1062,7 @@ function OverviewTab({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 imd:grid-cols-4">
-        <StatCard label="Members" value={String(team.members.length)} />
+        <StatCard label="Team leaders" value={String(team.members.length)} />
         <StatCard label="Active bounties" value={String(active)} />
         <StatCard label="Paid out" value={formatZec(totalPaid)} />
         <StatCard
@@ -2232,7 +2239,7 @@ function TeamRecoveryGate({ team, isOwner }: { team: Team; isOwner: boolean }) {
             Approve with passkey
           </Button>
         )}
-        {(isRequester || currentUser?.role === "ADMIN") && (
+        {isRequester && (
           <Button
             size="sm"
             variant="outline"
@@ -2439,7 +2446,7 @@ function PasskeyActivityTab({ team }: { team: Team }) {
   );
 }
 
-function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
+function LeadersTab({ team, canManage }: { team: Team; canManage: boolean }) {
   const { addTeamMembers, removeTeamMember, users, fetchUsers } = useBounty();
   const [showInvite, setShowInvite] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -2474,7 +2481,7 @@ function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted-foreground">
           {team.members.length}{" "}
-          {team.members.length === 1 ? "member" : "members"}
+          {team.members.length === 1 ? "leader" : "leaders"}
         </h2>
         {canManage && (
           <Button
@@ -2482,7 +2489,7 @@ function MembersTab({ team, canManage }: { team: Team; canManage: boolean }) {
             size="sm"
             onClick={() => setShowInvite(true)}
           >
-            <UserPlus className="mr-1.5 h-4 w-4" /> Invite member
+            <UserPlus className="mr-1.5 h-4 w-4" /> Invite leader
           </Button>
         )}
       </div>
@@ -2938,11 +2945,13 @@ function TreasuryTab({
   teamBounties,
   canManage,
   isOwner,
+  isTeamLeader,
 }: {
   team: Team;
   teamBounties: Bounty[];
   canManage: boolean;
   isOwner: boolean;
+  isTeamLeader: boolean;
 }) {
   const {
     deleteTeamWallet,
@@ -3160,7 +3169,7 @@ function TreasuryTab({
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
               Wallet details
             </h3>
-            {canManage && <TeamRecoveryGate team={team} isOwner={isOwner} />}
+            {isTeamLeader && <TeamRecoveryGate team={team} isOwner={isOwner} />}
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-muted-foreground">Account name</dt>
