@@ -30,7 +30,12 @@ export function RevisedBountyCard({
   bounty: Bounty;
   onClick?: () => void;
 }) {
-  const dueDate = bounty.timeToComplete
+  const closedLabel = bounty.status === "DONE"
+    ? "Done"
+    : bounty.status === "CANCELLED"
+      ? "Cancelled"
+      : null;
+  const dueDate = !closedLabel && bounty.timeToComplete
     ? new Date(bounty.timeToComplete)
     : null;
   const hasDue = !!dueDate && !isNaN(dueDate.getTime());
@@ -104,6 +109,11 @@ export function RevisedBountyCard({
             >
               {bounty.difficulty}
             </Badge>
+          )}
+          {closedLabel && (
+            <span className={bounty.status === "DONE" ? "text-xs text-green-600 dark:text-green-400" : "text-xs text-muted-foreground"}>
+              {closedLabel}
+            </span>
           )}
           {dueText && (
             <span
