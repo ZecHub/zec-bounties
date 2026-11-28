@@ -9,7 +9,7 @@ Payouts are always shielded ZEC. USD is only a planning unit.
 ## Suggesting an amount
 
 1. Match the work to an interval below.
-2. Pick a USD target inside that band — not automatically the top.
+2. Pick a USD target inside that band — not automatically the top. Prefer the lower half.
 3. Look up a public ZEC/USD spot (CoinGecko, Coinbase, Kraken, or Binance).
 4. Convert:
 
@@ -20,7 +20,7 @@ zec_to_enter = usd_target / zec_usd_spot
 5. Type that ZEC value into **Reward (ZEC)**. Round to 4 decimal places.
 6. Optional but useful: mention the USD band and the spot you used in the description so reviewers can check the conversion.
 
-Example: short wiki page, S band, `$20` target, spot `$800` / ZEC → enter `0.0250` ZEC.
+Example: short wiki page, S band, `$8` target, spot `$750` / ZEC → enter `0.0107` ZEC.
 
 If you only remember old frozen tips (`0.05 ZEC` newsletter, `0.08 ZEC` wiki), those were snapshots at an older rate. Convert from the USD interval instead.
 
@@ -30,13 +30,15 @@ These are what you should propose. Admins can still adjust before the bounty goe
 
 | Interval | Implicit USD | Suggest this kind of work |
 |----------|--------------|---------------------------|
-| XS | $8–$15 | Newsletter edition, broken-link fix, small copy edit |
-| S | $15–$30 | New short wiki page, accepted translation, small docs PR |
-| M | $30–$80 | Substantial wiki or tutorial (video), medium application change |
-| L | $120–$250 | Multi-file feature, wallet/tooling work, longer research |
-| XL | $250–$400 | Large approved PR or multi-day engineering task |
+| XS | $3–$6 | Typos, broken links, one-line data/chart fixes, trivial copy |
+| S | $6–$12 | Short wiki pages, translations, small docs PRs, simple helper + tests |
+| M | $12–$25 | Medium app changes, multi-section wiki, non-trivial chart/data fixes with tests |
+| L | $50–$120 | Multi-file features, tooling, sustained research |
+| XL | $120–$220 | Large approved PRs, multi-day engineering, high-impact protocol-adjacent work |
 
-Stay inside the band. Do not treat the top as the default.
+Stay inside the band. Default to the lower half. Do not treat the top as the default.
+
+Pure AI-scaffolded or near-mechanical PRs should land in XS or be merged unpaid.
 
 ## The form only stores ZEC
 
@@ -52,8 +54,8 @@ Recompute when **any** of these is true:
 
 Worked example:
 
-- Suggested: `$20` (S) at `$500` / ZEC → listed `0.0400` ZEC
-- Payout week: spot `$800` / ZEC → change the reward to `0.0250` ZEC
+- Suggested: `$8` (S) at `$500` / ZEC → listed `0.0160` ZEC
+- Payout week: spot `$750` / ZEC → change the reward to `0.0107` ZEC
 - Same implied dollar value; different ZEC quantity
 
 If ZEC falls, the ZEC number should go up. Fund the paying wallet for that case.
