@@ -157,7 +157,7 @@ test("sendToUser delivers the owner's own data only to the owner", (t) => {
   assert.equal(eventsOf(bob, "user_updated").length, 0);
 });
 
-test("user_updated gives the owner the full row and others the public profile", (t) => {
+test("user_updated gives the owner the full row and others only the id", (t) => {
   const alice = connect("alice");
   const bob = connect("bob");
   t.after(() => [alice, bob].forEach((ws) => ws.disconnect()));
@@ -181,15 +181,70 @@ test("user_updated gives the owner the full row and others the public profile", 
   assert.equal(own[0].payload.email, "alice@example.com");
   assert.equal(own[0].payload.UA_address, "u1private");
 
+  // Bob's client only refetches on this event; the REST refetch applies
+  // Alice's profileVisibility, so the socket must not carry her profile.
   const seen = eventsOf(bob, "user_updated");
   assert.equal(seen.length, 1);
-  assert.deepEqual(seen[0].payload, {
+  assert.deepEqual(seen[0].payload, { id: "alice" });
+});
+
+test("a hidden display name does not reach others through user_updated", (t) => {
+  const alice = connect("alice");
+  const bob = connect("bob");
+  t.after(() => [alice, bob].forEach((ws) => ws.disconnect()));
+
+  // The shape routes/auth.js passes after PATCH /update-nickname: no
+  // profileVisibility in the select.
+  sendUserUpdated("alice", {
     id: "alice",
-    name: "Alice",
+    name: "Alice Realname",
     nickname: "ally",
-    avatar: "a.png",
+    avatar: "https://avatars.example/alice.png",
     role: "HUNTER",
   });
+
+  const text = JSON.stringify(bob.received);
+  assert.ok(!text.includes("Alice Realname"), text);
+  assert.ok(!text.includes("ally"), text);
+  assert.ok(!text.includes("alice.png"), text);
+});
+
+test("connecting and disconnecting is not announced to other users", (t) => {
+  const bob = connect("bob");
+  t.after(() => bob.disconnect());
+
+  const alice = connect("alice");
+  alice.disconnect();
+
+  assert.deepEqual(bob.received, []);
+});
+
+test("a client 'message' frame is not stored or broadcast", async (t) => {
+  const handlers = {};
+  const alice = {
+    readyState: 1,
+    received: [],
+    send(m) {
+      alice.received.push(JSON.parse(m));
+    },
+    on(event, fn) {
+      handlers[event] = fn;
+    },
+    close() {},
+  };
+  const bob = connect("bob");
+  t.after(() => {
+    handlers.close();
+    bob.disconnect();
+  });
+  handleWebSocket(alice, prisma, { id: "alice", name: "Alice" });
+  alice.received.length = 0;
+
+  await handlers.message(Buffer.from(JSON.stringify({ type: "message", content: "hi" })));
+  await handlers.message(Buffer.from(JSON.stringify({ type: "ping" })));
+
+  assert.deepEqual(bob.received, []);
+  assert.deepEqual(alice.received, [{ type: "pong" }]);
 });
 
 test("recipient-scoped updates reach only the listed users", (t) => {
