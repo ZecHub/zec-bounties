@@ -476,7 +476,7 @@ export function BountyEditModal({
                   <Input
                     id="edit-deadline"
                     type="date"
-                    min={new Date().toISOString().split("T")[0]}
+                    min={toDateInputValue(new Date())}
                     value={timeToComplete}
                     onChange={(e) => setTimeToComplete(e.target.value)}
                   />
