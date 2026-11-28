@@ -61,7 +61,7 @@ import {
   parseLinks,
   splitLinks,
   joinLinks,
-  hasInvalidLinks,
+  validateDeliverableLinks,
 } from "@/lib/links";
 
 interface BountyDetailModalProps {
@@ -376,8 +376,13 @@ export function BountyDetailModal({
 
   const handleSaveEdit = async () => {
     if (!userWorkSubmission || !editDescription.trim()) return;
-    if (hasInvalidLinks(editDeliverableUrls)) {
-      toast.error("Each link must be a valid http:// or https:// URL");
+    const editLinkError = validateDeliverableLinks(editDeliverableUrls);
+    if (editLinkError) {
+      toast.error(
+        editLinkError === "invalid"
+          ? "Each link must be a valid http:// or https:// URL"
+          : `You can add up to ${MAX_LINKS} links.`,
+      );
       return;
     }
     setIsSavingEdit(true);
@@ -576,12 +581,13 @@ export function BountyDetailModal({
     if (!submissionDescription.trim()) {
       nextErrors.description = "Describe the work you completed.";
     }
-    if (hasInvalidLinks(deliverableUrls)) {
+    const submitLinkError = validateDeliverableLinks(deliverableUrls);
+    if (submitLinkError === "invalid") {
       nextErrors.deliverableUrl =
         "Each link must be a valid http:// or https:// URL.";
     } else if (!joinedUrls) {
       nextErrors.deliverableUrl = "Enter at least one deliverable URL.";
-    } else if (parseLinks(joinedUrls).length > MAX_LINKS) {
+    } else if (submitLinkError === "too_many") {
       nextErrors.deliverableUrl = `You can add up to ${MAX_LINKS} links.`;
     }
 
