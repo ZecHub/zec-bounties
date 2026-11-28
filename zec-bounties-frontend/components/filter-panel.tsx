@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type ReactNode,
@@ -335,7 +336,23 @@ export function FilterSelect({
   } | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
+  const listId = useId();
+  const listReady = open && pos !== null;
   const selected = options.find((o) => o.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!listReady) return;
+    const list = listRef.current;
+    const option =
+      list?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ??
+      list?.querySelector<HTMLButtonElement>('[role="option"]');
+    option?.focus();
+  }, [listReady]);
+
+  const closeAndFocusTrigger = () => {
+    setOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
+  };
 
   const updatePos = useCallback(() => {
     const el = triggerRef.current;
@@ -393,8 +410,10 @@ export function FilterSelect({
         if (e.key === "Escape" && open) {
           e.stopPropagation();
           e.nativeEvent.stopImmediatePropagation();
-          setOpen(false);
-          triggerRef.current?.focus();
+          closeAndFocusTrigger();
+        } else if (e.key === "Tab" && open) {
+          // Continue normal tab order from the trigger, not the portal.
+          closeAndFocusTrigger();
         }
       }}
     >
@@ -405,7 +424,14 @@ export function FilterSelect({
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={listReady ? listId : undefined}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(event) => {
+          if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
         className={`${filterFieldClass} flex items-center justify-between gap-2 text-left transition ${
           open ? "border-primary ring-2 ring-primary/20" : ""
         }`}
@@ -422,9 +448,21 @@ export function FilterSelect({
         createPortal(
           <ul
             ref={listRef}
+            id={listId}
             role="listbox"
             aria-label={label}
             data-filter-portal
+            onKeyDown={(event) => {
+              const { key } = event;
+              if (key !== "Home" && key !== "End" && key !== "ArrowDown" && key !== "ArrowUp") return;
+              const menuItems = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+              const at = menuItems.indexOf(document.activeElement as HTMLButtonElement);
+              let next = at + (key === "ArrowDown" ? 1 : -1);
+              if (key === "Home") next = 0;
+              if (key === "End") next = menuItems.length - 1;
+              event.preventDefault();
+              menuItems[Math.min(menuItems.length - 1, Math.max(0, next))]?.focus();
+            }}
             style={{
               left: pos.left,
               width: pos.width,
@@ -441,12 +479,13 @@ export function FilterSelect({
                   <button
                     type="button"
                     role="option"
+                    tabIndex={-1}
                     aria-selected={isSelected}
                     onClick={() => {
                       onChange(o.value);
-                      setOpen(false);
+                      closeAndFocusTrigger();
                     }}
-                    className={`flex w-full items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-sm transition ${
+                    className={`flex w-full items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-sm transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${
                       isSelected
                         ? "bg-primary/10 font-medium text-primary"
                         : "text-foreground hover:bg-muted"
